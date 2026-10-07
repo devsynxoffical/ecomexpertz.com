@@ -153,11 +153,20 @@ export function handleLocalApi(endpoint, options = {}) {
     if (!referralCode || !referralCode.trim()) {
       throw new Error('An invitation / referral code is required to create an account.');
     }
+    const cleanRefCode = referralCode.trim();
+    const referrerUser = (db.users || []).find(u => (u.referralCode === cleanRefCode || u.code === cleanRefCode));
+    const generatedUserCode = Math.floor(100000 + Math.random() * 900000).toString();
+
     const newUser = {
       id: `usr_${Date.now()}`,
       name: name.trim(),
       email: email.trim().toLowerCase(),
-      referralCode: Math.floor(100000 + Math.random() * 900000).toString(),
+      code: generatedUserCode,
+      referralCode: generatedUserCode,
+      invitedByCode: cleanRefCode,
+      referredByCode: cleanRefCode,
+      referredByName: referrerUser ? referrerUser.name : `Code #${cleanRefCode}`,
+      referredBy: referrerUser ? referrerUser.id : cleanRefCode,
       avatar: name.charAt(0).toUpperCase(),
       vipLevel: 'eBay',
       vipTierId: 'tier_ebay',
@@ -167,6 +176,7 @@ export function handleLocalApi(endpoint, options = {}) {
       totalWithdraw: 0.0,
       pendingRequests: 0,
       teamMembersCount: 0,
+      referrals: 0,
       pendingTasks: 25,
       completedTasks: 0,
       dailyQuota: 25,
@@ -180,7 +190,8 @@ export function handleLocalApi(endpoint, options = {}) {
       walletAddress: 'T' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15),
       network: 'TRC20',
       status: 'Active',
-      joinedDate: new Date().toISOString().split('T')[0]
+      joinedDate: new Date().toISOString().split('T')[0],
+      joined: new Date().toISOString().split('T')[0]
     };
     db.users.unshift(newUser);
     saveLocalDatabase(db);

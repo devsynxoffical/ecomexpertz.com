@@ -66,8 +66,11 @@ function TabHome() {
     setSelectedTask,
     activityStream,
     records,
-    setDashboardTab
+    setDashboardTab,
+    addNotification
   } = useApp();
+
+  const [copiedInvite, setCopiedInvite] = useState(false);
 
   const ebayTasks = tasks.filter(t => t.platform === 'eBay').slice(0, 6);
   const walmartTasks = tasks.filter(t => t.platform === 'Walmart').slice(0, 6);
@@ -75,12 +78,58 @@ function TabHome() {
 
   const pendingRecord = records.find(r => r.status === 'Pending');
 
+  const handleCopyInviteCode = () => {
+    const code = user?.referralCode || user?.code || '505282';
+    navigator.clipboard.writeText(code);
+    setCopiedInvite(true);
+    if (addNotification) {
+      addNotification('Invitation Code Copied', `Invite Code ${code} copied to clipboard!`);
+    }
+    setTimeout(() => setCopiedInvite(false), 2500);
+  };
+
   return (
     <div className="container tab-home-container">
       {/* SAPPHIRE HERO BANNER matching Screenshot 2 */}
       <div className="dashboard-hero-banner">
         <div className="hero-banner-top">
           <div className="hero-greeting">
+            {/* INVITATION CODE BADGE ON UPPER SIDE OF WELCOME BACK */}
+            <div className="hero-invite-bar mb-2.5">
+              <div
+                className="hero-invite-badge"
+                onClick={handleCopyInviteCode}
+                title="Click to copy your unique invitation code"
+              >
+                <div className="invite-tag-label">
+                  <Gift size={13} className="text-amber-300" />
+                  <span>INVITE CODE:</span>
+                </div>
+                <span className="invite-code-number">{user?.referralCode || user?.code || '505282'}</span>
+                <button
+                  type="button"
+                  className="invite-code-copy-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleCopyInviteCode();
+                  }}
+                  title="Copy code"
+                >
+                  {copiedInvite ? (
+                    <>
+                      <Check size={11} className="text-emerald-300" />
+                      <span>Copied</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy size={11} />
+                      <span>Copy</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
             <h2>Welcome back,</h2>
             <div className="greeting-name-row">
               <span className="greeting-name">{user?.name || 'User'}</span>

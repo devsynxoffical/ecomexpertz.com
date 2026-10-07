@@ -39,7 +39,11 @@ import {
   Menu,
   X,
   LayoutDashboard,
-  MessageCircle
+  MessageCircle,
+  Gift,
+  FileText,
+  CheckSquare,
+  Share2
 } from 'lucide-react';
 import { getProductUrl, openProductUrl } from '../utils/productUrl';
 import AdminSupportPanel, { useSupportChats } from '../components/AdminSupportPanel';
@@ -158,6 +162,14 @@ export default function AdminView() {
   const [editStatus, setEditStatus] = useState('Active');
   const [editWalletAddress, setEditWalletAddress] = useState('');
   const [editKyc, setEditKyc] = useState('Verified');
+  const [editReferralCode, setEditReferralCode] = useState('');
+  const [editInvitedByCode, setEditInvitedByCode] = useState('');
+  const [editPendingTasks, setEditPendingTasks] = useState('25');
+  const [editCompletedTasks, setEditCompletedTasks] = useState('0');
+  const [editDailyQuota, setEditDailyQuota] = useState('25');
+
+  // Inspect User Record & Dossier Modal
+  const [inspectingUser, setInspectingUser] = useState(null);
 
   // Broadcast state
   const [broadcastText, setBroadcastText] = useState('');
@@ -232,16 +244,24 @@ export default function AdminView() {
     e.preventDefault();
     if (!editingUser) return;
     adminUpdateUser(editingUser.id, {
-      balance: parseFloat(editBalance),
+      balance: parseFloat(editBalance) || 0,
       vipLevel: editTier,
       vipTier: editTier,
       status: editStatus,
       walletAddress: editWalletAddress,
       kyc: editKyc,
-      kycStatus: editKyc
+      kycStatus: editKyc,
+      referralCode: editReferralCode,
+      code: editReferralCode,
+      invitedByCode: editInvitedByCode,
+      referredByCode: editInvitedByCode,
+      pendingTasks: parseInt(editPendingTasks, 10) || 0,
+      completedTasks: parseInt(editCompletedTasks, 10) || 0,
+      dailyQuota: parseInt(editDailyQuota, 10) || 25,
+      dailyCompleted: parseInt(editCompletedTasks, 10) || 0
     });
     setEditingUser(null);
-    addNotification('User Updated', `Updated account settings for ${editingUser.name}`);
+    addNotification('User Updated', `Updated account settings and task quota for ${editingUser.name}`);
   };
 
   const handleDeleteUserClick = (userId, userName) => {
@@ -1321,6 +1341,8 @@ export default function AdminView() {
                   <tr>
                     <th>User</th>
                     <th>Email</th>
+                    <th>Invitation / Referral</th>
+                    <th>Task Progress</th>
                     <th>TRC20 Wallet</th>
                     <th>Balance</th>
                     <th>VIP Tier</th>
@@ -1336,6 +1358,11 @@ export default function AdminView() {
                     const currentUTier = (u.id === user.id ? user.vipLevel : (u.vipTier || u.vipLevel)) || 'eBay';
                     const currentUStatus = (u.id === user.id ? user.status : u.status) || 'Active';
                     const currentUKyc = (u.id === user.id ? user.kycStatus : (u.kyc || u.kycStatus)) || 'Verified';
+                    const ownRefCode = u.referralCode || u.code || '505282';
+                    const joinedWithCode = u.invitedByCode || u.referredByCode || (u.referredBy ? u.referredBy : '505282');
+                    const dailyQuota = u.dailyQuota || 25;
+                    const completedTasks = u.dailyCompleted ?? u.completedTasks ?? 0;
+                    const pendingTasks = u.pendingTasks ?? Math.max(0, dailyQuota - completedTasks);
 
                     return (
                       <tr key={u.id}>
@@ -1352,13 +1379,46 @@ export default function AdminView() {
                                 )}
                               </div>
                               <div className="text-xs text-muted flex items-center gap-1 mt-0.5">
-                                <span>{u.role === 'admin' ? '👑 Admin' : `ID: ${u.code || u.referralCode || u.id.slice(0, 6)}`}</span>
+                                <span>{u.role === 'admin' ? '👑 Admin' : `ID: ${ownRefCode.slice(0, 6)}`}</span>
                               </div>
                             </div>
                           </div>
                         </td>
                         <td>
                           <span className="text-xs text-secondary font-mono">{u.email}</span>
+                        </td>
+                        <td>
+                          <div className="user-invitation-cell">
+                            <div className="flex items-center gap-1 text-xs">
+                              <span className="text-muted text-[10px] uppercase font-semibold">Code:</span>
+                              <strong className="text-primary-brand font-mono font-bold">{ownRefCode}</strong>
+                            </div>
+                            <div className="flex items-center gap-1 text-xs mt-0.5">
+                              <span className="text-muted text-[10px]">Joined via:</span>
+                              <span className="badge-invited-pill">
+                                {joinedWithCode}
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+                        <td>
+                          <div className="task-status-cell">
+                            <div className="flex items-center justify-between text-xs mb-1">
+                              <span className="badge-pending-tasks">
+                                <Clock size={10} />
+                                <span>{pendingTasks} Pending</span>
+                              </span>
+                              <span className="text-xs text-muted font-medium">
+                                {completedTasks}/{dailyQuota}
+                              </span>
+                            </div>
+                            <div className="mini-task-progress-track">
+                              <div
+                                className="mini-task-progress-fill"
+                                style={{ width: `${Math.min(100, Math.round((completedTasks / dailyQuota) * 100))}%` }}
+                              />
+                            </div>
+                          </div>
                         </td>
                         <td>
                           <div className="flex items-center gap-1.5">
@@ -1379,7 +1439,7 @@ export default function AdminView() {
                         </td>
                         <td>
                           <div className="balance-cell-badge">
-                            <strong>${currentUBal.toFixed(2)}</strong>
+                            <strong>${(Number(currentUBal) || 0).toFixed(2)}</strong>
                             <span className="usdt-unit">USDT</span>
                           </div>
                         </td>
@@ -1407,6 +1467,14 @@ export default function AdminView() {
                         <td>
                           <div className="flex items-center gap-1">
                             <button
+                              className="btn-action-view"
+                              title="Inspect Full User Record & Dossier"
+                              onClick={() => setInspectingUser(u)}
+                            >
+                              <FileText size={12} />
+                              <span>Details</span>
+                            </button>
+                            <button
                               className="btn-edit-user"
                               title="Edit Account Details"
                               onClick={() => {
@@ -1416,6 +1484,11 @@ export default function AdminView() {
                                 setEditStatus(currentUStatus);
                                 setEditWalletAddress(currentUWallet);
                                 setEditKyc(currentUKyc);
+                                setEditReferralCode(ownRefCode);
+                                setEditInvitedByCode(joinedWithCode);
+                                setEditPendingTasks((u.pendingTasks ?? Math.max(0, dailyQuota - completedTasks)).toString());
+                                setEditCompletedTasks(completedTasks.toString());
+                                setEditDailyQuota(dailyQuota.toString());
                               }}
                             >
                               <Edit2 size={12} />
@@ -1566,26 +1639,34 @@ export default function AdminView() {
             {editingUser && (
               <div className="modal-overlay animate-fade-in" onClick={() => setEditingUser(null)}>
                 <div className="modal-container" onClick={(e) => e.stopPropagation()}>
-                  <div className="modal-box max-w-md">
+                  <div className="modal-box max-w-lg">
                     <div className="modal-header">
-                      <h3>Edit User Account: {editingUser.name}</h3>
+                      <div className="header-with-icon">
+                        <div className="icon-pill-blue">
+                          <Edit2 size={18} />
+                        </div>
+                        <div>
+                          <h3>Edit User: {editingUser.name}</h3>
+                          <span className="sub-text">Modify ledger balance, invitation details, and task quotas</span>
+                        </div>
+                      </div>
                       <button className="close-btn" onClick={() => setEditingUser(null)}>✕</button>
                     </div>
 
                     <form onSubmit={handleSaveUser} className="mt-4">
-                      <div className="input-group">
-                        <label className="input-label">Available Balance (USDT)</label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={editBalance}
-                          onChange={(e) => setEditBalance(e.target.value)}
-                          className="text-input-field"
-                          required
-                        />
-                      </div>
+                      <div className="grid-two-col">
+                        <div className="input-group">
+                          <label className="input-label">Available Balance (USDT)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={editBalance}
+                            onChange={(e) => setEditBalance(e.target.value)}
+                            className="text-input-field font-mono font-bold"
+                            required
+                          />
+                        </div>
 
-                      <div className="grid-two-col mt-3">
                         <div className="input-group">
                           <label className="input-label">VIP Membership Tier</label>
                           <select
@@ -1596,9 +1677,83 @@ export default function AdminView() {
                             <option value="eBay">eBay (4% Commission)</option>
                             <option value="Walmart">Walmart (8% Commission)</option>
                             <option value="Temu">Temu (12% Commission)</option>
+                            <option value="Amazon">Amazon (16% Commission)</option>
                           </select>
                         </div>
+                      </div>
 
+                      {/* Invitation & Referral Code Controls */}
+                      <div className="grid-two-col mt-3">
+                        <div className="input-group">
+                          <label className="input-label">
+                            <span className="flex items-center gap-1">
+                              <Gift size={12} className="text-amber-500" />
+                              <span>User's Referral Code</span>
+                            </span>
+                          </label>
+                          <input
+                            type="text"
+                            value={editReferralCode}
+                            onChange={(e) => setEditReferralCode(e.target.value)}
+                            className="text-input-field font-mono"
+                            placeholder="e.g. 505282"
+                          />
+                        </div>
+
+                        <div className="input-group">
+                          <label className="input-label">
+                            <span className="flex items-center gap-1">
+                              <Gift size={12} className="text-primary-brand" />
+                              <span>Joined with Invite Code</span>
+                            </span>
+                          </label>
+                          <input
+                            type="text"
+                            value={editInvitedByCode}
+                            onChange={(e) => setEditInvitedByCode(e.target.value)}
+                            className="text-input-field font-mono"
+                            placeholder="e.g. 888888"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Task Allocation & Pending Progress */}
+                      <div className="grid-three-col mt-3">
+                        <div className="input-group">
+                          <label className="input-label">Daily Task Quota</label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={editDailyQuota}
+                            onChange={(e) => setEditDailyQuota(e.target.value)}
+                            className="text-input-field"
+                          />
+                        </div>
+
+                        <div className="input-group">
+                          <label className="input-label">Completed Tasks</label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={editCompletedTasks}
+                            onChange={(e) => setEditCompletedTasks(e.target.value)}
+                            className="text-input-field"
+                          />
+                        </div>
+
+                        <div className="input-group">
+                          <label className="input-label">Pending Tasks</label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={editPendingTasks}
+                            onChange={(e) => setEditPendingTasks(e.target.value)}
+                            className="text-input-field font-bold text-amber-600"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid-two-col mt-3">
                         <div className="input-group">
                           <label className="input-label">KYC Verification</label>
                           <select
@@ -1611,6 +1766,19 @@ export default function AdminView() {
                             <option value="Unverified">Unverified</option>
                           </select>
                         </div>
+
+                        <div className="input-group">
+                          <label className="input-label">Account Status</label>
+                          <select
+                            value={editStatus}
+                            onChange={(e) => setEditStatus(e.target.value)}
+                            className="text-input-field"
+                          >
+                            <option value="Active">Active</option>
+                            <option value="Suspended">Suspended</option>
+                            <option value="Pending Review">Pending Review</option>
+                          </select>
+                        </div>
                       </div>
 
                       <div className="input-group mt-3">
@@ -1619,28 +1787,237 @@ export default function AdminView() {
                           type="text"
                           value={editWalletAddress}
                           onChange={(e) => setEditWalletAddress(e.target.value)}
-                          className="text-input-field"
+                          className="text-input-field font-mono"
                           placeholder="T..."
                         />
                       </div>
 
-                      <div className="input-group mt-3">
-                        <label className="input-label">Account Status</label>
-                        <select
-                          value={editStatus}
-                          onChange={(e) => setEditStatus(e.target.value)}
-                          className="text-input-field"
-                        >
-                          <option value="Active">Active</option>
-                          <option value="Suspended">Suspended</option>
-                          <option value="Pending Review">Pending Review</option>
-                        </select>
-                      </div>
-
-                      <button type="submit" className="btn-primary w-full mt-4">
-                        Save Changes to Ledger
+                      <button type="submit" className="btn-primary w-full mt-4 py-2.5">
+                        Save Changes to User Ledger
                       </button>
                     </form>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Inspect Full User Record / Dossier Modal */}
+            {inspectingUser && (
+              <div className="modal-overlay animate-fade-in" onClick={() => setInspectingUser(null)}>
+                <div className="modal-container" onClick={(e) => e.stopPropagation()}>
+                  <div className="modal-box max-w-2xl user-dossier-modal">
+                    {/* Header */}
+                    <div className="modal-header pb-3 border-b">
+                      <div className="header-with-icon">
+                        <div className={`user-avatar-mini large ${inspectingUser.role === 'admin' ? 'admin-avatar' : ''}`}>
+                          {inspectingUser.name.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-lg font-bold">{inspectingUser.name}</h3>
+                            <span className={`status-pill ${(inspectingUser.status || 'active').toLowerCase()}`}>
+                              <span className="status-dot"></span>
+                              <span>{inspectingUser.status || 'Active'}</span>
+                            </span>
+                            <span className={`vip-tag-small ${(inspectingUser.vipLevel || inspectingUser.vipTier || 'ebay').toLowerCase()}`}>
+                              {inspectingUser.vipLevel || inspectingUser.vipTier || 'eBay'}
+                            </span>
+                          </div>
+                          <span className="sub-text font-mono text-xs">{inspectingUser.email} • ID: {inspectingUser.id}</span>
+                        </div>
+                      </div>
+                      <button className="close-btn" onClick={() => setInspectingUser(null)}>✕</button>
+                    </div>
+
+                    {/* Dossier Grid */}
+                    <div className="dossier-grid mt-4">
+                      {/* 1. Referral & Invitation Details */}
+                      <div className="dossier-card">
+                        <div className="dossier-card-header">
+                          <Gift size={16} className="text-amber-500" />
+                          <h4>Invitation & Referral Record</h4>
+                        </div>
+                        <div className="dossier-data-list">
+                          <div className="dossier-row">
+                            <span className="d-label">Joined via Invite Code:</span>
+                            <strong className="d-val text-primary-brand font-mono bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                              {inspectingUser.invitedByCode || inspectingUser.referredByCode || (inspectingUser.referredBy ? inspectingUser.referredBy : '505282')}
+                            </strong>
+                          </div>
+                          <div className="dossier-row">
+                            <span className="d-label">Invited By / Sponsor:</span>
+                            <span className="d-val font-medium">
+                              {inspectingUser.referredByName || (inspectingUser.invitedByCode === '888888' ? 'System Administrator' : (inspectingUser.invitedByCode ? `Code #${inspectingUser.invitedByCode}` : 'Genesis'))}
+                            </span>
+                          </div>
+                          <div className="dossier-row">
+                            <span className="d-label">User's Own Referral Code:</span>
+                            <strong className="d-val text-amber-600 font-mono font-bold bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                              {inspectingUser.referralCode || inspectingUser.code || '505282'}
+                            </strong>
+                          </div>
+                          <div className="dossier-row">
+                            <span className="d-label">Total Direct Referrals:</span>
+                            <span className="d-val font-semibold">{inspectingUser.referrals ?? inspectingUser.teamMembersCount ?? 0} Members</span>
+                          </div>
+                          <div className="dossier-row">
+                            <span className="d-label">Joined / Registered Date:</span>
+                            <span className="d-val text-muted">{inspectingUser.joinedDate || inspectingUser.joined || '2026-01-01'}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 2. Tasks & Quota Status */}
+                      <div className="dossier-card">
+                        <div className="dossier-card-header">
+                          <CheckSquare size={16} className="text-emerald-500" />
+                          <h4>Tasks Lifecycle & Pending</h4>
+                        </div>
+                        <div className="dossier-data-list">
+                          <div className="dossier-row">
+                            <span className="d-label">Daily Assigned Quota:</span>
+                            <span className="d-val font-bold">{inspectingUser.dailyQuota || 25} Tasks/day</span>
+                          </div>
+                          <div className="dossier-row">
+                            <span className="d-label">Completed Tasks Today:</span>
+                            <strong className="d-val text-emerald-600">
+                              {inspectingUser.dailyCompleted ?? inspectingUser.completedTasks ?? 0} Tasks
+                            </strong>
+                          </div>
+                          <div className="dossier-row">
+                            <span className="d-label">Tasks Currently Pending:</span>
+                            <strong className="d-val text-amber-600 font-bold bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                              {inspectingUser.pendingTasks ?? Math.max(0, (inspectingUser.dailyQuota || 25) - (inspectingUser.dailyCompleted ?? inspectingUser.completedTasks ?? 0))} Pending
+                            </strong>
+                          </div>
+                          <div className="dossier-row">
+                            <span className="d-label">Task Completion Rate:</span>
+                            <span className="d-val font-semibold">
+                              {Math.min(100, Math.round(((inspectingUser.dailyCompleted ?? inspectingUser.completedTasks ?? 0) / (inspectingUser.dailyQuota || 25)) * 100))}%
+                            </span>
+                          </div>
+                          <div className="mini-task-progress-track mt-2">
+                            <div
+                              className="mini-task-progress-fill"
+                              style={{
+                                width: `${Math.min(100, Math.round(((inspectingUser.dailyCompleted ?? inspectingUser.completedTasks ?? 0) / (inspectingUser.dailyQuota || 25)) * 100))}%`
+                              }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 3. Financial Balances & Ledger */}
+                      <div className="dossier-card">
+                        <div className="dossier-card-header">
+                          <Wallet size={16} className="text-blue-500" />
+                          <h4>Financial Ledger & Wallet</h4>
+                        </div>
+                        <div className="dossier-data-list">
+                          <div className="dossier-row">
+                            <span className="d-label">Available Balance:</span>
+                            <strong className="d-val text-primary-brand text-sm">
+                              ${(Number(inspectingUser.balance) || 0).toFixed(2)} USDT
+                            </strong>
+                          </div>
+                          <div className="dossier-row">
+                            <span className="d-label">Lifetime Task Earnings:</span>
+                            <span className="d-val text-emerald-600 font-semibold">
+                              +${(Number(inspectingUser.totalEarnings) || 0).toFixed(2)} USDT
+                            </span>
+                          </div>
+                          <div className="dossier-row">
+                            <span className="d-label">Total Deposits:</span>
+                            <span className="d-val font-semibold">
+                              ${(Number(inspectingUser.totalDeposit) || 0).toFixed(2)} USDT
+                            </span>
+                          </div>
+                          <div className="dossier-row">
+                            <span className="d-label">Total Withdrawals:</span>
+                            <span className="d-val text-red-600 font-semibold">
+                              -${(Number(inspectingUser.totalWithdraw) || 0).toFixed(2)} USDT
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 4. Wallet & Security */}
+                      <div className="dossier-card">
+                        <div className="dossier-card-header">
+                          <ShieldCheck size={16} className="text-purple-500" />
+                          <h4>TRC20 Wallet & Compliance</h4>
+                        </div>
+                        <div className="dossier-data-list">
+                          <div className="dossier-row flex-col items-start gap-1">
+                            <span className="d-label">TRON TRC20 Address:</span>
+                            <div className="flex items-center gap-1.5 w-full">
+                              <code className="text-xs font-mono bg-surface-secondary px-2 py-1 rounded border border-subtle break-all flex-1">
+                                {inspectingUser.walletAddress || inspectingUser.wallet || 'TNoaH87yqPKmZ7r6Tx98JkL10qV2xR8v1q'}
+                              </code>
+                              <button
+                                className="copy-mini-btn"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(inspectingUser.walletAddress || inspectingUser.wallet);
+                                  addNotification('info', `Copied wallet address for ${inspectingUser.name}`);
+                                }}
+                              >
+                                <Copy size={11} />
+                              </button>
+                            </div>
+                          </div>
+                          <div className="dossier-row mt-2">
+                            <span className="d-label">KYC Verification:</span>
+                            <span className="badge-rec">
+                              <CheckCircle2 size={11} />
+                              <span>{inspectingUser.kycStatus || inspectingUser.kyc || 'Verified'}</span>
+                            </span>
+                          </div>
+                          <div className="dossier-row">
+                            <span className="d-label">Account Network:</span>
+                            <span className="d-val font-mono">{inspectingUser.network || 'TRC20'}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Footer Actions */}
+                    <div className="modal-btn-row mt-4 pt-3 border-t">
+                      <button
+                        className="btn-outline w-full"
+                        onClick={() => {
+                          const u = inspectingUser;
+                          setInspectingUser(null);
+                          setEditingUser(u);
+                          setEditBalance((u.balance || 0).toString());
+                          setEditTier(u.vipLevel || u.vipTier || 'eBay');
+                          setEditStatus(u.status || 'Active');
+                          setEditWalletAddress(u.walletAddress || u.wallet || '');
+                          setEditKyc(u.kycStatus || u.kyc || 'Verified');
+                          setEditReferralCode(u.referralCode || u.code || '505282');
+                          setEditInvitedByCode(u.invitedByCode || u.referredByCode || '505282');
+                          setEditPendingTasks((u.pendingTasks ?? 25).toString());
+                          setEditCompletedTasks((u.completedTasks ?? 0).toString());
+                          setEditDailyQuota((u.dailyQuota ?? 25).toString());
+                        }}
+                      >
+                        <Edit2 size={14} />
+                        <span>Edit This User</span>
+                      </button>
+
+                      <button
+                        className="btn-primary w-full"
+                        onClick={() => {
+                          const uid = inspectingUser.id;
+                          setInspectingUser(null);
+                          switchUser(uid);
+                          setCurrentView('dashboard');
+                          setDashboardTab('home');
+                        }}
+                      >
+                        <UserCheck size={14} />
+                        <span>Login as {inspectingUser.name}</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>

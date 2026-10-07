@@ -1152,6 +1152,78 @@ html.dark .audit-card {
   align-items: flex-start;
 }
 
+/* Invitation Code Pill on Upper Side of Welcome Back */
+.hero-invite-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hero-invite-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 9999px;
+  padding: 4px 10px 4px 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.hero-invite-badge:hover {
+  background: rgba(255, 255, 255, 0.22);
+  border-color: rgba(255, 255, 255, 0.4);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+}
+
+.invite-tag-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.invite-code-number {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace, sans-serif;
+  font-size: 0.85rem;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: #fef08a;
+  background: rgba(0, 0, 0, 0.25);
+  padding: 2px 7px;
+  border-radius: 6px;
+  border: 1px solid rgba(254, 240, 138, 0.3);
+}
+
+.invite-code-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 9999px;
+  padding: 2px 8px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: white;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.invite-code-copy-btn:hover {
+  background: white;
+  color: #1e40af;
+}
+
 .hero-greeting h2 {
   font-size: 1.15rem;
   font-weight: 500;
@@ -7038,6 +7110,146 @@ html.dark .auth-segment-btn.active {
     height: 480px;
   }
 }
+
+/* ====================================================
+   ADMIN USER INVITATION & TASK TRACKING DOSSIER STYLES
+   ==================================================== */
+
+.user-invitation-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.badge-invited-pill {
+  display: inline-flex;
+  align-items: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #1e40af;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.task-status-cell {
+  min-width: 110px;
+}
+
+.badge-pending-tasks {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #d97706;
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.mini-task-progress-track {
+  width: 100%;
+  height: 4px;
+  background: #e2e8f0;
+  border-radius: 9999px;
+  overflow: hidden;
+}
+
+.mini-task-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #2563eb, #10b981);
+  border-radius: 9999px;
+  transition: width 0.3s ease;
+}
+
+/* User Dossier Modal Layout */
+.user-dossier-modal {
+  background: white;
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+}
+
+.user-avatar-mini.large {
+  width: 44px;
+  height: 44px;
+  font-size: 1.2rem;
+  font-weight: 800;
+}
+
+.dossier-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+@media (max-width: 640px) {
+  .dossier-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.dossier-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+
+.dossier-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.dossier-card-header h4 {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+}
+
+.dossier-data-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dossier-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.78rem;
+}
+
+.d-label {
+  color: #64748b;
+  font-weight: 500;
+}
+
+.d-val {
+  color: #0f172a;
+}
+
+.grid-three-col {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+@media (max-width: 640px) {
+  .grid-three-col {
+    grid-template-columns: 1fr;
+  }
+}
+
 
 
 

@@ -103,10 +103,8 @@ app.post('/api/auth/register', (req, res) => {
   }
 
   // Find referrer if code was provided
-  let referrer = null;
-  if (referralCode) {
-    referrer = db.users.find(u => u.referralCode === referralCode.trim());
-  }
+  const cleanRefCode = referralCode.trim();
+  let referrer = db.users.find(u => (u.referralCode === cleanRefCode || u.code === cleanRefCode));
 
   const newUserId = `usr_${Date.now()}`;
   const generatedCode = Math.floor(100000 + Math.random() * 900000).toString();
@@ -118,8 +116,12 @@ app.post('/api/auth/register', (req, res) => {
     name: name.trim(),
     email: email.trim().toLowerCase(),
     password,
+    code: generatedCode,
     referralCode: generatedCode,
-    referredBy: referrer ? referrer.id : null,
+    invitedByCode: cleanRefCode,
+    referredByCode: cleanRefCode,
+    referredByName: referrer ? referrer.name : `Code #${cleanRefCode}`,
+    referredBy: referrer ? referrer.id : cleanRefCode,
     avatar: name.trim().charAt(0).toUpperCase(),
     vipLevel: 'eBay',
     vipTierId: 'tier_ebay',
@@ -129,7 +131,8 @@ app.post('/api/auth/register', (req, res) => {
     totalWithdraw: 0.00,
     pendingRequests: 0,
     teamMembersCount: 0,
-    pendingTasks: 0,
+    referrals: 0,
+    pendingTasks: 25,
     completedTasks: 0,
     dailyQuota: 25,
     dailyCompleted: 0,
