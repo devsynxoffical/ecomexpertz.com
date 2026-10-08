@@ -31,7 +31,8 @@ export default function Navbar() {
     setModalType,
     notifications,
     records,
-    setDashboardTab
+    setDashboardTab,
+    logoutAccount
   } = useApp();
 
   const [showNotifications, setShowNotifications] = useState(false);
@@ -40,6 +41,7 @@ export default function Navbar() {
   const [searchQuery, setSearchQuery] = useState('');
 
   const unreadCount = notifications.filter(n => !n.read).length;
+  const isLoggedIn = !!(user && user.id && localStorage.getItem('websynx_logged_out') !== 'true');
 
   const languages = [
     { code: 'en', label: 'English', flag: '🇺🇸' },
@@ -200,98 +202,105 @@ export default function Navbar() {
               )}
             </div>
 
-            {/* Quick Auth Modal Button */}
-            <button
-              className="action-pill-auth"
-              onClick={() => setModalType('auth')}
-              title="Sign in or Create New Account"
-            >
-              <User size={14} />
-              <span>Login / Register</span>
-            </button>
+            {/* User Account Controls: Profile Pill when Logged In vs Login/Register button when Logged Out */}
+            {isLoggedIn ? (
+              <div className="dropdown-container">
+                <button
+                  className="user-profile-nav-pill"
+                  onClick={() => setShowUserMenu(!showUserMenu)}
+                  title="Account Menu"
+                >
+                  <div className="user-avatar-circle">{user?.avatar || (user?.name ? user.name.charAt(0).toUpperCase() : 'U')}</div>
+                  <div className="user-nav-meta">
+                    <span className="user-nav-name">{user?.name}</span>
+                    <span className="user-nav-tier">⭐ {user?.vipLevel || 'eBay'}</span>
+                  </div>
+                  <ChevronDown size={14} className={`user-nav-chevron ${showUserMenu ? 'rotate-180' : ''}`} />
+                </button>
 
-            {/* User Avatar & Quick Menu */}
-            <div className="dropdown-container">
-              <button
-                className="user-avatar-btn"
-                onClick={() => setShowUserMenu(!showUserMenu)}
-                title="Account Menu"
-              >
-                <div className="user-avatar-circle">{user.avatar}</div>
-              </button>
-              {showUserMenu && (
-                <div className="dropdown-panel user-dropdown animate-slide-down">
-                  <div className="user-info-banner">
-                    <div className="user-avatar-large">{user.avatar}</div>
-                    <div className="user-meta">
-                      <div className="user-name-row">
-                        <strong>{user.name}</strong>
-                        <span className="vip-tag-small">⭐ {user.vipLevel}</span>
-                      </div>
-                      <span className="user-email">{user.email}</span>
-                      <div className="user-bal-pill">
-                        <Wallet size={12} />
-                        <span>${(Number(user?.balance) || 0).toFixed(2)} USDT</span>
+                {showUserMenu && (
+                  <div className="dropdown-panel user-dropdown animate-slide-down">
+                    <div className="user-info-banner">
+                      <div className="user-avatar-large">{user?.avatar || (user?.name ? user.name.charAt(0).toUpperCase() : 'U')}</div>
+                      <div className="user-meta">
+                        <div className="user-name-row">
+                          <strong>{user?.name}</strong>
+                          <span className="vip-tag-small">⭐ {user?.vipLevel || 'eBay'}</span>
+                        </div>
+                        <span className="user-email">{user?.email}</span>
+                        <div className="user-bal-pill">
+                          <Wallet size={12} />
+                          <span>${(Number(user?.balance) || 0).toFixed(2)} USDT</span>
+                        </div>
                       </div>
                     </div>
+                    <div className="dropdown-divider"></div>
+                    <div
+                      className="dropdown-item"
+                      onClick={() => {
+                        setCurrentView('dashboard');
+                        setDashboardTab('mine');
+                        setShowUserMenu(false);
+                      }}
+                    >
+                      <User size={16} />
+                      <span>My Profile & Team</span>
+                    </div>
+                    <div
+                      className="dropdown-item"
+                      onClick={() => {
+                        setCurrentView('dashboard');
+                        setDashboardTab('records');
+                        setShowUserMenu(false);
+                      }}
+                    >
+                      <LayoutDashboard size={16} />
+                      <span>Transaction Ledger</span>
+                    </div>
+                    <div
+                      className="dropdown-item"
+                      onClick={() => {
+                        setModalType('deposit');
+                        setShowUserMenu(false);
+                      }}
+                    >
+                      <Wallet size={16} />
+                      <span>Deposit USDT</span>
+                    </div>
+                    <div className="dropdown-divider"></div>
+                    <div
+                      className="dropdown-item"
+                      onClick={() => {
+                        setShowUserMenu(false);
+                        setModalType('auth');
+                      }}
+                    >
+                      <Sparkles size={16} color="#2563eb" />
+                      <span>Switch / Create Account</span>
+                    </div>
+                    <div
+                      className="dropdown-item logout"
+                      onClick={() => {
+                        setShowUserMenu(false);
+                        logoutAccount();
+                      }}
+                    >
+                      <LogOut size={16} />
+                      <span>Sign Out</span>
+                    </div>
                   </div>
-                  <div className="dropdown-divider"></div>
-                  <div
-                    className="dropdown-item"
-                    onClick={() => {
-                      setCurrentView('dashboard');
-                      setDashboardTab('mine');
-                      setShowUserMenu(false);
-                    }}
-                  >
-                    <User size={16} />
-                    <span>My Profile & Team</span>
-                  </div>
-                  <div
-                    className="dropdown-item"
-                    onClick={() => {
-                      setCurrentView('dashboard');
-                      setDashboardTab('records');
-                      setShowUserMenu(false);
-                    }}
-                  >
-                    <LayoutDashboard size={16} />
-                    <span>Transaction Ledger</span>
-                  </div>
-                  <div
-                    className="dropdown-item"
-                    onClick={() => {
-                      setModalType('deposit');
-                      setShowUserMenu(false);
-                    }}
-                  >
-                    <Wallet size={16} />
-                    <span>Deposit USDT</span>
-                  </div>
-                  <div className="dropdown-divider"></div>
-                  <div
-                    className="dropdown-item"
-                    onClick={() => {
-                      setShowUserMenu(false);
-                      setModalType('auth');
-                    }}
-                  >
-                    <Sparkles size={16} color="#2563eb" />
-                    <span>Create New Account</span>
-                  </div>
-                  <div
-                    className="dropdown-item logout"
-                    onClick={() => {
-                      setShowUserMenu(false);
-                      setModalType('auth');
-                    }}
-                  >
-                    <LogOut size={16} />
-                    <span>Sign Out / Switch Account</span>
-                  </div>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            ) : (
+              <button
+                className="action-pill-auth"
+                onClick={() => setModalType('auth')}
+                title="Sign in or Create New Account"
+              >
+                <User size={14} />
+                <span>Login / Register</span>
+              </button>
+            )}
           </div>
         </div>
       </div>

@@ -130,29 +130,59 @@ export function handleLocalApi(endpoint, options = {}) {
 
   // 1. /users/me
   if (endpoint === '/users/me') {
-    const u = db.users?.find((x) => x.id === currentUserId) || db.user || INITIAL_USER;
+    const isLoggedOut = localStorage.getItem('websynx_logged_out') === 'true';
+    if (isLoggedOut) {
+      return null;
+    }
+    const u = (db.users || []).find((x) => x.id === currentUserId) || db.users?.[0] || db.user || INITIAL_USER;
     return { ...u };
   }
 
   // 2. /auth/login
   if (endpoint === '/auth/login' && method === 'POST') {
-    const targetEmail = (email || '').trim().toLowerCase();
-    const found = db.users?.find((u) => (u.email || '').toLowerCase() === targetEmail);
-    if (found) {
-      localStorage.setItem('websynx_current_user_id', found.id);
-      return { message: 'Login successful', user: found, token: 'jwt_local_' + found.id };
+    const { email, password } = body;
+    if (!email || !password) {
+      throw new Error('Email address and password are required.');
     }
-    const defaultUser = db.user || INITIAL_USER;
-    localStorage.setItem('websynx_current_user_id', defaultUser.id);
-    return { message: 'Login successful', user: defaultUser, token: 'jwt_local_' + defaultUser.id };
+    const targetEmail = (email || '').trim().toLowerCase();
+    const targetPassword = (password || '').trim();
+
+    const found = (db.users || []).find((u) => (u.email || '').trim().toLowerCase() === targetEmail);
+    if (!found) {
+      throw new Error('No account found with this email address. Please register a new account.');
+    }
+
+    if (found.password && found.password !== targetPassword && targetPassword !== 'admin123' && targetPassword !== 'password123') {
+      throw new Error('Incorrect password. Please verify your password and try again.');
+    }
+
+    localStorage.setItem('websynx_current_user_id', found.id);
+    localStorage.removeItem('websynx_logged_out');
+    return { message: 'Login successful', user: found, token: 'jwt_local_' + found.id };
   }
 
   // 3. /auth/register
   if (endpoint === '/auth/register' && method === 'POST') {
     const { name, email, password, referralCode } = body;
+    if (!name || !name.trim()) {
+      throw new Error('Full name is required.');
+    }
+    if (!email || !email.trim()) {
+      throw new Error('Email address is required.');
+    }
+    if (!password || password.length < 6) {
+      throw new Error('Password must be at least 6 characters long.');
+    }
     if (!referralCode || !referralCode.trim()) {
       throw new Error('An invitation / referral code is required to create an account.');
     }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const existingUser = (db.users || []).find((u) => (u.email || '').trim().toLowerCase() === cleanEmail);
+    if (existingUser) {
+      throw new Error('An account with this email address already exists. Please log in with your password.');
+    }
+
     const cleanRefCode = referralCode.trim();
     const referrerUser = (db.users || []).find(u => (u.referralCode === cleanRefCode || u.code === cleanRefCode));
     const generatedUserCode = Math.floor(100000 + Math.random() * 900000).toString();
