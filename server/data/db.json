@@ -977,7 +977,7 @@
     "agentName": "WebSynx Support",
     "welcomeMessage": "Hi there! 👋 How can we help you today? Our team usually replies within a few minutes.",
     "offlineMessage": "Our agents are currently offline. Leave a message and we will reply as soon as possible.",
-    "workingHours": "24/7 — Mon to Sun",
+    "workingHours": "24/7 - Mon to Sun",
     "online": true,
     "autoReply": true,
     "telegram": "https://t.me/websynx_support",

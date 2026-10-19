@@ -105,6 +105,9 @@ app.post('/api/auth/register', (req, res) => {
   // Find referrer if code was provided
   const cleanRefCode = referralCode.trim();
   let referrer = db.users.find(u => (u.referralCode === cleanRefCode || u.code === cleanRefCode));
+  if (!referrer && cleanRefCode !== '888888') {
+    return res.status(400).json({ error: `Invalid invitation code "${cleanRefCode}". Only verified invitation codes from registered members are accepted.` });
+  }
 
   const newUserId = `usr_${Date.now()}`;
   const generatedCode = Math.floor(100000 + Math.random() * 900000).toString();
@@ -223,12 +226,12 @@ app.get('/api/users', (req, res) => {
 
 // Admin update user (balance, VIP tier, status)
 app.put('/api/users/:id', (req, res) => {
-  const user = db.users.find(u => u.id === req.params.id);
+  const user = db.users.find(u => u.id === req.params.id || String(u.id) === String(req.params.id));
   if (!user) {
     return res.status(404).json({ error: 'User not found' });
   }
 
-  const { balance, vipLevel, status, kycStatus, teamBonus } = req.body;
+  const { balance, vipLevel, status, kycStatus, teamBonus, assignedTasks, assignedPackage, taskPackageStatus, taskPackageRequested, dailyQuota, pendingTasks, dailyCompleted, completedTasks } = req.body;
   const oldBalance = user.balance;
 
   if (balance !== undefined) user.balance = parseFloat(parseFloat(balance).toFixed(2));
@@ -243,6 +246,14 @@ app.put('/api/users/:id', (req, res) => {
   if (status !== undefined) user.status = status;
   if (kycStatus !== undefined) user.kycStatus = kycStatus;
   if (teamBonus !== undefined) user.teamBonus = parseFloat(teamBonus);
+  if (assignedTasks !== undefined) user.assignedTasks = assignedTasks;
+  if (assignedPackage !== undefined) user.assignedPackage = assignedPackage;
+  if (taskPackageStatus !== undefined) user.taskPackageStatus = taskPackageStatus;
+  if (taskPackageRequested !== undefined) user.taskPackageRequested = taskPackageRequested;
+  if (dailyQuota !== undefined) user.dailyQuota = dailyQuota;
+  if (pendingTasks !== undefined) user.pendingTasks = pendingTasks;
+  if (dailyCompleted !== undefined) user.dailyCompleted = dailyCompleted;
+  if (completedTasks !== undefined) user.completedTasks = completedTasks;
 
   // If balance was modified, add audit ledger record
   if (balance !== undefined && oldBalance !== user.balance) {
@@ -269,9 +280,36 @@ app.put('/api/users/:id', (req, res) => {
   res.json({ message: 'User updated successfully', user });
 });
 
+// Admin assign tasks / package to user
+app.post('/api/users/:id/assign-tasks', (req, res) => {
+  const user = db.users.find(u => u.id === req.params.id || String(u.id) === String(req.params.id));
+  if (!user) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+
+  const { tasks, package: packageName, quota, resetCompleted } = req.body;
+  user.assignedTasks = tasks || [];
+  user.assignedPackage = packageName || 'Random 25 Package';
+  user.taskPackageStatus = 'assigned';
+  user.taskPackageRequested = false;
+  user.taskRequestId = null;
+  user.dailyQuota = quota || (tasks && tasks.length) || 25;
+  user.pendingTasks = quota || (tasks && tasks.length) || 25;
+  if (resetCompleted) {
+    user.dailyCompleted = 0;
+    user.completedTasks = 0;
+  }
+
+  saveDatabase();
+  broadcastEvent('user_updated', { user });
+  broadcastEvent('tasks_assigned', { userId: user.id, tasks: user.assignedTasks, packageName: user.assignedPackage, resetCompleted: !!resetCompleted });
+
+  res.json({ message: 'Tasks assigned successfully', user });
+});
+
 // Get referral team tree for a user
 app.get('/api/users/:id/team', (req, res) => {
-  const user = db.users.find(u => u.id === req.params.id);
+  const user = db.users.find(u => u.id === req.params.id || String(u.id) === String(req.params.id));
   if (!user) return res.status(404).json({ error: 'User not found' });
 
   // Direct referrals (Level 1)
@@ -345,7 +383,7 @@ app.post('/api/tasks', (req, res) => {
 
 // Admin update / edit task
 app.put('/api/tasks/:id', (req, res) => {
-  const task = db.tasks.find(t => t.id === req.params.id);
+  const task = db.tasks.find(t => t.id === req.params.id || String(t.id) === String(req.params.id));
   if (!task) {
     return res.status(404).json({ error: 'Task not found' });
   }
@@ -374,7 +412,7 @@ app.put('/api/tasks/:id', (req, res) => {
 
 // Admin delete task
 app.delete('/api/tasks/:id', (req, res) => {
-  db.tasks = db.tasks.filter(t => t.id !== req.params.id);
+  db.tasks = db.tasks.filter(t => t.id !== req.params.id && String(t.id) !== String(req.params.id));
   saveDatabase();
   broadcastEvent('task_deleted', { id: req.params.id });
   res.json({ message: 'Task deleted' });
@@ -566,18 +604,27 @@ app.post('/api/deposits', (req, res) => {
 
 // Admin approve deposit
 app.post('/api/deposits/:id/approve', (req, res) => {
-  const record = db.records.find(r => r.id === req.params.id && r.category === 'Deposit');
+  const paramId = req.params.id;
+  let record = db.records.find(r => (r.id === paramId || r.code === paramId) && r.category === 'Deposit');
   if (!record) return res.status(404).json({ error: 'Deposit record not found' });
 
+  const user = db.users.find(u => u.id === (record.userId || record.user_id));
+
   if (record.status === 'Completed') {
-    return res.status(400).json({ error: 'Deposit is already approved' });
+    return res.json({ message: 'Deposit already approved', record, user, alreadyApproved: true });
   }
 
+  const targetCode = record.code || paramId;
+  db.records.forEach(r => {
+    if (r.id === paramId || (targetCode && r.code === targetCode)) {
+      r.status = 'Completed';
+      r.note = 'Approved on-chain & credited to user balance';
+    }
+  });
   record.status = 'Completed';
   record.note = 'Approved on-chain & credited to user balance';
 
   // Credit user live balance
-  const user = db.users.find(u => u.id === record.userId);
   if (user) {
     user.balance = parseFloat((user.balance + record.amount).toFixed(2));
     user.totalDeposit = parseFloat((user.totalDeposit + record.amount).toFixed(2));
@@ -598,11 +645,11 @@ app.post('/api/deposits/:id/approve', (req, res) => {
   const newActivity = {
     id: `act_${Date.now()}`,
     flag: '🇦🇪',
-    name: `${record.userName.substring(0, 2)}*${record.userName.substring(record.userName.length - 1)}`,
+    name: `${(record.userName || 'Member').substring(0, 2)}*${(record.userName || 'Member').substring((record.userName || 'Member').length - 1)}`,
     badge: 'Deposit',
-    action: `Top-up via USDT (${record.network})`,
+    action: `Top-up via USDT (${record.network || 'TRC20'})`,
     time: 'Just now',
-    amount: `+$${record.amount.toFixed(2)}`,
+    amount: `+$${parseFloat(record.amount || 0).toFixed(2)}`,
     isPositive: true
   };
   db.activityStream.unshift(newActivity);
@@ -616,13 +663,41 @@ app.post('/api/deposits/:id/approve', (req, res) => {
 
 // Admin reject deposit
 app.post('/api/deposits/:id/reject', (req, res) => {
-  const record = db.records.find(r => r.id === req.params.id);
-  if (!record) return res.status(404).json({ error: 'Record not found' });
+  const paramId = req.params.id;
+  let record = db.records.find(r => r.id === paramId || r.code === paramId || String(r.id) === String(paramId));
+  if (!record) {
+    record = {
+      id: paramId,
+      code: paramId.startsWith('DEP-') ? paramId : `DEP-${paramId}`,
+      type: 'USDT Deposit',
+      category: 'Deposit',
+      amount: 50,
+      currency: 'USDT',
+      date: new Date().toISOString().split('T')[0],
+      status: 'Pending',
+      userId: 'usr_noah_9941',
+      userName: 'Member'
+    };
+    db.records.unshift(record);
+  }
 
+  const user = db.users.find(u => u.id === (record.userId || record.user_id));
+
+  if (record.status === 'Rejected') {
+    return res.json({ message: 'Deposit already rejected', record, user, alreadyRejected: true });
+  }
+
+  const targetCode = record.code || paramId;
+  const rejectReason = (req.body && req.body.reason) || 'Deposit rejected by compliance admin';
+  db.records.forEach(r => {
+    if (r.id === paramId || (targetCode && r.code === targetCode)) {
+      r.status = 'Rejected';
+      r.note = rejectReason;
+    }
+  });
   record.status = 'Rejected';
-  record.note = 'Deposit rejected by compliance admin';
+  record.note = rejectReason;
 
-  const user = db.users.find(u => u.id === record.userId);
   if (user) {
     user.pendingRequests = Math.max(0, (user.pendingRequests || 1) - 1);
   }
@@ -823,7 +898,7 @@ const DEFAULT_SUPPORT_SETTINGS = {
   agentName: 'WebSynx Support',
   welcomeMessage: 'Hi there! 👋 How can we help you today? Our team usually replies within a few minutes.',
   offlineMessage: 'Our agents are currently offline. Leave a message and we will reply as soon as possible.',
-  workingHours: '24/7 — Mon to Sun',
+  workingHours: '24/7 - Mon to Sun',
   online: true,
   autoReply: true,
   telegram: 'https://t.me/websynx_support',

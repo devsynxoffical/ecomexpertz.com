@@ -1,6 +1,6 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
-import { FileText, Headphones } from 'lucide-react';
+import { FileText, Headphones, User } from 'lucide-react';
 
 export default function BottomNav() {
   const { dashboardTab, setDashboardTab, setCurrentView, currentView } = useApp();
@@ -74,6 +74,19 @@ export default function BottomNav() {
         </div>
         <span className="nav-tab-label">Support</span>
         {currentView === 'dashboard' && dashboardTab === 'support' && <span className="nav-tab-active-dot"></span>}
+      </button>
+
+      <button
+        type="button"
+        id="bottom-nav-mine"
+        className={`nav-tab-btn ${currentView === 'dashboard' && dashboardTab === 'mine' ? 'active' : ''}`}
+        onClick={() => handleTabClick('mine')}
+      >
+        <div className="nav-tab-icon">
+          <User size={22} strokeWidth={2.2} />
+        </div>
+        <span className="nav-tab-label">Mine</span>
+        {currentView === 'dashboard' && dashboardTab === 'mine' && <span className="nav-tab-active-dot"></span>}
       </button>
     </nav>
   );

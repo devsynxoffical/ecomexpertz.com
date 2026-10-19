@@ -6,34 +6,127 @@ import {
   MASKED_ACTIVITY_STREAM,
   INITIAL_ADMIN_USERS
 } from '../data/mockData';
+import { normalizeTask } from './supabaseService';
 
 const DB_KEY = 'websynx_persistent_db_v2';
 
 const DEFAULT_SUPPORT_SETTINGS = {
   enabled: true,
-  agentName: 'WebSynx Support',
+  agentName: 'Ecomxstocks Official Support',
   welcomeMessage: 'Hi there! 👋 How can we help you today? Our team usually replies within a few minutes.',
   offlineMessage: 'Our agents are currently offline. Leave a message and we will reply as soon as possible.',
-  workingHours: '24/7 — Mon to Sun',
+  workingHours: '24/7 - Mon to Sun Priority Desk',
   online: true,
   autoReply: true,
-  telegram: 'https://t.me/websynx_support',
-  whatsapp: 'https://wa.me/10000000000',
-  email: 'support@websynx.com'
+  telegram: 'https://t.me/ecomxstocks_support',
+  telegramChannel: 'https://t.me/ecomxstocks_official',
+  telegramSupportUser: '@Ecomxstocks_Support',
+  taskPendingMessage: 'Your request is pending. Admin is reviewing and will assign your task package shortly.',
+  telegramInstruction: 'Please message customer support on Telegram to expedite your task package assignment.'
+};
+
+export const deduplicateRecordsList = (recordsList) => {
+  if (!Array.isArray(recordsList)) return [];
+  const idMap = new Map();
+  const codeMap = new Map();
+  const result = [];
+
+  for (const r of recordsList) {
+    if (!r) continue;
+    const rId = r.id ? String(r.id) : null;
+    const rCode = r.code ? String(r.code) : null;
+
+    let existing = null;
+    if (rCode && codeMap.has(rCode)) {
+      existing = codeMap.get(rCode);
+    } else if (rId && idMap.has(rId)) {
+      existing = idMap.get(rId);
+    } else if (rCode && idMap.has(rCode)) {
+      existing = idMap.get(rCode);
+    } else if (rId && codeMap.has(rId)) {
+      existing = codeMap.get(rId);
+    }
+
+    if (existing) {
+      if (existing.status === 'Pending' && (r.status === 'Completed' || r.status === 'Rejected')) {
+        Object.assign(existing, r);
+      }
+      continue;
+    }
+
+    const cloned = { ...r };
+    if (rId) idMap.set(rId, cloned);
+    if (rCode) codeMap.set(rCode, cloned);
+    result.push(cloned);
+  }
+
+  return result;
+};
+
+export const ensureAllInitialTasks = (taskList) => {
+  if (!Array.isArray(taskList) || taskList.length === 0) return INITIAL_TASKS;
+  const existingMap = new Map(taskList.map(t => [String(t.id), t]));
+  const result = [...taskList];
+  for (const init of INITIAL_TASKS) {
+    if (!existingMap.has(String(init.id))) {
+      result.push(init);
+      existingMap.set(String(init.id), init);
+    }
+  }
+  return result;
 };
 
 function getLocalDatabase() {
   try {
     const raw = localStorage.getItem(DB_KEY);
     if (raw) {
-      return JSON.parse(raw);
+      const parsed = JSON.parse(raw);
+      let changed = false;
+
+      // Cleanse any legacy WebSynx names in supportSettings
+      if (parsed && parsed.supportSettings) {
+        if (!parsed.supportSettings.agentName || parsed.supportSettings.agentName.includes('WebSynx')) {
+          parsed.supportSettings.agentName = 'Ecomxstocks Official Support';
+          changed = true;
+        }
+        if (!parsed.supportSettings.telegram || parsed.supportSettings.telegram.includes('websynx')) {
+          parsed.supportSettings.telegram = 'https://t.me/ecomxstocks_support';
+          changed = true;
+        }
+        if (!parsed.supportSettings.telegramChannel || parsed.supportSettings.telegramChannel.includes('websynx')) {
+          parsed.supportSettings.telegramChannel = 'https://t.me/ecomxstocks_official';
+          changed = true;
+        }
+        if (!parsed.supportSettings.telegramSupportUser || parsed.supportSettings.telegramSupportUser.includes('WebSynx')) {
+          parsed.supportSettings.telegramSupportUser = '@Ecomxstocks_Support';
+          changed = true;
+        }
+      }
+
+      // Ensure all 25 learning tasks and catalogue tasks are present
+      if (!parsed.tasks || !Array.isArray(parsed.tasks) || parsed.tasks.length < 25) {
+        parsed.tasks = ensureAllInitialTasks(parsed.tasks || []);
+        changed = true;
+      } else {
+        const taskMap = new Map(parsed.tasks.map(t => [String(t.id), t]));
+        const missingAny = INITIAL_TASKS.some(it => !taskMap.has(String(it.id)));
+        if (missingAny) {
+          parsed.tasks = ensureAllInitialTasks(parsed.tasks);
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        saveLocalDatabase(parsed);
+      }
+      return parsed;
     }
   } catch (e) {
     console.warn('Error reading local database, resetting:', e);
   }
 
   const initial = {
-    user: INITIAL_USER,
+    user: null,
     users: INITIAL_ADMIN_USERS,
     records: INITIAL_RECORDS,
     tasks: INITIAL_TASKS,
@@ -61,7 +154,7 @@ function getLocalDatabase() {
           {
             id: 'msg-init-2',
             sender: 'admin',
-            agentName: 'WebSynx Support',
+            agentName: 'Ecomxstocks Official Support',
             text: 'Commissions are credited directly into your available balance immediately upon rating submission!',
             createdAt: new Date(Date.now() - 1800000).toISOString()
           }
@@ -121,12 +214,12 @@ export function subscribeLocalEvents(callback) {
 /**
  * Handle API endpoints locally in pure JavaScript when static host returns HTML 404
  */
-export function handleLocalApi(endpoint, options = {}) {
+export async function handleLocalApi(endpoint, options = {}) {
   const method = (options.method || 'GET').toUpperCase();
   const body = options.body ? JSON.parse(options.body) : {};
   const db = getLocalDatabase();
 
-  const currentUserId = localStorage.getItem('websynx_current_user_id') || 'usr_noah_9941';
+  const currentUserId = localStorage.getItem('websynx_current_user_id') || null;
 
   // 1. /users/me
   if (endpoint === '/users/me') {
@@ -134,8 +227,12 @@ export function handleLocalApi(endpoint, options = {}) {
     if (isLoggedOut) {
       return null;
     }
-    const u = (db.users || []).find((x) => x.id === currentUserId) || db.users?.[0] || db.user || INITIAL_USER;
-    return { ...u };
+    const currentUserId = localStorage.getItem('websynx_current_user_id');
+    if (!currentUserId) {
+      return null;
+    }
+    const u = (db.users || []).find((x) => x.id === currentUserId);
+    return u ? { ...u } : null;
   }
 
   // 2. /auth/login
@@ -157,6 +254,7 @@ export function handleLocalApi(endpoint, options = {}) {
     }
 
     localStorage.setItem('websynx_current_user_id', found.id);
+    localStorage.setItem('websynx_user', JSON.stringify(found));
     localStorage.removeItem('websynx_logged_out');
     return { message: 'Login successful', user: found, token: 'jwt_local_' + found.id };
   }
@@ -177,6 +275,12 @@ export function handleLocalApi(endpoint, options = {}) {
       throw new Error('An invitation / referral code is required to create an account.');
     }
 
+    const cleanName = name.trim();
+    const existingName = (db.users || []).find((u) => (u.name || '').trim().toLowerCase() === cleanName.toLowerCase());
+    if (existingName) {
+      throw new Error(`Username "${cleanName}" is already taken. Please choose a unique username.`);
+    }
+
     const cleanEmail = email.trim().toLowerCase();
     const existingUser = (db.users || []).find((u) => (u.email || '').trim().toLowerCase() === cleanEmail);
     if (existingUser) {
@@ -184,20 +288,24 @@ export function handleLocalApi(endpoint, options = {}) {
     }
 
     const cleanRefCode = referralCode.trim();
-    const referrerUser = (db.users || []).find(u => (u.referralCode === cleanRefCode || u.code === cleanRefCode));
+    const referrerUser = (db.users || []).find(u => (u.referralCode === cleanRefCode || u.code === cleanRefCode || u.referral_code === cleanRefCode));
+    if (!referrerUser && cleanRefCode !== '888888') {
+      throw new Error(`Invalid invitation code "${cleanRefCode}". Only verified invitation codes from registered members are accepted.`);
+    }
     const generatedUserCode = Math.floor(100000 + Math.random() * 900000).toString();
 
     const newUser = {
       id: `usr_${Date.now()}`,
       name: name.trim(),
-      email: email.trim().toLowerCase(),
+      email: cleanEmail,
+      password: password,
       code: generatedUserCode,
       referralCode: generatedUserCode,
       invitedByCode: cleanRefCode,
       referredByCode: cleanRefCode,
       referredByName: referrerUser ? referrerUser.name : `Code #${cleanRefCode}`,
       referredBy: referrerUser ? referrerUser.id : cleanRefCode,
-      avatar: name.charAt(0).toUpperCase(),
+      avatar: name.trim().charAt(0).toUpperCase(),
       vipLevel: 'eBay',
       vipTierId: 'tier_ebay',
       balance: 0.0,
@@ -223,10 +331,32 @@ export function handleLocalApi(endpoint, options = {}) {
       joinedDate: new Date().toISOString().split('T')[0],
       joined: new Date().toISOString().split('T')[0]
     };
+
+    if (referrerUser) {
+      referrerUser.teamMembersCount = (referrerUser.teamMembersCount || 0) + 1;
+      referrerUser.referrals = (referrerUser.referrals || 0) + 1;
+      const refRecord = {
+        id: `rec_ref_${Date.now()}`,
+        code: `REF-${Math.floor(1000000000 + Math.random() * 9000000000)}`,
+        type: 'Referral Signup',
+        category: 'Referral',
+        amount: 0.00,
+        currency: 'USDT',
+        date: new Date().toISOString().split('T')[0],
+        status: 'Completed',
+        note: `New team member registered: ${newUser.name} (Code #${cleanRefCode})`,
+        userId: referrerUser.id,
+        userName: referrerUser.name
+      };
+      db.records = [refRecord, ...(db.records || [])];
+    }
+
     db.users.unshift(newUser);
     saveLocalDatabase(db);
     localStorage.setItem('websynx_current_user_id', newUser.id);
-    emitLocalEvent('user_registered', { user: newUser, referrerId: referralCode });
+    localStorage.setItem('websynx_user', JSON.stringify(newUser));
+    localStorage.removeItem('websynx_logged_out');
+    emitLocalEvent('user_registered', { user: newUser, referrerId: cleanRefCode });
     return { message: 'Registration successful', user: newUser, token: 'jwt_local_' + newUser.id };
   }
 
@@ -235,24 +365,103 @@ export function handleLocalApi(endpoint, options = {}) {
     return db.users || INITIAL_ADMIN_USERS;
   }
 
+  // 4b. /users/:id/team
+  if (endpoint.includes('/team') && method === 'GET') {
+    const userId = endpoint.split('/')[2];
+    const currentUser = (db.users || []).find((u) => u.id === userId);
+    const userCode = currentUser ? (currentUser.referralCode || currentUser.code) : null;
+    const team = (db.users || []).filter((u) => 
+      u.referredBy === userId || 
+      (userCode && (u.referredByCode === userCode || u.invitedByCode === userCode))
+    );
+    return team;
+  }
+
+  // 4c. /users/:id/assign-tasks
+  if (endpoint.includes('/assign-tasks') && method === 'POST') {
+    const id = endpoint.split('/')[2];
+    const { tasks, package: packageName, quota, resetCompleted } = body;
+    let idx = (db.users || []).findIndex((u) => u.id === id || String(u.id) === String(id));
+    const updates = {
+      assignedTasks: tasks || [],
+      assigned_tasks: tasks || [],
+      assignedPackage: packageName || 'Random 25 Package',
+      assigned_package: packageName || 'Random 25 Package',
+      taskPackageStatus: 'assigned',
+      task_package_status: 'assigned',
+      taskPackageRequested: false,
+      task_package_requested: 0,
+      taskRequestId: null,
+      dailyQuota: quota || (tasks && tasks.length) || 25,
+      daily_quota: quota || (tasks && tasks.length) || 25,
+      pendingTasks: quota || (tasks && tasks.length) || 25,
+      pending_tasks: quota || (tasks && tasks.length) || 25,
+      ...(resetCompleted ? { dailyCompleted: 0, daily_completed: 0, completedTasks: 0, completed_tasks: 0 } : {})
+    };
+    let updated = null;
+    if (idx !== -1) {
+      db.users[idx] = { ...db.users[idx], ...updates };
+      updated = db.users[idx];
+    } else {
+      updated = { id, ...(db.user?.id === id ? db.user : {}), ...updates };
+      db.users = [updated, ...(db.users || [])];
+    }
+    if (db.user && (db.user.id === id || String(db.user.id) === String(id))) {
+      db.user = { ...db.user, ...updates };
+      localStorage.setItem('websynx_user', JSON.stringify(db.user));
+    }
+    saveLocalDatabase(db);
+    emitLocalEvent('user_updated', { user: updated });
+    return { message: 'Tasks assigned successfully', user: updated };
+  }
+
+  // 4d. /users/:id/notify
+  if (endpoint.includes('/notify') && method === 'POST') {
+    const id = endpoint.split('/')[2];
+    const { title, message, type = 'info' } = body;
+    const notif = {
+      id: `notif_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      title,
+      message,
+      time: 'Just now',
+      timestamp: new Date().toISOString(),
+      type,
+      read: false
+    };
+    try {
+      const key = `websynx_notifications_${id}`;
+      const saved = JSON.parse(localStorage.getItem(key) || '[]');
+      const updated = [notif, ...saved.filter(n => n.id !== notif.id)].slice(0, 50);
+      localStorage.setItem(key, JSON.stringify(updated));
+    } catch (e) {}
+    return { message: 'Notification dispatched', notif };
+  }
+
   // 5. /users/:id
   if (endpoint.startsWith('/users/') && method === 'PUT') {
     const id = endpoint.replace('/users/', '');
-    const idx = db.users.findIndex((u) => u.id === id);
+    let idx = (db.users || []).findIndex((u) => u.id === id || String(u.id) === String(id));
+    let updated = null;
     if (idx !== -1) {
       db.users[idx] = { ...db.users[idx], ...body };
-      if (db.user && db.user.id === id) db.user = { ...db.user, ...body };
-      saveLocalDatabase(db);
-      emitLocalEvent('user_updated', { user: db.users[idx] });
-      return { message: 'User updated', user: db.users[idx] };
+      updated = db.users[idx];
+    } else {
+      updated = { id, ...(db.user?.id === id ? db.user : {}), ...body };
+      db.users = [updated, ...(db.users || [])];
     }
-    return { message: 'User updated', user: body };
+    if (db.user && (db.user.id === id || String(db.user.id) === String(id))) {
+      db.user = { ...db.user, ...body };
+      localStorage.setItem('websynx_user', JSON.stringify(db.user));
+    }
+    saveLocalDatabase(db);
+    emitLocalEvent('user_updated', { user: updated });
+    return { message: 'User updated', user: updated };
   }
 
   // 6. /tasks
   if (endpoint === '/tasks' || endpoint.startsWith('/tasks?')) {
     if (method === 'GET') {
-      return db.tasks || INITIAL_TASKS;
+      return (db.tasks || INITIAL_TASKS).map(normalizeTask);
     }
     if (method === 'POST') {
       const newTask = {
@@ -271,17 +480,43 @@ export function handleLocalApi(endpoint, options = {}) {
   // 7. /tasks/:id
   if (endpoint.startsWith('/tasks/') && !endpoint.includes('submit')) {
     const id = endpoint.replace('/tasks/', '');
+    if (!Array.isArray(db.tasks)) {
+      db.tasks = ensureAllInitialTasks(db.tasks || []);
+    }
     if (method === 'PUT') {
-      const idx = db.tasks.findIndex((t) => t.id === id);
+      let updatedTask = null;
+      const idx = db.tasks.findIndex((t) => String(t.id) === String(id));
       if (idx !== -1) {
-        db.tasks[idx] = { ...db.tasks[idx], ...body };
-        saveLocalDatabase(db);
-        emitLocalEvent('task_updated', { task: db.tasks[idx] });
-        return { message: 'Task updated', task: db.tasks[idx] };
+        db.tasks[idx] = { ...db.tasks[idx], ...body, id: db.tasks[idx].id };
+        updatedTask = db.tasks[idx];
+      } else {
+        const initTask = (INITIAL_TASKS || []).find((t) => String(t.id) === String(id));
+        updatedTask = { ...(initTask || {}), ...body, id };
+        db.tasks = [updatedTask, ...db.tasks];
       }
+
+      // Sync updated task details across any user who has this task assigned
+      (db.users || []).forEach(u => {
+        if (Array.isArray(u.assignedTasks)) {
+          const uIdx = u.assignedTasks.findIndex(at => String(at.id) === String(id));
+          if (uIdx !== -1) {
+            u.assignedTasks[uIdx] = { ...u.assignedTasks[uIdx], ...body, id: u.assignedTasks[uIdx].id };
+          }
+        }
+      });
+
+      saveLocalDatabase(db);
+      emitLocalEvent('task_updated', { task: updatedTask });
+      return { message: 'Task updated', task: updatedTask };
     }
     if (method === 'DELETE') {
-      db.tasks = (db.tasks || []).filter((t) => t.id !== id);
+      db.tasks = (db.tasks || []).filter((t) => String(t.id) !== String(id));
+      // Also remove from any user's assigned tasks
+      (db.users || []).forEach(u => {
+        if (Array.isArray(u.assignedTasks)) {
+          u.assignedTasks = u.assignedTasks.filter(at => String(at.id) !== String(id));
+        }
+      });
       saveLocalDatabase(db);
       emitLocalEvent('task_deleted', { taskId: id });
       return { message: 'Task deleted' };
@@ -291,8 +526,14 @@ export function handleLocalApi(endpoint, options = {}) {
   // 8. /tasks/submit
   if (endpoint === '/tasks/submit' && method === 'POST') {
     const { taskId, userId } = body;
-    const task = db.tasks.find((t) => t.id === taskId) || db.tasks[0];
-    const user = db.users.find((u) => u.id === (userId || currentUserId)) || db.user;
+    const user = (db.users || []).find((u) => u.id === (userId || currentUserId)) || db.user;
+    let task = null;
+    if (user && Array.isArray(user.assignedTasks)) {
+      task = user.assignedTasks.find(t => t.id === taskId || String(t.id) === String(taskId));
+    }
+    if (!task) {
+      task = (db.tasks || []).find((t) => t.id === taskId || String(t.id) === String(taskId)) || (db.tasks && db.tasks[0]) || { price: 100, platform: 'eBay', title: 'Merchant Campaign Product Review' };
+    }
 
     const rate = task.commissionRate || 4.0;
     const commissionEarned = parseFloat(((task.price * rate) / 100).toFixed(2));
@@ -379,29 +620,92 @@ export function handleLocalApi(endpoint, options = {}) {
   // 11. /deposits/:id/approve & reject
   if (endpoint.includes('/deposits/') && endpoint.endsWith('/approve')) {
     const id = endpoint.split('/')[2];
-    const rec = db.records.find((r) => r.id === id);
-    if (rec) {
-      rec.status = 'Completed';
-      const user = db.users.find((u) => u.id === rec.userId) || db.user;
-      user.balance = parseFloat(((user.balance || 0) + rec.amount).toFixed(2));
-      user.totalDeposit = parseFloat(((user.totalDeposit || 0) + rec.amount).toFixed(2));
-      user.pendingRequests = Math.max(0, (user.pendingRequests || 1) - 1);
-      saveLocalDatabase(db);
-      emitLocalEvent('deposit_approved', { record: rec, user });
-      return { message: 'Deposit approved', record: rec, user };
+    let rec = (db.records || []).find((r) => r.id === id || r.code === id || String(r.id) === String(id));
+    if (!rec) {
+      rec = {
+        id,
+        code: id.startsWith('DEP-') ? id : `DEP-${id}`,
+        type: 'USDT Deposit',
+        category: 'Deposit',
+        amount: 50,
+        currency: 'USDT',
+        date: new Date().toISOString().split('T')[0],
+        status: 'Pending',
+        userId: currentUserId,
+        userName: db.user?.name || 'User'
+      };
+      db.records = [rec, ...(db.records || [])];
     }
+    const user = (db.users || []).find((u) => u.id === (rec.userId || rec.user_id)) || db.user;
+
+    // Guard against double approval / double credit
+    if (rec.status === 'Completed') {
+      return { message: 'Deposit already approved', record: rec, user, alreadyApproved: true };
+    }
+
+    const matchCode = rec.code || id;
+    (db.records || []).forEach((r) => {
+      if (r.id === id || r.code === matchCode || (r.code && r.code === rec.code)) {
+        r.status = 'Completed';
+        r.note = 'Deposit verified and credited';
+      }
+    });
+    rec.status = 'Completed';
+    rec.note = 'Deposit verified and credited';
+
+    if (user) {
+      user.balance = parseFloat(((user.balance || 0) + (rec.amount || 0)).toFixed(2));
+      user.totalDeposit = parseFloat(((user.totalDeposit || 0) + (rec.amount || 0)).toFixed(2));
+      user.pendingRequests = Math.max(0, (user.pendingRequests || 1) - 1);
+    }
+    db.records = deduplicateRecordsList(db.records);
+    saveLocalDatabase(db);
+    emitLocalEvent('deposit_approved', { record: rec, user });
+    return { message: 'Deposit approved', record: rec, user };
   }
   if (endpoint.includes('/deposits/') && endpoint.endsWith('/reject')) {
     const id = endpoint.split('/')[2];
-    const rec = db.records.find((r) => r.id === id);
-    if (rec) {
-      rec.status = 'Rejected';
-      const user = db.users.find((u) => u.id === rec.userId) || db.user;
-      user.pendingRequests = Math.max(0, (user.pendingRequests || 1) - 1);
-      saveLocalDatabase(db);
-      emitLocalEvent('deposit_rejected', { record: rec, user });
-      return { message: 'Deposit rejected', record: rec, user };
+    let rec = (db.records || []).find((r) => r.id === id || r.code === id || String(r.id) === String(id));
+    const reason = (body && (body.reason || body.note)) || 'Deposit unverified or invalid transaction hash';
+    if (!rec) {
+      rec = {
+        id,
+        code: id.startsWith('DEP-') ? id : `DEP-${id}`,
+        type: 'USDT Deposit',
+        category: 'Deposit',
+        amount: 50,
+        currency: 'USDT',
+        date: new Date().toISOString().split('T')[0],
+        status: 'Pending',
+        userId: currentUserId,
+        userName: db.user?.name || 'User'
+      };
+      db.records = [rec, ...(db.records || [])];
     }
+    const user = (db.users || []).find((u) => u.id === (rec.userId || rec.user_id)) || db.user;
+
+    // Guard against double rejection
+    if (rec.status === 'Rejected') {
+      return { message: 'Deposit already rejected', record: rec, user, alreadyRejected: true };
+    }
+
+    const matchCode = rec.code || id;
+    (db.records || []).forEach((r) => {
+      if (r.id === id || r.code === matchCode || (r.code && r.code === rec.code)) {
+        r.status = 'Rejected';
+        r.note = reason;
+      }
+    });
+    rec.status = 'Rejected';
+    rec.note = reason;
+
+    if (user) {
+      user.pendingRequests = Math.max(0, (user.pendingRequests || 1) - 1);
+    }
+    db.records = deduplicateRecordsList(db.records);
+    saveLocalDatabase(db);
+    emitLocalEvent('deposit_rejected', { record: rec, user });
+    return { message: 'Deposit rejected', record: rec, user };
   }
 
   // 12. /withdrawals
@@ -437,34 +741,67 @@ export function handleLocalApi(endpoint, options = {}) {
   // 13. /withdrawals/:id/approve & reject
   if (endpoint.includes('/withdrawals/') && endpoint.endsWith('/approve')) {
     const id = endpoint.split('/')[2];
-    const rec = db.records.find((r) => r.id === id);
-    if (rec) {
-      rec.status = 'Completed';
-      const user = db.users.find((u) => u.id === rec.userId) || db.user;
-      user.totalWithdraw = parseFloat(((user.totalWithdraw || 0) + Math.abs(rec.amount)).toFixed(2));
-      user.pendingRequests = Math.max(0, (user.pendingRequests || 1) - 1);
-      saveLocalDatabase(db);
-      emitLocalEvent('withdrawal_approved', { record: rec, user });
-      return { message: 'Withdrawal approved', record: rec, user };
+    let rec = (db.records || []).find((r) => r.id === id || r.code === id || String(r.id) === String(id));
+    if (!rec) {
+      rec = {
+        id,
+        code: id.startsWith('WTH-') ? id : `WTH-${id}`,
+        type: 'USDT Withdrawal',
+        category: 'Withdrawal',
+        amount: -50,
+        currency: 'USDT',
+        date: new Date().toISOString().split('T')[0],
+        status: 'Pending',
+        userId: currentUserId,
+        userName: db.user?.name || 'User'
+      };
+      db.records = [rec, ...(db.records || [])];
     }
+    rec.status = 'Completed';
+    rec.note = 'Dispatched on TRON network';
+    const user = (db.users || []).find((u) => u.id === (rec.userId || rec.user_id)) || db.user;
+    if (user) {
+      user.totalWithdraw = parseFloat(((user.totalWithdraw || 0) + Math.abs(rec.amount || 0)).toFixed(2));
+      user.pendingRequests = Math.max(0, (user.pendingRequests || 1) - 1);
+    }
+    saveLocalDatabase(db);
+    emitLocalEvent('withdrawal_approved', { record: rec, user });
+    return { message: 'Withdrawal approved', record: rec, user };
   }
   if (endpoint.includes('/withdrawals/') && endpoint.endsWith('/reject')) {
     const id = endpoint.split('/')[2];
-    const rec = db.records.find((r) => r.id === id);
-    if (rec) {
-      rec.status = 'Rejected';
-      const user = db.users.find((u) => u.id === rec.userId) || db.user;
-      user.balance = parseFloat(((user.balance || 0) + Math.abs(rec.amount)).toFixed(2)); // refund
-      user.pendingRequests = Math.max(0, (user.pendingRequests || 1) - 1);
-      saveLocalDatabase(db);
-      emitLocalEvent('withdrawal_rejected', { record: rec, user });
-      return { message: 'Withdrawal rejected & refunded', record: rec, user };
+    let rec = (db.records || []).find((r) => r.id === id || r.code === id || String(r.id) === String(id));
+    const reason = (body && (body.reason || body.note)) || 'Withdrawal rejected by admin';
+    if (!rec) {
+      rec = {
+        id,
+        code: id.startsWith('WTH-') ? id : `WTH-${id}`,
+        type: 'USDT Withdrawal',
+        category: 'Withdrawal',
+        amount: -50,
+        currency: 'USDT',
+        date: new Date().toISOString().split('T')[0],
+        status: 'Pending',
+        userId: currentUserId,
+        userName: db.user?.name || 'User'
+      };
+      db.records = [rec, ...(db.records || [])];
     }
+    rec.status = 'Rejected';
+    rec.note = reason;
+    const user = (db.users || []).find((u) => u.id === (rec.userId || rec.user_id)) || db.user;
+    if (user) {
+      user.balance = parseFloat(((user.balance || 0) + Math.abs(rec.amount || 0)).toFixed(2)); // refund
+      user.pendingRequests = Math.max(0, (user.pendingRequests || 1) - 1);
+    }
+    saveLocalDatabase(db);
+    emitLocalEvent('withdrawal_rejected', { record: rec, user });
+    return { message: 'Withdrawal rejected & refunded', record: rec, user };
   }
 
   // 14. /records
   if (endpoint === '/records' || endpoint.startsWith('/records?')) {
-    return db.records || INITIAL_RECORDS;
+    return deduplicateRecordsList(db.records || INITIAL_RECORDS);
   }
 
   // 15. /vip-tiers
@@ -490,10 +827,17 @@ export function handleLocalApi(endpoint, options = {}) {
   // 17. /support/settings
   if (endpoint === '/support/settings') {
     if (method === 'GET') {
-      return db.supportSettings || DEFAULT_SUPPORT_SETTINGS;
+      const s = { ...(db.supportSettings || DEFAULT_SUPPORT_SETTINGS) };
+      if (!s.agentName || s.agentName.includes('WebSynx')) {
+        s.agentName = 'Ecomxstocks Official Support';
+      }
+      return s;
     }
     if (method === 'PUT') {
       db.supportSettings = { ...(db.supportSettings || DEFAULT_SUPPORT_SETTINGS), ...body };
+      if (!db.supportSettings.agentName || db.supportSettings.agentName.includes('WebSynx')) {
+        db.supportSettings.agentName = 'Ecomxstocks Official Support';
+      }
       saveLocalDatabase(db);
       emitLocalEvent('support_settings_updated', { settings: db.supportSettings });
       return db.supportSettings;

@@ -1,6 +1,7 @@
 /* WebSynx Global Styles - Modern Website & Task Platform (Clean Electric Blue & Navy Palette - No Purple) */
 :root {
-  --font-main: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-main: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
   
   /* Primary & Brand Colors (Clean High-Performance Sapphire & Navy Blue) */
   --primary-brand: #2563eb;
@@ -170,3 +171,16 @@ a {
 .animate-slide-down {
   animation: slideDown 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
+
+/* Tabular numerals & Financial Design Utilities */
+.tabular-nums,
+.financial-num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' on, 'lnum' on;
+}
+
+.mono-num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+

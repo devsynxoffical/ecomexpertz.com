@@ -10,9 +10,14 @@ import {
   Inbox,
   ArrowLeft,
   Save,
-  Mail
+  Mail,
+  ExternalLink,
+  Radio,
+  HelpCircle,
+  ShieldCheck
 } from 'lucide-react';
 import { api } from '../services/api';
+import { useApp } from '../context/AppContext';
 
 const formatTime = (iso) => {
   try {
@@ -310,14 +315,17 @@ export default function AdminSupportPanel({ supportState }) {
   );
 }
 
-function SupportSettingsForm() {
-  const [form, setForm] = useState(null);
+export function SupportSettingsForm() {
+  const { supportSettings, updateSupportSettings } = useApp();
+  const [form, setForm] = useState(() => supportSettings || {});
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    api.getSupportSettings().then(setForm).catch(() => setForm({}));
-  }, []);
+    if (supportSettings) {
+      setForm((prev) => ({ ...prev, ...supportSettings }));
+    }
+  }, [supportSettings]);
 
   if (!form) return <div className="support-empty">Loading settings…</div>;
 
@@ -327,10 +335,13 @@ function SupportSettingsForm() {
     e.preventDefault();
     setSaving(true);
     try {
-      const updated = await api.updateSupportSettings(form);
-      setForm(updated);
+      if (updateSupportSettings) {
+        await updateSupportSettings(form);
+      } else {
+        await api.updateSupportSettings(form);
+      }
       setSaved(true);
-      setTimeout(() => setSaved(false), 2500);
+      setTimeout(() => setSaved(false), 3000);
     } catch (err) {
       alert('Failed to save support settings: ' + err.message);
     } finally {
@@ -358,25 +369,128 @@ function SupportSettingsForm() {
 
   return (
     <form className="support-settings-card" onSubmit={handleSave}>
+      {/* 1. TELEGRAM CHANNELS & SUPPORT (PRIMARY SECTION) */}
       <div className="support-settings-section">
-        <h4>Chat Widget</h4>
-        <Toggle id="support-enabled" field="enabled" label="Show support chat button" desc="Display the floating chat button to all users on the dashboard." />
-        <Toggle id="support-online" field="online" label="Agents online" desc="When off, users see the offline message and an 'Offline' status." />
-        <Toggle id="support-autoreply" field="autoReply" label="Automatic first reply" desc="Send an instant acknowledgement after a user's first message." />
-      </div>
+        <div className="flex items-center justify-between mb-2">
+          <h4>✈️ Official Telegram Channels & Customer Support</h4>
+          <span className="badge-active-pill" style={{ background: '#e0f2fe', color: '#0369a1', borderColor: '#bae6fd' }}>
+            Live Integration
+          </span>
+        </div>
+        <p className="text-xs text-muted mb-3">
+          Configure official verified Telegram channels and support handles. These links are automatically embedded across the awaiting task assignment card, customer support drawer, and member profile.
+        </p>
 
-      <div className="support-settings-section">
-        <h4>Messages</h4>
         <div className="grid-two-col">
           <div className="input-group">
-            <label className="input-label">Agent / Team Display Name</label>
-            <input className="text-input-field" value={form.agentName || ''} onChange={(e) => set('agentName', e.target.value)} />
+            <label className="input-label flex items-center justify-between">
+              <span>Customer Support Telegram Link</span>
+              {form.telegram && (
+                <a href={form.telegram} target="_blank" rel="noopener noreferrer" className="text-xs text-primary-brand flex items-center gap-0.5">
+                  <span>Test Link</span> <ExternalLink size={10} />
+                </a>
+              )}
+            </label>
+            <input
+              type="url"
+              className="text-input-field"
+              value={form.telegram || ''}
+              onChange={(e) => set('telegram', e.target.value)}
+              placeholder="https://t.me/ecomxstocks_support"
+              required
+            />
+            <span className="text-[11px] text-muted mt-1">Direct 1-on-1 customer service desk for clients.</span>
           </div>
+
           <div className="input-group">
-            <label className="input-label">Working Hours</label>
-            <input className="text-input-field" value={form.workingHours || ''} onChange={(e) => set('workingHours', e.target.value)} placeholder="e.g. 9:00–22:00 UTC" />
+            <label className="input-label flex items-center justify-between">
+              <span>Official Telegram Announcement Channel</span>
+              {form.telegramChannel && (
+                <a href={form.telegramChannel} target="_blank" rel="noopener noreferrer" className="text-xs text-primary-brand flex items-center gap-0.5">
+                  <span>Test Link</span> <ExternalLink size={10} />
+                </a>
+              )}
+            </label>
+            <input
+              type="url"
+              className="text-input-field"
+              value={form.telegramChannel || ''}
+              onChange={(e) => set('telegramChannel', e.target.value)}
+              placeholder="https://t.me/ecomxstocks_official"
+            />
+            <span className="text-[11px] text-muted mt-1">Broadcast channel for announcements, updates & proofs.</span>
           </div>
         </div>
+
+        <div className="grid-two-col mt-3">
+          <div className="input-group">
+            <label className="input-label">Support Handle / Username</label>
+            <input
+              type="text"
+              className="text-input-field font-mono"
+              value={form.telegramSupportUser || ''}
+              onChange={(e) => set('telegramSupportUser', e.target.value)}
+              placeholder="@Ecomxstocks_Support"
+            />
+            <span className="text-[11px] text-muted mt-1">Displayed on buttons (e.g. "Message Support on Telegram (@Ecomxstocks_Support)").</span>
+          </div>
+
+          <div className="input-group">
+            <label className="input-label">Support Agent / Team Name</label>
+            <input
+              className="text-input-field"
+              value={form.agentName || ''}
+              onChange={(e) => set('agentName', e.target.value)}
+              placeholder="Ecomxstocks Official Support"
+            />
+          </div>
+        </div>
+
+        {/* Task Assignment Instructions to Client */}
+        <div className="input-group mt-3">
+          <label className="input-label">Task Request Pending Message (Shown on Awaiting Card)</label>
+          <textarea
+            className="text-input-field support-textarea"
+            rows={2}
+            value={form.taskPendingMessage || ''}
+            onChange={(e) => set('taskPendingMessage', e.target.value)}
+            placeholder="Your request is pending. Admin is reviewing and will assign your task package shortly."
+          />
+        </div>
+
+        <div className="input-group mt-3">
+          <label className="input-label">Telegram Instruction for Clients</label>
+          <textarea
+            className="text-input-field support-textarea"
+            rows={2}
+            value={form.telegramInstruction || ''}
+            onChange={(e) => set('telegramInstruction', e.target.value)}
+            placeholder="Please message our customer support on Telegram with your Request ID to expedite your task package assignment."
+          />
+          <span className="text-[11px] text-muted mt-1">Shown inside the Telegram card on the user's task waiting screen.</span>
+        </div>
+      </div>
+
+      {/* 2. WORKING HOURS */}
+      <div className="support-settings-section">
+        <h4>Working Hours & Desk Availability</h4>
+        <div className="input-group">
+          <label className="input-label">Working Hours / Priority Schedule</label>
+          <input
+            className="text-input-field"
+            value={form.workingHours || ''}
+            onChange={(e) => set('workingHours', e.target.value)}
+            placeholder="24/7 - Mon to Sun Priority Desk"
+          />
+        </div>
+      </div>
+
+      {/* 3. CHAT WIDGET & AUTO-REPLY SETTINGS */}
+      <div className="support-settings-section">
+        <h4>Live Chat Widget & Messages</h4>
+        <Toggle id="support-enabled" field="enabled" label="Show support chat button" desc="Display floating chat button to all users on the dashboard." />
+        <Toggle id="support-online" field="online" label="Agents online" desc="When off, users see the offline message and an 'Offline' status." />
+        <Toggle id="support-autoreply" field="autoReply" label="Automatic first reply" desc="Send an instant acknowledgement after a user's first message." />
         <div className="input-group mt-3">
           <label className="input-label">Welcome Message (online)</label>
           <textarea className="text-input-field support-textarea" rows={2} value={form.welcomeMessage || ''} onChange={(e) => set('welcomeMessage', e.target.value)} />
@@ -387,32 +501,15 @@ function SupportSettingsForm() {
         </div>
       </div>
 
-      <div className="support-settings-section">
-        <h4>External Contact Channels</h4>
-        <div className="grid-two-col">
-          <div className="input-group">
-            <label className="input-label">Telegram Link</label>
-            <input type="url" className="text-input-field" value={form.telegram || ''} onChange={(e) => set('telegram', e.target.value)} placeholder="https://t.me/yourchannel" />
-          </div>
-          <div className="input-group">
-            <label className="input-label">WhatsApp Link</label>
-            <input type="url" className="text-input-field" value={form.whatsapp || ''} onChange={(e) => set('whatsapp', e.target.value)} placeholder="https://wa.me/123456789" />
-          </div>
-        </div>
-        <div className="input-group mt-3">
-          <label className="input-label">Support Email</label>
-          <div className="input-icon-field-wrap">
-            <Mail size={15} className="input-field-left-icon" />
-            <input type="email" className="text-input-field with-icon" value={form.email || ''} onChange={(e) => set('email', e.target.value)} placeholder="support@example.com" />
-          </div>
-        </div>
-      </div>
-
       <div className="support-settings-footer">
-        {saved && <span className="support-saved-msg"><CheckCircle2 size={14} /> Settings saved & pushed live</span>}
+        {saved && (
+          <span className="support-saved-msg flex items-center gap-1 text-emerald-600 font-semibold text-xs">
+            <CheckCircle2 size={16} /> Telegram channels & support settings saved & pushed live!
+          </span>
+        )}
         <button type="submit" className="btn-primary" disabled={saving} id="admin-support-save">
           <Save size={15} />
-          <span>{saving ? 'Saving…' : 'Save Support Settings'}</span>
+          <span>{saving ? 'Saving…' : 'Save Telegram & Support Settings'}</span>
         </button>
       </div>
     </form>

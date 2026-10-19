@@ -22,14 +22,21 @@ import {
   Award,
   Sparkles,
   User,
+  Users,
+  Share2,
+  Layers,
+  Clock,
   Eye,
   EyeOff,
   Mail,
   Key,
   Gift,
-  ExternalLink
+  ExternalLink,
+  ShoppingBag,
+  Send,
+  CheckCircle
 } from 'lucide-react';
-import { getProductUrl, openProductUrl } from '../utils/productUrl';
+import { getProductUrl, openProductUrl, getProductImage } from '../utils/productUrl';
 
 export default function Modals() {
   const {
@@ -56,24 +63,26 @@ export default function Modals() {
         {modalType === 'task' && <TaskExecutionModal task={selectedTask} onClose={() => setModalType(null)} />}
         {modalType === 'apk' && <ApkModal onClose={() => setModalType(null)} />}
         {modalType === 'kyc' && <KycModal onClose={() => setModalType(null)} />}
-        {modalType === 'auth' && <AuthModal onClose={() => setModalType(null)} />}
+        {(modalType === 'auth' || modalType === 'seller') && (
+          <AuthModal onClose={() => setModalType(null)} />
+        )}
+        {(modalType === 'team' || modalType === 'referral' || modalType === 'invite') && (
+          <ReferralTeamModal onClose={() => setModalType(null)} />
+        )}
       </div>
     </div>
   );
 }
 
-// 1. USDT TRC20 DEPOSIT & DUMMY PRACTICE DEPOSIT MODAL
+// 1. USDT CRYPTO DEPOSIT MODAL
 function DepositModal({ onClose }) {
-  const { submitDeposit, claimDummyDeposit, user, systemDepositAccounts } = useApp();
-  const [depositTab, setDepositTab] = useState('real'); // 'real' | 'demo'
+  const { submitDeposit, user, systemDepositAccounts, setDashboardTab } = useApp();
   const [network, setNetwork] = useState('TRC20');
   const [amount, setAmount] = useState('50.00');
-  const [demoAmount, setDemoAmount] = useState('300.00');
   const [txHash, setTxHash] = useState('');
   const [copied, setCopied] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submittedCode, setSubmittedCode] = useState(null);
-  const [demoSuccessMsg, setDemoSuccessMsg] = useState(null);
 
   const depositAddress = network === 'ERC20'
     ? (systemDepositAccounts?.erc20Address || '0x71C94156b53982e0C63810a972c72b04B46bF022')
@@ -87,98 +96,63 @@ function DepositModal({ onClose }) {
     setTimeout(() => setCopied(false), 2500);
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!amount || parseFloat(amount) <= 0) return;
-    setIsSubmitting(true);
-    setTimeout(() => {
-      const rec = submitDeposit(amount, txHash, network);
-      setIsSubmitting(false);
-      setSubmittedCode(rec.code);
-    }, 600);
-  };
-
-  const handleClaimDummy = async (val) => {
-    const amt = val || parseFloat(demoAmount);
-    if (!amt || amt <= 0) return;
+    if (isSubmitting || !amount || parseFloat(amount) <= 0) return;
     setIsSubmitting(true);
     try {
-      await claimDummyDeposit(amt);
-      setIsSubmitting(false);
-      setDemoSuccessMsg(`+$${amt.toFixed(2)} Practice Demo USDT successfully added to your account! You can now test and complete all 25 learning tasks.`);
-      try {
-        confetti({
-          particleCount: 70,
-          spread: 60,
-          origin: { y: 0.6 }
-        });
-      } catch (err) {}
+      const rec = await submitDeposit(amount, txHash, network);
+      setSubmittedCode(rec?.code || rec?.id || 'DEP-PENDING');
     } catch (err) {
+      console.error('Failed to submit deposit:', err);
+    } finally {
       setIsSubmitting(false);
-      alert('Error claiming demo funds: ' + err.message);
     }
   };
 
-  if (demoSuccessMsg) {
-    return (
-      <div className="modal-box text-center animate-fade-in">
-        <div className="modal-header">
-          <h3>🎓 Practice Deposit Credited!</h3>
-          <button className="close-btn" onClick={onClose}><X size={18} /></button>
-        </div>
-        <div className="success-icon-wrap">
-          <CheckCircle2 size={54} color="#10b981" />
-        </div>
-        <h4 className="mt-3">Demo Funds Ready for Learning</h4>
-        <p className="modal-desc mt-1">
-          {demoSuccessMsg}
-        </p>
-        <div className="profit-highlight-card mt-3">
-          <span className="highlight-label">Updated Available Balance</span>
-          <div className="profit-amount">${user.balance.toFixed(2)} <span className="highlight-unit">USDT</span></div>
-        </div>
-        <div className="alert-box-info mt-3 text-left">
-          <AlertCircle size={16} />
-          <span>You can now complete all 25 beginner learning tasks (Step 1 to Step 25) and test the deposit restriction system without financial risk!</span>
-        </div>
-        <button className="btn-primary w-full mt-4" onClick={onClose}>
-          Start Learning Tasks Now
-        </button>
-      </div>
-    );
-  }
-
   if (submittedCode) {
+    const displayCode = typeof submittedCode === 'object'
+      ? (submittedCode?.code || submittedCode?.id || 'DEP-PENDING')
+      : String(submittedCode || 'DEP-PENDING');
+
     return (
       <div className="modal-box text-center">
         <div className="modal-header">
-          <h3>Deposit Submitted</h3>
+          <h3>Payment Request Sent</h3>
           <button className="close-btn" onClick={onClose}><X size={18} /></button>
         </div>
         <div className="success-icon-wrap">
           <CheckCircle2 size={54} color="#10b981" />
         </div>
-        <h4 className="mt-3">Deposit Request Queued</h4>
+        <h4 className="mt-3">Payment Request Sent Successfully</h4>
         <p className="modal-desc">
-          Your deposit of <strong>{amount} USDT</strong> has been registered under record:
+          Your payment deposit request of <strong>{amount} USDT</strong> has been sent to admin for verification under record:
         </p>
         <div className="code-pill mt-2">
-          <code>{submittedCode}</code>
+          <code>{displayCode}</code>
         </div>
         <div className="alert-box-info mt-4">
           <AlertCircle size={16} />
-          <span>Status: <strong>Awaiting admin approval</strong>. You can inspect and approve it directly in the Admin Panel!</span>
+          <span>Status: <strong>Payment request sent. Awaiting admin review & network confirmation.</strong> Your balance will update automatically upon verification.</span>
         </div>
-        <div className="modal-btn-row mt-4">
-          <button className="btn-outline w-full" onClick={() => {
+        <div className="modal-btn-row mt-4" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <button className="btn-primary w-full" onClick={() => {
             onClose();
-            setDashboardTab('records');
+            setDashboardTab('platform-tasks');
           }}>
-            Check in Records
+            Go to Tasks & Request Package →
           </button>
-          <button className="btn-primary w-full" onClick={onClose}>
-            Return to Dashboard
-          </button>
+          <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
+            <button className="btn-outline" style={{ flex: 1 }} onClick={() => {
+              onClose();
+              setDashboardTab('records');
+            }}>
+              Check in Records
+            </button>
+            <button className="btn-outline" style={{ flex: 1 }} onClick={onClose}>
+              Dashboard
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -193,234 +167,145 @@ function DepositModal({ onClose }) {
           </div>
           <div>
             <h3>Deposit USDT</h3>
-            <span className="sub-text">Top-up balance or claim $300 demo funds for 25 learning tasks</span>
+            <span className="sub-text">Top-up balance securely via cryptocurrency gateway (TRC20, ERC20, BEP20)</span>
           </div>
         </div>
         <button className="close-btn" onClick={onClose}><X size={18} /></button>
       </div>
 
-      {/* Main Mode Toggle: Real vs Demo Learning Deposit */}
-      <div className="deposit-mode-tabs mt-3">
-        <button
-          type="button"
-          className={`mode-tab-btn ${depositTab === 'real' ? 'active' : ''}`}
-          onClick={() => setDepositTab('real')}
-        >
-          <Zap size={15} />
-          <span>Live TRC20 Gateway</span>
-        </button>
-        <button
-          type="button"
-          className={`mode-tab-btn ${depositTab === 'demo' ? 'active highlight' : ''}`}
-          onClick={() => setDepositTab('demo')}
-        >
-          <span>🎓 Practice Demo Funds ($300 Pack)</span>
-        </button>
-      </div>
-
-      {depositTab === 'demo' ? (
-        /* ================= DUMMY / PRACTICE DEPOSIT FOR LEARNING ================= */
-        <div className="demo-deposit-section animate-fade-in mt-3">
-          <div className="demo-info-banner">
-            <div className="demo-banner-icon">
-              <span>💡</span>
-            </div>
-            <div className="demo-banner-text">
-              <strong>Learning & Testing Sandbox Mode ($300 Testing Deposit)</strong>
-              <p>
-                Get instant risk-free demo USDT into your wallet. Use these funds to complete all <strong>25 learning tasks</strong> (from Step 1 requiring $10 deposit up to Step 25 requiring $300), test deposit restriction barriers, and learn the platform mechanics safely.
-              </p>
-            </div>
-          </div>
-
-          <div className="input-group mt-3">
-            <label className="input-label">Select Practice Amount Preset</label>
-            <div className="quick-amount-row">
-              {[
-                { val: '10', label: '+$10 (Step 1)' },
-                { val: '50', label: '+$50 (Step 5)' },
-                { val: '100', label: '+$100' },
-                { val: '300', label: '+$300 (25 Tasks Pack ⭐)' },
-                { val: '500', label: '+$500 (Walmart Tier)' }
-              ].map((item) => (
-                <button
-                  type="button"
-                  key={item.val}
-                  className={`preset-btn ${demoAmount === item.val ? 'selected' : ''}`}
-                  onClick={() => setDemoAmount(item.val)}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="input-group mt-3">
-            <label className="input-label">Or Enter Custom Demo Amount</label>
-            <div className="amount-input-wrap">
-              <span className="currency-symbol">$</span>
-              <input
-                type="number"
-                step="1"
-                min="10"
-                value={demoAmount}
-                onChange={(e) => setDemoAmount(e.target.value)}
-                className="text-input-field"
-              />
-              <span className="currency-suffix">USDT (Demo)</span>
-            </div>
-          </div>
-
-          <div className="alert-box-info mt-3">
-            <Shield size={15} />
-            <span>Practice demo funds simulate real account deposits and allow you to unlock all deposit-restricted tasks.</span>
-          </div>
-
-          <button
-            type="button"
-            className="btn-primary w-full mt-4"
-            disabled={isSubmitting || !demoAmount || parseFloat(demoAmount) <= 0}
-            onClick={() => handleClaimDummy(parseFloat(demoAmount))}
-          >
-            {isSubmitting ? 'Crediting Demo Funds...' : `Claim +$${parseFloat(demoAmount || 0).toFixed(2)} Demo USDT for Testing`}
-          </button>
-        </div>
-      ) : (
-        /* ================= REAL TRC20 DEPOSIT ================= */
-        <div className="real-deposit-section animate-fade-in">
-          <div className="network-selector mt-3">
-            <label className="input-label">Select Network</label>
-            <div className="network-pills">
-              <button
-                type="button"
-                className={`net-pill ${network === 'TRC20' ? 'active' : ''}`}
-                onClick={() => setNetwork('TRC20')}
-              >
-                <span>TRON (TRC20)</span>
-                <span className="badge-rec">Recommended</span>
-              </button>
-              <button
-                type="button"
-                className={`net-pill ${network === 'ERC20' ? 'active' : ''}`}
-                onClick={() => setNetwork('ERC20')}
-              >
-                <span>Ethereum (ERC20)</span>
-              </button>
-              <button
-                type="button"
-                className={`net-pill ${network === 'BEP20' ? 'active' : ''}`}
-                onClick={() => setNetwork('BEP20')}
-              >
-                <span>BNB Chain (BEP20)</span>
-              </button>
-            </div>
-          </div>
-
-          {/* QR Code and Address Box */}
-          <div className="deposit-qr-card mt-3">
-            <div className="qr-visual">
-              <div className="qr-fake-code">
-                <svg viewBox="0 0 100 100" className="qr-svg">
-                  <rect x="5" y="5" width="25" height="25" fill="#111" />
-                  <rect x="9" y="9" width="17" height="17" fill="#fff" />
-                  <rect x="13" y="13" width="9" height="9" fill="#111" />
-
-                  <rect x="70" y="5" width="25" height="25" fill="#111" />
-                  <rect x="74" y="9" width="17" height="17" fill="#fff" />
-                  <rect x="78" y="13" width="9" height="9" fill="#111" />
-
-                  <rect x="5" y="70" width="25" height="25" fill="#111" />
-                  <rect x="9" y="74" width="17" height="17" fill="#fff" />
-                  <rect x="13" y="78" width="9" height="9" fill="#111" />
-
-                  <circle cx="45" cy="15" r="3" fill="#2563eb" />
-                  <circle cx="55" cy="22" r="3" fill="#111" />
-                  <circle cx="40" cy="45" r="4" fill="#2563eb" />
-                  <circle cx="50" cy="50" r="5" fill="#111" />
-                  <circle cx="60" cy="45" r="4" fill="#2563eb" />
-                  <circle cx="45" cy="85" r="3" fill="#111" />
-                  <circle cx="75" cy="75" r="3" fill="#111" />
-                  <circle cx="85" cy="85" r="3" fill="#111" />
-                </svg>
-              </div>
-              <span className="qr-scan-label">Scan to transfer USDT</span>
-            </div>
-
-            <div className="deposit-address-box">
-              <span className="addr-label">Deposit TRC20 Address</span>
-              <div className="addr-input-row">
-                <span className="addr-code">{depositAddress}</span>
-                <button className="copy-btn" onClick={handleCopy} title="Copy Address">
-                  {copied ? <Check size={16} color="#10b981" /> : <Copy size={16} />}
-                  <span>{copied ? 'Copied' : 'Copy'}</span>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <form onSubmit={handleSubmit} className="deposit-form mt-4">
-            <label className="input-label">Deposit Amount (USDT)</label>
-            <div className="amount-input-wrap">
-              <span className="currency-symbol">$</span>
-              <input
-                type="number"
-                step="0.01"
-                min="10"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                className="text-input-field"
-                required
-              />
-              <span className="currency-suffix">USDT</span>
-            </div>
-
-            <div className="quick-amount-row mt-2">
-              {['50', '100', '250', '500', '1000'].map((val) => (
-                <button
-                  type="button"
-                  key={val}
-                  className={`preset-btn ${amount === val ? 'selected' : ''}`}
-                  onClick={() => setAmount(val)}
-                >
-                  +${val}
-                </button>
-              ))}
-            </div>
-
-            <div className="input-group mt-3">
-              <label className="input-label">
-                Blockchain Transaction ID / TX Hash <span className="text-muted">(Optional)</span>
-              </label>
-              <div className="input-icon-field-wrap">
-                <Key size={16} className="input-field-left-icon" />
-                <input
-                  type="text"
-                  placeholder="e.g. 0x8f2d...c34b"
-                  value={txHash}
-                  onChange={(e) => setTxHash(e.target.value)}
-                  className="text-input-field with-icon"
-                />
-              </div>
-            </div>
-
-            <div className="notice-box mt-3">
-              <AlertCircle size={15} />
-              <span>Send only USDT to this address. Minimum deposit is 10 USDT. Credited immediately upon 1 network confirmation.</span>
-            </div>
-
-            <button type="submit" className="btn-primary w-full mt-4" disabled={isSubmitting}>
-              {isSubmitting ? 'Verifying & Submitting...' : 'Confirm Real TRC20 Deposit'}
+      <div className="real-deposit-section animate-fade-in">
+        <div className="network-selector mt-3">
+          <label className="input-label">Select Network</label>
+          <div className="network-pills">
+            <button
+              type="button"
+              className={`net-pill ${network === 'TRC20' ? 'active' : ''}`}
+              onClick={() => setNetwork('TRC20')}
+            >
+              <span>TRON (TRC20)</span>
+              <span className="badge-rec">Recommended</span>
             </button>
-          </form>
+            <button
+              type="button"
+              className={`net-pill ${network === 'ERC20' ? 'active' : ''}`}
+              onClick={() => setNetwork('ERC20')}
+            >
+              <span>Ethereum (ERC20)</span>
+            </button>
+            <button
+              type="button"
+              className={`net-pill ${network === 'BEP20' ? 'active' : ''}`}
+              onClick={() => setNetwork('BEP20')}
+            >
+              <span>BNB Chain (BEP20)</span>
+            </button>
+          </div>
         </div>
-      )}
+
+        {/* QR Code and Address Box */}
+        <div className="deposit-qr-card mt-3">
+          <div className="qr-visual">
+            <div className="qr-fake-code">
+              <svg viewBox="0 0 100 100" className="qr-svg">
+                <rect x="5" y="5" width="25" height="25" fill="#111" />
+                <rect x="9" y="9" width="17" height="17" fill="#fff" />
+                <rect x="13" y="13" width="9" height="9" fill="#111" />
+
+                <rect x="70" y="5" width="25" height="25" fill="#111" />
+                <rect x="74" y="9" width="17" height="17" fill="#fff" />
+                <rect x="78" y="13" width="9" height="9" fill="#111" />
+
+                <rect x="5" y="70" width="25" height="25" fill="#111" />
+                <rect x="9" y="74" width="17" height="17" fill="#fff" />
+                <rect x="13" y="78" width="9" height="9" fill="#111" />
+
+                <circle cx="45" cy="15" r="3" fill="#2563eb" />
+                <circle cx="55" cy="22" r="3" fill="#111" />
+                <circle cx="40" cy="45" r="4" fill="#2563eb" />
+                <circle cx="50" cy="50" r="5" fill="#111" />
+                <circle cx="60" cy="45" r="4" fill="#2563eb" />
+                <circle cx="45" cy="85" r="3" fill="#111" />
+                <circle cx="75" cy="75" r="3" fill="#111" />
+                <circle cx="85" cy="85" r="3" fill="#111" />
+              </svg>
+            </div>
+            <span className="qr-scan-label">Scan to transfer USDT</span>
+          </div>
+
+          <div className="deposit-address-box">
+            <span className="addr-label">Deposit {network} Address</span>
+            <div className="addr-input-row">
+              <span className="addr-code">{depositAddress}</span>
+              <button className="copy-btn" onClick={handleCopy} title="Copy Address">
+                {copied ? <Check size={16} color="#10b981" /> : <Copy size={16} />}
+                <span>{copied ? 'Copied' : 'Copy'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit} className="deposit-form mt-4">
+          <label className="input-label">Deposit Amount (USDT)</label>
+          <div className="amount-input-wrap">
+            <span className="currency-symbol">$</span>
+            <input
+              type="number"
+              step="0.01"
+              min="10"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              className="text-input-field"
+              required
+            />
+            <span className="currency-suffix">USDT</span>
+          </div>
+
+          <div className="quick-amount-row mt-2">
+            {['50', '100', '250', '500', '1000'].map((val) => (
+              <button
+                type="button"
+                key={val}
+                className={`preset-btn ${amount === val ? 'selected' : ''}`}
+                onClick={() => setAmount(val)}
+              >
+                +${val}
+              </button>
+            ))}
+          </div>
+
+          <div className="input-group mt-3">
+            <label className="input-label">
+              Blockchain Transaction ID / TX Hash <span className="text-muted">(Optional)</span>
+            </label>
+            <div className="input-icon-field-wrap">
+              <Key size={16} className="input-field-left-icon" />
+              <input
+                type="text"
+                placeholder="e.g. 0x8f2d...c34b"
+                value={txHash}
+                onChange={(e) => setTxHash(e.target.value)}
+                className="text-input-field with-icon"
+              />
+            </div>
+          </div>
+
+          <div className="notice-box mt-3">
+            <AlertCircle size={15} />
+            <span>Send only USDT ({network}) to this address. Minimum deposit is 10 USDT. Credited immediately upon network confirmation.</span>
+          </div>
+
+          <button type="submit" className="btn-primary w-full mt-4" disabled={isSubmitting}>
+            {isSubmitting ? 'Verifying & Submitting...' : `Confirm ${network} Deposit`}
+          </button>
+        </form>
+      </div>
     </div>
   );
 }
 
 // 2. USDT TRC20 WITHDRAWAL MODAL
 function WithdrawModal({ onClose }) {
-  const { user, submitWithdrawal } = useApp();
+  const { user, submitWithdrawal, setDashboardTab } = useApp();
   const [address, setAddress] = useState(user.walletAddress || '');
   const [amount, setAmount] = useState('');
   const [error, setError] = useState('');
@@ -471,15 +356,15 @@ function WithdrawModal({ onClose }) {
     return (
       <div className="modal-box text-center">
         <div className="modal-header">
-          <h3>Withdrawal Queued</h3>
+          <h3>Payment Request Sent</h3>
           <button className="close-btn" onClick={onClose}><X size={18} /></button>
         </div>
         <div className="success-icon-wrap">
           <CheckCircle2 size={54} color="#10b981" />
         </div>
-        <h4 className="mt-3">Request Submitted for Review</h4>
+        <h4 className="mt-3">Payment Request Sent Successfully</h4>
         <p className="modal-desc">
-          Your request to withdraw <strong>{numAmount} USDT</strong> ({netReceived.toFixed(2)} USDT net) has been registered:
+          Your payment withdrawal request of <strong>{numAmount} USDT</strong> ({netReceived.toFixed(2)} USDT net) has been sent to admin for processing:
         </p>
         <div className="code-pill mt-2">
           <code>{submittedCode}</code>
@@ -604,49 +489,143 @@ function WithdrawModal({ onClose }) {
 
 // 3. TASK GRAB & SUBMISSION WORKFLOW MODAL
 function TaskExecutionModal({ task, onClose }) {
-  const { user, completeTask, vipTiers, setDashboardTab, setCurrentView, setModalType, claimDummyDeposit } = useApp();
-  const [step, setStep] = useState('match'); // 'match' -> 'ready' -> 'processing' -> 'success'
+  const { user, completeTask, vipTiers, setDashboardTab, setCurrentView, setModalType, tasks, setSelectedTask } = useApp();
+  const [currentTask, setCurrentTask] = useState(task);
   const [progress, setProgress] = useState(0);
   const [earnedCommission, setEarnedCommission] = useState(0);
-  const [claimingDemo, setClaimingDemo] = useState(false);
+  const [countdown, setCountdown] = useState(3);
 
-  // Deposit restriction check
-  const requiredDeposit = parseFloat(task?.requiredDeposit || 0);
-  const isDepositRestricted = task && requiredDeposit > 0 && user.balance < requiredDeposit && (user.totalDeposit || 0) < requiredDeposit;
-
-  // Auto transition from radar matching to ready
+  // Sync if prop changes
   React.useEffect(() => {
-    if (step === 'match') {
+    if (task && task.id !== currentTask?.id) {
+      setCurrentTask(task);
+      setProgress(0);
+      setEarnedCommission(0);
+    }
+  }, [task]);
+
+  // Balance & Deposit restriction check:
+  const userBalance = Number(user?.balance || 0);
+  const taskPrice = Number(currentTask?.price || 0);
+  const explicitDeposit = Number(currentTask?.requiredDeposit || currentTask?.required_deposit || 0);
+  const minRequiredBalance = explicitDeposit > 0 ? explicitDeposit : 0;
+  const isDepositRestricted = currentTask && minRequiredBalance > 0 && userBalance < minRequiredBalance;
+  const shortfall = Math.max(0, minRequiredBalance - userBalance);
+
+  const [step, setStep] = useState(isDepositRestricted ? 'ready' : 'match'); // 'match' -> 'ready' -> 'processing' -> 'success'
+
+  // Auto transition from radar matching to ready if not restricted
+  React.useEffect(() => {
+    if (isDepositRestricted) {
+      setStep('ready');
+    } else if (step === 'match') {
       const timer = setTimeout(() => {
         setStep('ready');
-      }, 1200);
+      }, 1000);
       return () => clearTimeout(timer);
     }
-  }, [step]);
+  }, [step, isDepositRestricted, currentTask?.id]);
 
   // Current tier info
   const userVip = (user?.vipLevel || '').toLowerCase();
   const currentTier = vipTiers?.find(t => (t.name || '').toLowerCase() === userVip) || vipTiers?.[0] || { commissionRate: 4.0 };
   const commissionRate = currentTier?.commissionRate || 4.0;
-  const calculatedCommission = task ? parseFloat((((Number(task.price) || 0) * commissionRate) / 100).toFixed(2)) : 0;
+  const calculatedCommission = currentTask ? parseFloat((((Number(currentTask.price) || 0) * commissionRate) / 100).toFixed(2)) : 0;
+
+  // Queue and Next Task discovery - exactly matches PlatformTasksView 25-task queue
+  const platform = currentTask?.platform || 'eBay';
+  const allPlatformTasks = (tasks || []).filter(
+    t => (t.platform || '').toLowerCase() === platform.toLowerCase()
+  );
+  let queue = [];
+  if (user?.assignedTasks && Array.isArray(user.assignedTasks) && user.assignedTasks.length > 0) {
+    queue = user.assignedTasks;
+  } else {
+    try {
+      const cached = localStorage.getItem(`websynx_user_assigned_tasks_${user?.id}`);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) queue = parsed;
+      }
+    } catch (e) {}
+  }
+
+  if (queue.length === 0) {
+    if (allPlatformTasks.length >= 25) {
+      queue = allPlatformTasks.slice(0, 25);
+    } else {
+      const others = (tasks || []).filter(
+        t => (t.platform || '').toLowerCase() !== platform.toLowerCase()
+      );
+      const combined = [...allPlatformTasks, ...others];
+      queue = combined.slice(0, 25);
+      while (queue.length < 25 && combined.length > 0) {
+        queue = [...queue, ...combined.slice(0, 25 - queue.length)];
+      }
+    }
+  }
+
+  const currentTaskIndex = queue.findIndex(t => String(t.id) === String(currentTask?.id));
+  const completedCount = Number(user?.dailyCompleted ?? user?.completedTasks ?? 0);
+  const isLockedSequential = currentTaskIndex > completedCount;
+  const isAlreadyDone = currentTaskIndex >= 0 && currentTaskIndex < completedCount;
+  const nextTaskIndex = currentTaskIndex >= 0 && currentTaskIndex < queue.length - 1 ? currentTaskIndex + 1 : 0;
+  const nextTask = queue[nextTaskIndex] || null;
+  const hasNextTask = nextTask && String(nextTask.id) !== String(currentTask?.id);
+  const currentTaskNumber = currentTaskIndex >= 0 ? currentTaskIndex + 1 : (currentTask?.learningStep || 1);
+  const nextTaskNumber = currentTaskIndex >= 0 ? (currentTaskIndex + 2 <= queue.length ? currentTaskIndex + 2 : 1) : 2;
+
+  const handleGoToNextTask = (targetTask = nextTask) => {
+    if (!targetTask) {
+      onClose();
+      return;
+    }
+    setCurrentTask(targetTask);
+    if (setSelectedTask) setSelectedTask(targetTask);
+    setProgress(0);
+    setEarnedCommission(0);
+
+    const targetExplicit = Number(targetTask.requiredDeposit || targetTask.required_deposit || 0);
+    const targetMin = targetExplicit > 0 ? targetExplicit : 0;
+    const updatedBal = Number(user?.balance || 0);
+
+    setStep('ready');
+  };
+
+  // Countdown timer to auto-advance to next task on success
+  React.useEffect(() => {
+    if (step === 'success' && hasNextTask) {
+      setCountdown(3);
+      const timer = setInterval(() => {
+        setCountdown(prev => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            handleGoToNextTask(nextTask);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+      return () => clearInterval(timer);
+    }
+  }, [step, currentTask?.id, hasNextTask]);
 
   const handleSubmitTask = () => {
     if (isDepositRestricted) return;
 
     setStep('processing');
-    setProgress(15);
+    setProgress(20);
 
-    const int1 = setTimeout(() => setProgress(45), 350);
-    const int2 = setTimeout(() => setProgress(80), 750);
+    const int1 = setTimeout(() => setProgress(50), 300);
+    const int2 = setTimeout(() => setProgress(85), 650);
     const int3 = setTimeout(async () => {
       setProgress(100);
       try {
-        const earned = await completeTask(task);
+        const earned = await completeTask(currentTask);
         const finalEarned = typeof earned === 'number' ? earned : (parseFloat(earned) || calculatedCommission);
         setEarnedCommission(finalEarned);
         setStep('success');
 
-        // Trigger Confetti!
         try {
           confetti({
             particleCount: 80,
@@ -659,7 +638,7 @@ function TaskExecutionModal({ task, onClose }) {
         setEarnedCommission(calculatedCommission);
         setStep('success');
       }
-    }, 1200);
+    }, 1000);
 
     return () => {
       clearTimeout(int1);
@@ -668,21 +647,7 @@ function TaskExecutionModal({ task, onClose }) {
     };
   };
 
-  const handleQuickClaimDemo = async () => {
-    setClaimingDemo(true);
-    try {
-      await claimDummyDeposit(Math.max(300, requiredDeposit));
-      setClaimingDemo(false);
-      try {
-        confetti({ particleCount: 60, spread: 70, origin: { y: 0.6 } });
-      } catch (e) {}
-    } catch (err) {
-      setClaimingDemo(false);
-      alert('Error claiming practice funds: ' + err.message);
-    }
-  };
-
-  if (!task) return null;
+  if (!currentTask) return null;
 
   return (
     <div className="modal-box task-modal">
@@ -692,25 +657,25 @@ function TaskExecutionModal({ task, onClose }) {
             <Zap size={18} />
           </div>
           <div>
-            <h3>Website Task Engine</h3>
-            <span className="sub-text">Website Listing Promotion • {task.platform}</span>
+            <h3>Task Engine • #{currentTaskNumber}</h3>
+            <span className="sub-text">{currentTask.platform} Campaign • Item {currentTaskNumber} of {queue.length || 25}</span>
           </div>
         </div>
         <button className="close-btn" onClick={onClose}><X size={18} /></button>
       </div>
 
-      {/* LEARNING TASK BANNER */}
-      {task.isLearning && (
+      {/* LEARNING / PROGRESSIVE STEP BANNER */}
+      {currentTask.isLearning && (
         <div className="learning-task-top-strip mt-2">
           <div className="learning-strip-icon">🎓</div>
           <div className="learning-strip-text">
-            <strong>Beginner Learning Campaign (Step #{task.learningStep || 1} of 25)</strong>
-            <span>Progressive learning deposit requirement: ${parseFloat(task.requiredDeposit || 0).toFixed(2)} USDT</span>
+            <strong>Beginner Learning Campaign (Step #{currentTask.learningStep || currentTaskNumber} of 25)</strong>
+            <span>Order Value: ${taskPrice.toFixed(2)} USDT</span>
           </div>
         </div>
       )}
 
-      {step === 'match' && (
+      {step === 'match' && !isDepositRestricted && (
         <div className="task-step-matching py-8 text-center">
           <div className="radar-spinner-wrap">
             <div className="radar-circle"></div>
@@ -719,85 +684,148 @@ function TaskExecutionModal({ task, onClose }) {
               <TrendingUp size={28} color="#2563eb" />
             </div>
           </div>
-          <h4 className="mt-4">Matching Website Campaign Order...</h4>
+          <h4 className="mt-4">Matching Campaign Order #{currentTaskNumber}...</h4>
           <p className="modal-desc">
-            Allocating verified website product review from <strong>{task.platform}</strong> merchant network.
+            Allocating verified website product review from <strong>{currentTask.platform}</strong> merchant network.
           </p>
         </div>
       )}
 
       {step === 'ready' && (
         <div className="task-step-ready mt-3">
-          {/* DEPOSIT RESTRICTION BARRIER SCREEN */}
-          {isDepositRestricted ? (
+          {/* 1. ALREADY COMPLETED STATE */}
+          {isAlreadyDone ? (
+            <div className="deposit-restriction-card animate-fade-in text-center p-6">
+              <div className="lock-icon-hero" style={{ background: '#ecfdf5', color: '#10b981', margin: '0 auto 12px auto' }}>
+                <CheckCircle2 size={36} />
+              </div>
+              <h3 className="mt-2 font-bold text-emerald-700" style={{ fontSize: '1.2rem' }}>
+                Task #{currentTaskNumber} Already Completed
+              </h3>
+              <p className="modal-desc mt-2" style={{ color: '#64748b', fontSize: '0.92rem' }}>
+                You have already submitted this task and your commission has been credited to your balance.
+              </p>
+              <div className="restriction-actions-grid mt-4">
+                <button
+                  type="button"
+                  className="btn-primary w-full"
+                  onClick={() => {
+                    const activeTask = queue[completedCount];
+                    if (activeTask) {
+                      handleGoToNextTask(activeTask);
+                    } else {
+                      onClose();
+                    }
+                  }}
+                >
+                  <Zap size={15} />
+                  <span>Go to Task #{completedCount + 1} (Active Step)</span>
+                </button>
+              </div>
+            </div>
+          ) : isLockedSequential ? (
+            /* 2. LOCKED SEQUENTIAL BARRIER: Shown when user tries to access a task ahead of their completed sequence */
+            <div className="deposit-restriction-card animate-fade-in text-center p-6">
+              <div className="lock-icon-hero" style={{ background: '#f1f5f9', color: '#64748b', margin: '0 auto 12px auto' }}>
+                <Lock size={36} />
+              </div>
+              <h3 className="mt-2 font-bold text-slate-800 dark:text-slate-100" style={{ fontSize: '1.2rem' }}>
+                Task #{currentTaskNumber} is Locked
+              </h3>
+              <p className="modal-desc mt-2" style={{ color: '#64748b', fontSize: '0.92rem' }}>
+                Tasks unlock strictly 1 by 1. Please complete <strong>Task #{completedCount + 1}</strong> first to unlock this task sequentially.
+              </p>
+              <div className="restriction-actions-grid mt-4">
+                <button
+                  type="button"
+                  className="btn-primary w-full"
+                  onClick={() => {
+                    const activeTask = queue[completedCount];
+                    if (activeTask) {
+                      handleGoToNextTask(activeTask);
+                    } else {
+                      onClose();
+                    }
+                  }}
+                >
+                  <Zap size={15} />
+                  <span>Switch to Task #{completedCount + 1} (Active Step)</span>
+                </button>
+              </div>
+            </div>
+          ) : isDepositRestricted ? (
             <div className="deposit-restriction-card animate-fade-in">
               <div className="lock-icon-hero">
                 <Lock size={36} color="#d97706" />
               </div>
-              <h3 className="mt-2 text-amber-warning font-bold">Deposit Restriction Required</h3>
+              <h3 className="mt-2 text-amber-warning font-bold">Deposit Required to Unlock Task</h3>
               <p className="modal-desc mt-1">
-                This campaign task requires a minimum deposit of <strong>${requiredDeposit.toFixed(2)} USDT</strong>.
+                Your available balance is <strong>${userBalance.toFixed(2)} USDT</strong>.
+                This task order value is <strong>${taskPrice.toFixed(2)} USDT</strong>.
+                Please add deposit to unlock and complete this campaign task.
               </p>
 
               <div className="restriction-breakdown-box mt-3">
                 <div className="breakdown-row">
-                  <span>Required Deposit / Account Balance:</span>
-                  <strong>${requiredDeposit.toFixed(2)} USDT</strong>
+                  <span>Task Order Amount:</span>
+                  <strong>${taskPrice.toFixed(2)} USDT</strong>
                 </div>
                 <div className="breakdown-row">
                   <span>Your Current Balance:</span>
-                  <span className="text-red-danger font-bold">${user.balance.toFixed(2)} USDT</span>
+                  <span className="text-red-danger font-bold">${userBalance.toFixed(2)} USDT</span>
                 </div>
                 <div className="breakdown-divider"></div>
                 <div className="breakdown-row total">
-                  <span>Required Top-Up to Unlock:</span>
-                  <strong className="text-primary-brand">+${Math.max(0, requiredDeposit - user.balance).toFixed(2)} USDT</strong>
+                  <span>Required Deposit to Unlock:</span>
+                  <strong className="text-primary-brand">+${shortfall.toFixed(2)} USDT</strong>
                 </div>
               </div>
 
               <div className="restriction-actions-grid mt-4">
                 <button
                   type="button"
-                  className="btn-outline"
-                  onClick={handleQuickClaimDemo}
-                  disabled={claimingDemo}
-                >
-                  <Award size={15} />
-                  <span>{claimingDemo ? 'Unlocking...' : `Claim $300 Test Deposit (Unlocks All 25 Tasks)`}</span>
-                </button>
-
-                <button
-                  type="button"
-                  className="btn-primary"
+                  className="btn-primary w-full"
                   onClick={() => {
                     onClose();
                     setModalType('deposit');
                   }}
                 >
                   <Wallet size={15} />
-                  <span>Deposit TRC20 USDT</span>
+                  <span>Deposit USDT to Unlock Task (+${shortfall.toFixed(2)})</span>
                 </button>
               </div>
 
-              <div className="note-sub-text mt-3">
-                <span>Tip: You can practice risk-free by claiming demo practice funds or top up real USDT.</span>
+              {/* Direct Store Link Action */}
+              <div className="task-external-action-bar mt-2">
+                <button
+                  type="button"
+                  className="btn-visit-store-link"
+                  onClick={(e) => openProductUrl(currentTask, e)}
+                >
+                  <ExternalLink size={14} />
+                  <span>Open Live Listing on {currentTask.platform} (New Tab)</span>
+                </button>
+              </div>
+
+              <div className="note-sub-text mt-3 text-center">
+                <span>Deposit via TRC20, ERC20 or BEP20 to automatically unlock this campaign task.</span>
               </div>
             </div>
           ) : (
             <>
-              <div className="task-preview-card" onClick={(e) => openProductUrl(task, e)} style={{ cursor: 'pointer' }} title={`Click to view live listing on ${task.platform}`}>
+              <div className="task-preview-card" onClick={(e) => openProductUrl(currentTask, e)} style={{ cursor: 'pointer' }} title={`Click to view live listing on ${currentTask.platform}`}>
                 <div className="task-img-wrap">
                   <img
-                    src={task.image}
-                    alt={task.title}
+                    src={getProductImage(currentTask)}
+                    alt={currentTask.title}
                     className="task-img"
                     onError={(e) => {
                       e.currentTarget.onerror = null;
-                      e.currentTarget.src = 'https://images.unsplash.com/photo-1546868871-7041f2a55e12?w=600&auto=format&fit=crop&q=80';
+                      e.currentTarget.src = getProductImage(currentTask);
                     }}
                   />
-                  <span className={`platform-badge-pill ${(task?.platform || 'ebay').toLowerCase()}`}>
-                    {task?.platform || 'eBay'}
+                  <span className={`platform-badge-pill ${(currentTask?.platform || 'ebay').toLowerCase()}`}>
+                    {currentTask?.platform || 'eBay'}
                   </span>
                   <div className="task-img-hover-overlay">
                     <ExternalLink size={16} />
@@ -807,19 +835,19 @@ function TaskExecutionModal({ task, onClose }) {
                 <div className="task-info">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
-                      <span className="task-tag-chip">{task.category || 'Promotional Campaign'}</span>
-                      {task.isLearning && <span className="badge-learning">🎓 Learning # {task.learningStep || 1}</span>}
+                      <span className="task-tag-chip">{currentTask.category || 'Promotional Campaign'}</span>
+                      <span className="badge-learning">Task #{currentTaskNumber}</span>
                     </div>
                     <span className="live-link-pill">
                       <span>Live Item</span>
                       <ExternalLink size={11} />
                     </span>
                   </div>
-                  <h4 className="task-title-clamp">{task.title}</h4>
+                  <h4 className="task-title-clamp">{currentTask.title}</h4>
                   <div className="task-specs-row">
                     <div>
                       <span className="spec-label">Listing Value</span>
-                      <strong className="spec-val">${parseFloat(task.price).toFixed(2)}</strong>
+                      <strong className="spec-val">${parseFloat(currentTask.price).toFixed(2)}</strong>
                     </div>
                     <div>
                       <span className="spec-label">Commission Rate</span>
@@ -838,22 +866,22 @@ function TaskExecutionModal({ task, onClose }) {
                 <button
                   type="button"
                   className="btn-visit-store-link"
-                  onClick={(e) => openProductUrl(task, e)}
+                  onClick={(e) => openProductUrl(currentTask, e)}
                 >
                   <ExternalLink size={14} />
-                  <span>Open Live Listing on {task.platform} (New Tab)</span>
+                  <span>Open Live Listing on {currentTask.platform} (New Tab)</span>
                 </button>
               </div>
 
               <div className="daily-quota-banner mt-3">
                 <div className="quota-text">
-                  <span>Daily Tasks: <strong>{user.dailyCompleted} / {user.dailyQuota}</strong></span>
-                  <span className="quota-percent">{Math.round((user.dailyCompleted / user.dailyQuota) * 100)}% Complete</span>
+                  <span>Daily Tasks: <strong>{user.dailyCompleted || 0} / {user.dailyQuota || 25}</strong></span>
+                  <span className="quota-percent">{Math.round(((user.dailyCompleted || 0) / (user.dailyQuota || 25)) * 100)}% Complete</span>
                 </div>
                 <div className="quota-bar">
                   <div
                     className="quota-fill"
-                    style={{ width: `${Math.min(100, (user.dailyCompleted / user.dailyQuota) * 100)}%` }}
+                    style={{ width: `${Math.min(100, ((user.dailyCompleted || 0) / (user.dailyQuota || 25)) * 100)}%` }}
                   ></div>
                 </div>
               </div>
@@ -877,7 +905,7 @@ function TaskExecutionModal({ task, onClose }) {
           <div className="processing-indicator">
             <RefreshCw size={36} className="spin-icon" color="#2563eb" />
           </div>
-          <h4 className="mt-4">Synchronizing with {task.platform} API...</h4>
+          <h4 className="mt-4">Synchronizing with {currentTask.platform} API...</h4>
           <p className="modal-desc">
             Processing promotional score, updating merchant search rank, and crediting commission.
           </p>
@@ -893,36 +921,80 @@ function TaskExecutionModal({ task, onClose }) {
           <div className="success-badge-large">
             <Star size={42} fill="#ffb703" color="#ffb703" />
           </div>
-          <h3 className="mt-3">Order Completed!</h3>
+          <h3 className="mt-3">Task #{currentTaskNumber} Completed!</h3>
           <p className="modal-desc">Your commission has been credited directly to your available balance.</p>
 
           <div className="profit-highlight-card mt-3">
             <span className="highlight-label">Commission Earned</span>
             <div className="profit-amount">+${(typeof earnedCommission === 'number' ? earnedCommission : parseFloat(earnedCommission || calculatedCommission || 0)).toFixed(2)} <span className="highlight-unit">USDT</span></div>
             <div className="tier-info-sub">
-              <span>New Available Balance: <strong>${(typeof user?.balance === 'number' ? user.balance : parseFloat(user?.balance || 0)).toFixed(2)} USDT</strong></span>
+              <span>New Available Balance: <strong>${(Number(user?.balance) || 0).toFixed(2)} USDT</strong></span>
             </div>
           </div>
 
-          <button
-            type="button"
-            className="btn-visit-store-success mt-3"
-            onClick={(e) => openProductUrl(task, e)}
-          >
-            <ExternalLink size={14} />
-            <span>Inspect Verified Product on {task.platform}</span>
-          </button>
+          {/* NEXT TASK PREVIEW CARD */}
+          {hasNextTask && (
+            <div className="next-task-preview-box mt-4 p-3 border rounded-xl bg-slate-50 text-left">
+              <div className="flex items-center justify-between text-xs text-slate-500 mb-1.5">
+                <span className="font-semibold text-primary-brand">Next Task #{nextTaskNumber} in Queue:</span>
+                <span>Auto-opening in {countdown}s</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <img
+                  src={getProductImage(nextTask)}
+                  alt={nextTask.title}
+                  className="w-12 h-12 rounded-lg object-cover bg-slate-200"
+                  onError={(e) => {
+                    e.currentTarget.onerror = null;
+                    e.currentTarget.src = getProductImage(nextTask);
+                  }}
+                />
+                <div className="flex-1 min-w-0">
+                  <h6 className="text-sm font-semibold truncate text-slate-800">{nextTask.title}</h6>
+                  <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
+                    <span>Order: ${Number(nextTask.price || 0).toFixed(2)}</span>
+                    <span className="text-emerald-600 font-semibold">+{nextTask.yieldRate || '4.0%'} yield</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="modal-btn-row mt-4">
-            <button className="btn-outline w-full" onClick={() => {
-              onClose();
-              setCurrentView('dashboard');
-              setDashboardTab('records');
-            }}>
+            {hasNextTask ? (
+              <button
+                type="button"
+                className="btn-primary w-full"
+                onClick={() => handleGoToNextTask(nextTask)}
+              >
+                <span>Open Next Task (#{nextTaskNumber})</span>
+                <ArrowRight size={16} />
+              </button>
+            ) : (
+              <button type="button" className="btn-primary w-full" onClick={onClose}>
+                All Tasks Completed! Close
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center justify-between gap-2 mt-3">
+            <button
+              type="button"
+              className="btn-outline text-xs py-2 w-full"
+              onClick={() => {
+                onClose();
+                setCurrentView('dashboard');
+                setDashboardTab('records');
+              }}
+            >
               View in Records
             </button>
-            <button className="btn-primary w-full" onClick={onClose}>
-              Continue Tasks
+            <button
+              type="button"
+              className="btn-outline text-xs py-2 w-full"
+              onClick={onClose}
+            >
+              Exit to Dashboard
             </button>
           </div>
         </div>
@@ -952,7 +1024,7 @@ function ApkModal({ onClose }) {
         <div className="apk-banner">
           <div className="android-robot-icon">🤖</div>
           <div className="apk-version-info">
-            <h4>WebSynx Android APK</h4>
+            <h4>Ecomxstocks Android APK</h4>
             <div className="apk-tags">
               <span className="apk-tag">v2.4.0 Release</span>
               <span className="apk-tag">18.4 MB</span>
@@ -991,7 +1063,7 @@ function ApkModal({ onClose }) {
           className="btn-primary w-full mt-4 flex-center"
           onClick={(e) => {
             e.preventDefault();
-            alert('Starting download: WebSynx-v2.4.0.apk (18.4MB)');
+            alert('Starting download: Ecomxstocks-v2.4.0.apk (18.4MB)');
             onClose();
           }}
         >
@@ -1072,20 +1144,14 @@ function KycModal({ onClose }) {
 }
 
 // 6. AUTH / SIGN IN & ACCOUNT CREATION MODAL
-function AuthModal({ onClose }) {
-  const { user, registerAccount, loginAccount, switchUser, adminUsers } = useApp();
-  const [isRegister, setIsRegister] = useState(false);
+function AuthModal({ onClose, initialRegister = false }) {
+  const { user, registerAccount, loginAccount, switchUser, adminUsers, setCurrentView, setDashboardTab } = useApp();
+  const [isRegister, setIsRegister] = useState(Boolean(initialRegister));
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [name, setName] = useState('');
-  const [inviteCode, setInviteCode] = useState(() => {
-    try {
-      return new URLSearchParams(window.location.search).get('ref') || '';
-    } catch (e) {
-      return '';
-    }
-  });
+  const [inviteCode, setInviteCode] = useState('');
   const [agreeTerms, setAgreeTerms] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -1100,11 +1166,11 @@ function AuthModal({ onClose }) {
 
     if (isRegister) {
       if (!name.trim()) {
-        setError('Please provide your full name');
+        setError('Please choose a unique username');
         return;
       }
-      if (!inviteCode || !inviteCode.trim()) {
-        setError('Referral / Invitation code is required to register an account');
+      if (adminUsers && adminUsers.some(u => (u.name || '').trim().toLowerCase() === name.trim().toLowerCase())) {
+        setError(`Username "${name.trim()}" is already taken. Please choose a unique username.`);
         return;
       }
       if (password.length < 6) {
@@ -1115,8 +1181,24 @@ function AuthModal({ onClose }) {
         setError('Passwords do not match. Please re-enter your password.');
         return;
       }
+      const cleanInvite = (inviteCode || '').trim();
+      if (!cleanInvite) {
+        setError('Please enter a valid invitation / referral code. An invitation code is required to sign up.');
+        return;
+      }
+      if (adminUsers && adminUsers.length > 0) {
+        const matchingReferrer = adminUsers.find(u => 
+          (u.referralCode && u.referralCode.trim().toLowerCase() === cleanInvite.toLowerCase()) ||
+          (u.code && u.code.trim().toLowerCase() === cleanInvite.toLowerCase()) ||
+          (u.referral_code && u.referral_code.trim().toLowerCase() === cleanInvite.toLowerCase())
+        );
+        if (!matchingReferrer && cleanInvite !== '888888') {
+          setError(`Invalid invitation code "${cleanInvite}". You must enter a correct invitation code from an active registered member to sign up.`);
+          return;
+        }
+      }
       if (!agreeTerms) {
-        setError('You must agree to the WebSynx Terms of Service');
+        setError('You must agree to the Ecomxstocks Terms of Service');
         return;
       }
     }
@@ -1125,22 +1207,29 @@ function AuthModal({ onClose }) {
 
     try {
       if (isRegister) {
-        const newUser = await registerAccount(name, email, password, inviteCode.trim());
-        setSuccessMsg(`Welcome ${newUser.name}! Your WebSynx account & TRON TRC20 wallet have been created.`);
+        const finalInvite = inviteCode.trim();
+        const newUser = await registerAccount(name.trim(), email.trim(), password, finalInvite);
+        setSuccessMsg(`Welcome ${newUser.name}! Your Ecomxstocks account & TRON TRC20 wallet have been created. Redirecting to your dashboard...`);
         try {
           confetti({ particleCount: 70, spread: 60, origin: { y: 0.6 } });
         } catch (err) {}
         setTimeout(() => {
           setLoading(false);
           onClose();
-        }, 1200);
+          setCurrentView('dashboard');
+          setDashboardTab('home');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }, 1000);
       } else {
         await loginAccount(email, password);
         setSuccessMsg('Login successful! Redirecting to your dashboard...');
         setTimeout(() => {
           setLoading(false);
           onClose();
-        }, 600);
+          setCurrentView('dashboard');
+          setDashboardTab('home');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }, 500);
       }
     } catch (err) {
       setError(err.message || 'Authentication failed. Please check your credentials.');
@@ -1295,7 +1384,7 @@ function AuthModal({ onClose }) {
                   value={inviteCode}
                   onChange={(e) => setInviteCode(e.target.value)}
                   className="text-input-field with-icon"
-                  placeholder="Enter referral code (e.g. 505282)"
+                  placeholder="Enter invitation / referral code"
                   required
                 />
               </div>
@@ -1331,3 +1420,332 @@ function AuthModal({ onClose }) {
   );
 }
 
+// 7. REFERRAL & TEAM NETWORK MODAL
+function ReferralTeamModal({ onClose }) {
+  const { user, userTeam, fetchUserTeam, addNotification, setModalType } = useApp();
+  const [copiedCode, setCopiedCode] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
+  const [activeTab, setActiveTab] = useState('members'); // 'members' | 'tiers'
+  const [loading, setLoading] = useState(false);
+
+  const isGuest = !user || !user.id || user.isGuest || user.name === 'Guest User';
+  const ownCode = user?.referralCode || user?.referral_code || user?.code || '';
+  const referralLink = `${window.location.origin}/?ref=${ownCode}`;
+
+  if (isGuest) {
+    return (
+      <div className="modal-box text-center auth-modal-box animate-scale-up">
+        <div className="modal-header">
+          <div className="header-with-icon">
+            <div className="auth-icon-badge" style={{ background: 'linear-gradient(135deg, #2563eb, #1d4ed8)', color: '#fff' }}>
+              <Users size={20} />
+            </div>
+            <div>
+              <h3 className="auth-title">My Referral Network & Team</h3>
+              <span className="auth-subtitle">Sign in to unlock your invitation network</span>
+            </div>
+          </div>
+          <button className="close-btn" onClick={onClose}><X size={18} /></button>
+        </div>
+        <div className="p-6">
+          <div className="success-icon-wrap" style={{ background: 'rgba(37, 99, 235, 0.1)', color: '#2563eb' }}>
+            <Lock size={38} />
+          </div>
+          <h4 className="mt-4 font-bold text-lg">Account Login Required</h4>
+          <p className="modal-desc mt-1">
+            Please sign in or register an account to access your personal invitation code, track direct team members, and earn up to 28% multi-tier commissions.
+          </p>
+          <div className="modal-btn-row mt-6">
+            <button className="btn-outline w-full" onClick={onClose}>
+              Cancel
+            </button>
+            <button className="btn-primary w-full" onClick={() => {
+              onClose();
+              setModalType('auth');
+            }}>
+              Sign In / Register
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const handleCopyCode = () => {
+    navigator.clipboard.writeText(ownCode);
+    setCopiedCode(true);
+    if (addNotification) {
+      addNotification('Invitation Code Copied', `Invite Code ${ownCode} copied to clipboard!`);
+    }
+    setTimeout(() => setCopiedCode(false), 2000);
+  };
+
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(referralLink);
+    setCopiedLink(true);
+    if (addNotification) {
+      addNotification('Referral Link Copied', 'Your personal referral link is ready to share!');
+    }
+    setTimeout(() => setCopiedLink(false), 2000);
+  };
+
+  const handleShare = async () => {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'Join Ecomxstocks Platform',
+          text: `Use my invitation code ${ownCode} to earn task commissions on Ecomxstocks!`,
+          url: referralLink,
+        });
+      } catch (err) {}
+    } else {
+      handleCopyLink();
+    }
+  };
+
+  const handleRefresh = async () => {
+    setLoading(true);
+    if (fetchUserTeam) {
+      await fetchUserTeam(user?.id, ownCode);
+    }
+    setLoading(false);
+  };
+
+  const members = userTeam || [];
+  const activeMembersCount = members.filter(m => m.status !== 'Suspended').length;
+  const totalTasksCompleted = members.reduce((sum, m) => sum + (Number(m.completedTasks ?? m.completed_tasks ?? 0)), 0);
+  const totalTasksPending = members.reduce((sum, m) => sum + (Number(m.pendingTasks ?? m.pending_tasks ?? 0)), 0);
+
+  return (
+    <div className="modal-box referral-team-modal-box animate-scale-up">
+      {/* Header */}
+      <div className="modal-header referral-modal-header">
+        <div className="header-with-icon">
+          <div className="auth-icon-badge" style={{ background: 'linear-gradient(135deg, #2563eb, #1d4ed8)', color: '#fff' }}>
+            <Users size={20} />
+          </div>
+          <div>
+            <h3 className="auth-title">My Referral Network & Team</h3>
+            <span className="auth-subtitle">Invite friends & earn up to 28% team dividends</span>
+          </div>
+        </div>
+        <button className="close-btn" onClick={onClose} aria-label="Close modal">
+          <X size={18} />
+        </button>
+      </div>
+
+      {/* Scrollable Body Container */}
+      <div className="referral-modal-scroll-body">
+        {/* 1. Sapphire Invitation Showcase Card */}
+        <div className="referral-hero-card">
+          <div className="ref-card-header">
+            <div className="ref-pill-label">
+              <Gift size={13} className="text-amber-300" />
+              <span>YOUR INVITATION CODE</span>
+            </div>
+            <button 
+              type="button" 
+              className="ref-sync-btn" 
+              onClick={handleRefresh} 
+              title="Refresh Team List"
+              disabled={loading}
+            >
+              <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
+              <span>{loading ? 'Syncing...' : 'Sync'}</span>
+            </button>
+          </div>
+
+          <div className="ref-code-action-row">
+            <div className="ref-code-value">{ownCode}</div>
+            <button 
+              type="button" 
+              className="ref-copy-code-btn"
+              onClick={handleCopyCode}
+            >
+              {copiedCode ? <Check size={15} /> : <Copy size={15} />}
+              <span>{copiedCode ? 'Code Copied!' : 'Copy Code'}</span>
+            </button>
+          </div>
+
+          <div className="ref-link-box">
+            <input 
+              type="text" 
+              readOnly 
+              value={referralLink} 
+              className="ref-link-input" 
+              onClick={(e) => e.target.select()}
+            />
+            <div className="ref-link-btn-group">
+              <button 
+                type="button" 
+                className="ref-btn-action"
+                onClick={handleCopyLink}
+              >
+                {copiedLink ? <Check size={14} /> : <Copy size={14} />}
+                <span>{copiedLink ? 'Copied' : 'Copy Link'}</span>
+              </button>
+              <button 
+                type="button" 
+                className="ref-btn-action share"
+                onClick={handleShare}
+                title="Share via device"
+              >
+                <Share2 size={14} />
+                <span>Share</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* 2. Four Stats Grid Cards */}
+        <div className="ref-stats-grid">
+          <div className="ref-stat-card blue">
+            <span className="ref-stat-label">Direct Team</span>
+            <div className="ref-stat-num">{members.length} <span className="ref-stat-sub">Members</span></div>
+          </div>
+          <div className="ref-stat-card green">
+            <span className="ref-stat-label">Active Members</span>
+            <div className="ref-stat-num">{activeMembersCount} <span className="ref-stat-sub">Active</span></div>
+          </div>
+          <div className="ref-stat-card amber">
+            <span className="ref-stat-label">Team Tasks Done</span>
+            <div className="ref-stat-num">{totalTasksCompleted} <span className="ref-stat-sub">Tasks</span></div>
+          </div>
+          <div className="ref-stat-card purple">
+            <span className="ref-stat-label">Pending Tasks</span>
+            <div className="ref-stat-num">{totalTasksPending} <span className="ref-stat-sub">Pending</span></div>
+          </div>
+        </div>
+
+        {/* 3. Segmented Navigation */}
+        <div className="ref-segmented-nav">
+          <button
+            type="button"
+            className={`ref-seg-btn ${activeTab === 'members' ? 'active' : ''}`}
+            onClick={() => setActiveTab('members')}
+          >
+            <Users size={14} />
+            <span>Invited Members ({members.length})</span>
+          </button>
+          <button
+            type="button"
+            className={`ref-seg-btn ${activeTab === 'tiers' ? 'active' : ''}`}
+            onClick={() => setActiveTab('tiers')}
+          >
+            <Award size={14} />
+            <span>Commission Structure (Up to 28%)</span>
+          </button>
+        </div>
+
+        {/* 4. Tab Content */}
+        {activeTab === 'members' && (
+          <div className="ref-tab-pane">
+            {members.length === 0 ? (
+              <div className="ref-empty-state">
+                <div className="ref-empty-icon-wrap">
+                  <Users size={28} />
+                </div>
+                <h4>No Team Members Joined Yet</h4>
+                <p>
+                  Share your invitation code <strong className="highlight-code">{ownCode}</strong> with colleagues & network partners to earn instant multi-tier commission dividends!
+                </p>
+                <button 
+                  type="button" 
+                  className="ref-empty-cta"
+                  onClick={handleCopyLink}
+                >
+                  <Copy size={14} />
+                  <span>Copy My Referral Link</span>
+                </button>
+              </div>
+            ) : (
+              <div className="ref-table-wrap">
+                <table className="ref-table">
+                  <thead>
+                    <tr>
+                      <th>Member</th>
+                      <th>VIP Tier</th>
+                      <th>Tasks Done</th>
+                      <th>Pending</th>
+                      <th>Joined</th>
+                      <th style={{ textAlign: 'right' }}>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {members.map((m) => (
+                      <tr key={m.id}>
+                        <td>
+                          <div className="ref-user-cell">
+                            <div className="ref-avatar">{m.avatar || (m.name ? m.name.charAt(0) : 'U')}</div>
+                            <div>
+                              <div className="ref-user-name">{m.name}</div>
+                              <div className="ref-user-email">ID: #{m.code || m.referralCode || (m.id ? m.id.slice(-6) : 'Verified')}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td>
+                          <span className={`vip-tag-small ${(m.vipLevel || m.vip_level || 'ebay').toLowerCase()}`}>
+                            {m.vipLevel === 'eBay' || m.vip_level === 'eBay' ? '🔴 eBay' : m.vipLevel === 'Walmart' || m.vip_level === 'Walmart' ? '🔵 Walmart' : m.vipLevel === 'Temu' || m.vip_level === 'Temu' ? '🟠 Temu' : m.vipLevel || m.vip_level || 'eBay'}
+                          </span>
+                        </td>
+                        <td className="text-emerald-600 font-bold">
+                          {m.completedTasks ?? m.completed_tasks ?? 0}
+                        </td>
+                        <td className="text-amber-600 font-bold">
+                          {m.pendingTasks ?? m.pending_tasks ?? 0}
+                        </td>
+                        <td className="text-muted text-xs">
+                          {m.joinedDate || (m.created_at ? m.created_at.split('T')[0] : 'Recent')}
+                        </td>
+                        <td style={{ textAlign: 'right' }}>
+                          <span className="badge-active-pill">Active</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'tiers' && (
+          <div className="ref-tab-pane">
+            <div className="ref-tiers-card">
+              <div className="ref-tiers-title">
+                <Award size={16} className="text-amber-500" />
+                <span>Multi-Tier Referral Commission Rules</span>
+              </div>
+              <div className="ref-tiers-list">
+                <div className="ref-tier-item tier-1">
+                  <div className="tier-badge">1</div>
+                  <div className="tier-info">
+                    <strong>Level 1 (Direct Referrals)</strong>
+                    <p>Users who register directly with your code</p>
+                  </div>
+                  <div className="tier-yield">16% Yield</div>
+                </div>
+                <div className="ref-tier-item tier-2">
+                  <div className="tier-badge">2</div>
+                  <div className="tier-info">
+                    <strong>Level 2 (Secondary Referrals)</strong>
+                    <p>Users invited by your Level 1 direct team</p>
+                  </div>
+                  <div className="tier-yield">8% Yield</div>
+                </div>
+                <div className="ref-tier-item tier-3">
+                  <div className="tier-badge">3</div>
+                  <div className="tier-info">
+                    <strong>Level 3 (Tertiary Referrals)</strong>
+                    <p>Users invited by your Level 2 team</p>
+                  </div>
+                  <div className="tier-yield">4% Yield</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

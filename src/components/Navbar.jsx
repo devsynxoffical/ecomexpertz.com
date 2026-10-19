@@ -16,12 +16,14 @@ import {
   LogOut,
   User,
   Wallet,
-  Sparkles
+  Sparkles,
+  ShoppingBag
 } from 'lucide-react';
 
 export default function Navbar() {
   const {
     user,
+    isLoggedIn,
     currentView,
     setCurrentView,
     darkMode,
@@ -30,9 +32,14 @@ export default function Navbar() {
     setLanguage,
     setModalType,
     notifications,
+    markNotificationAsRead,
+    markAllNotificationsAsRead,
+    clearAllNotifications,
     records,
     setDashboardTab,
-    logoutAccount
+    logoutAccount,
+    isAdminAuthenticated,
+    adminLogout
   } = useApp();
 
   const [showNotifications, setShowNotifications] = useState(false);
@@ -41,7 +48,6 @@ export default function Navbar() {
   const [searchQuery, setSearchQuery] = useState('');
 
   const unreadCount = notifications.filter(n => !n.read).length;
-  const isLoggedIn = !!(user && user.id && localStorage.getItem('websynx_logged_out') !== 'true');
 
   const languages = [
     { code: 'en', label: 'English', flag: '🇺🇸' },
@@ -65,31 +71,42 @@ export default function Navbar() {
             </span>
           </div>
           <div className="announcement-right">
-            {/* View Switcher Pills */}
-            <div className="portal-switcher">
-              <button
-                className={`portal-pill ${currentView === 'dashboard' ? 'active' : ''}`}
-                onClick={() => {
-                  setCurrentView('dashboard');
-                  setDashboardTab('home');
-                }}
-              >
-                <LayoutDashboard size={13} />
-                <span>User App</span>
-              </button>
-              <button
-                className={`portal-pill admin ${currentView === 'admin' ? 'active' : ''}`}
-                onClick={() => setCurrentView('admin')}
-              >
-                <ShieldCheck size={13} />
-                <span>Admin Panel</span>
-                {records.filter(r => r.status === 'Pending').length > 0 && (
-                  <span className="badge-count">
-                    {records.filter(r => r.status === 'Pending').length}
-                  </span>
-                )}
-              </button>
-            </div>
+            {/* View Switcher Pills - visible when on /admin route or when admin is authenticated */}
+            {(currentView === 'admin' || isAdminAuthenticated) ? (
+              <div className="portal-switcher">
+                <button
+                  className={`portal-pill ${currentView !== 'admin' ? 'active' : ''}`}
+                  onClick={() => {
+                    window.history.pushState(null, '', '/');
+                    setCurrentView('dashboard');
+                    setDashboardTab('home');
+                  }}
+                  title="Switch to Client User View"
+                >
+                  <LayoutDashboard size={13} />
+                  <span>User App</span>
+                </button>
+                <button
+                  className={`portal-pill admin ${currentView === 'admin' ? 'active' : ''}`}
+                  onClick={() => {
+                    window.history.pushState(null, '', '/admin');
+                    setCurrentView('admin');
+                  }}
+                >
+                  <ShieldCheck size={13} />
+                  <span>Admin Panel</span>
+                  {records.filter(r => r.status === 'Pending').length > 0 && (
+                    <span className="badge-count">
+                      {records.filter(r => r.status === 'Pending').length}
+                    </span>
+                  )}
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-300 font-medium">Official Platform Engine</span>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -98,12 +115,25 @@ export default function Navbar() {
       <div className="navbar-main">
         <div className="container navbar-container">
           {/* Brand Logo */}
-          <div className="brand-logo" onClick={() => setCurrentView('dashboard')}>
+          <div
+            className="brand-logo"
+            onClick={() => {
+              if (isLoggedIn) {
+                setCurrentView('dashboard');
+                setDashboardTab('home');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              } else {
+                setCurrentView('storefront');
+              }
+            }}
+            title={isLoggedIn ? "Dashboard Overview" : "Back to Marketplace Home"}
+            style={{ cursor: 'pointer' }}
+          >
             <div className="logo-icon-wrap">
               <TrendingUp size={22} className="logo-svg" />
             </div>
             <div className="logo-text-group">
-              <span className="brand-title">Web<span className="brand-highlight">Synx</span></span>
+              <span className="brand-title">Ecom<span className="brand-highlight">xstocks</span></span>
               <span className="brand-subtitle">Website Traffic & Task Hub</span>
             </div>
           </div>
@@ -171,39 +201,171 @@ export default function Navbar() {
               <span className="apk-indicator">APK</span>
             </button>
 
-            {/* Notification Bell */}
+            {/* Notification Bell matching Screenshot 2 */}
             <div className="dropdown-container">
               <button
-                className="action-icon-btn"
-                onClick={() => setShowNotifications(!showNotifications)}
+                className="action-icon-btn notif-bell-btn"
+                onClick={() => {
+                  const nextState = !showNotifications;
+                  setShowNotifications(nextState);
+                  if (nextState && unreadCount > 0) {
+                    markAllNotificationsAsRead && markAllNotificationsAsRead();
+                  }
+                }}
                 title="Notifications"
+                style={{
+                  position: 'relative'
+                }}
               >
                 <Bell size={19} />
-                {unreadCount > 0 && <span className="notification-dot">{unreadCount}</span>}
+                {unreadCount > 0 && (
+                  <span
+                    className="notification-dot"
+                    style={{
+                      background: '#ef4444',
+                      color: '#ffffff',
+                      fontSize: '11px',
+                      fontWeight: '800',
+                      boxShadow: '0 2px 5px rgba(239, 68, 68, 0.4)'
+                    }}
+                  >
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
               </button>
+
               {showNotifications && (
                 <div className="dropdown-panel notif-dropdown animate-slide-down">
-                  <div className="notif-header">
-                    <h4>Notifications</h4>
-                    <span className="notif-badge">{notifications.length} alerts</span>
+                  <div className="notif-header flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <h4>Notifications</h4>
+                      <span className="notif-badge">{notifications.length} {notifications.length === 1 ? 'alert' : 'alerts'}</span>
+                    </div>
+                    {notifications.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          clearAllNotifications && clearAllNotifications();
+                        }}
+                        style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '11px', cursor: 'pointer', fontWeight: 600 }}
+                      >
+                        Clear
+                      </button>
+                    )}
                   </div>
                   <div className="notif-list">
-                    {notifications.map((n) => (
-                      <div key={n.id} className="notif-item">
-                        <div className="notif-item-top">
-                          <strong className="notif-title">{n.title}</strong>
-                          <span className="notif-time">{n.time}</span>
-                        </div>
-                        <p className="notif-desc">{n.message}</p>
+                    {notifications.length === 0 ? (
+                      <div className="empty-notif" style={{ padding: '24px 16px', textAlign: 'center', color: '#94a3b8', fontSize: '12px' }}>
+                        <Bell size={24} style={{ margin: '0 auto 6px auto', opacity: 0.3 }} />
+                        <p style={{ margin: 0 }}>No new notifications</p>
                       </div>
-                    ))}
+                    ) : (
+                      notifications.map((n) => {
+                        const isSuccess = n.type === 'success' || n.title?.includes('Approved') || n.title?.includes('Completed') || n.title?.includes('Assigned');
+                        const isError = n.type === 'error' || n.title?.includes('Rejected');
+                        return (
+                          <div
+                            key={n.id}
+                            className={`notif-item ${!n.read ? 'notif-unread' : ''}`}
+                            onClick={() => markNotificationAsRead && markNotificationAsRead(n.id)}
+                            style={{
+                              borderLeft: `3px solid ${isSuccess ? '#10b981' : isError ? '#ef4444' : '#3b82f6'}`,
+                              cursor: 'pointer'
+                            }}
+                          >
+                            <div className="notif-item-top">
+                              <strong className="notif-title">{n.title}</strong>
+                              <span className="notif-time">{n.time || 'Just now'}</span>
+                            </div>
+                            <p className="notif-desc">{n.message}</p>
+                          </div>
+                        );
+                      })
+                    )}
                   </div>
                 </div>
               )}
             </div>
 
-            {/* User Account Controls: Profile Pill when Logged In vs Login/Register button when Logged Out */}
-            {isLoggedIn ? (
+            {/* User Account Controls: Admin Profile vs User Profile vs Login/Register */}
+            {isAdminAuthenticated ? (
+              <div className="dropdown-container">
+                <button
+                  className="user-profile-nav-pill admin-badge-pill"
+                  onClick={() => setShowUserMenu(!showUserMenu)}
+                  title="Master Administrator Session"
+                  style={{
+                    borderColor: 'rgba(37, 99, 235, 0.4)',
+                    background: 'rgba(37, 99, 235, 0.08)'
+                  }}
+                >
+                  <div className="user-avatar-circle" style={{ background: '#2563eb', color: '#fff', fontSize: '13px' }}>
+                    🛡️
+                  </div>
+                  <div className="user-nav-meta">
+                    <span className="user-nav-name" style={{ color: '#1e40af', fontWeight: 700 }}>
+                      SuperAdmin
+                    </span>
+                    <span className="user-nav-tier" style={{ color: '#2563eb', fontWeight: 600 }}>
+                      👑 Operations Admin
+                    </span>
+                  </div>
+                  <ChevronDown size={14} className={`user-nav-chevron ${showUserMenu ? 'rotate-180' : ''}`} />
+                </button>
+
+                {showUserMenu && (
+                  <div className="dropdown-panel user-dropdown animate-slide-down">
+                    <div className="user-info-banner">
+                      <div className="user-avatar-large" style={{ background: '#2563eb', color: '#fff', fontSize: '20px' }}>
+                        🛡️
+                      </div>
+                      <div className="user-meta">
+                        <div className="user-name-row">
+                          <strong>Master Administrator</strong>
+                          <span className="vip-tag-small ebay">SuperAdmin</span>
+                        </div>
+                        <span className="user-email">admin@devsynx.com • Operations</span>
+                      </div>
+                    </div>
+                    <div className="dropdown-divider"></div>
+                    <div
+                      className="dropdown-item"
+                      onClick={() => {
+                        window.history.pushState(null, '', '/admin');
+                        setCurrentView('admin');
+                        setShowUserMenu(false);
+                      }}
+                    >
+                      <ShieldCheck size={16} />
+                      <span>Admin Console</span>
+                    </div>
+                    <div
+                      className="dropdown-item"
+                      onClick={() => {
+                        window.history.pushState(null, '', '/');
+                        setCurrentView('dashboard');
+                        setShowUserMenu(false);
+                      }}
+                    >
+                      <LayoutDashboard size={16} />
+                      <span>View User Website</span>
+                    </div>
+                    <div className="dropdown-divider"></div>
+                    <div
+                      className="dropdown-item logout"
+                      onClick={() => {
+                        setShowUserMenu(false);
+                        adminLogout();
+                      }}
+                    >
+                      <LogOut size={16} />
+                      <span>Sign Out Admin</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : isLoggedIn ? (
               <div className="dropdown-container">
                 <button
                   className="user-profile-nav-pill"
@@ -213,7 +375,12 @@ export default function Navbar() {
                   <div className="user-avatar-circle">{user?.avatar || (user?.name ? user.name.charAt(0).toUpperCase() : 'U')}</div>
                   <div className="user-nav-meta">
                     <span className="user-nav-name">{user?.name}</span>
-                    <span className="user-nav-tier">⭐ {user?.vipLevel || 'eBay'}</span>
+                    <span className={`user-nav-tier ${(user?.vipLevel || 'ebay').toLowerCase()}`}>
+                      {user?.vipLevel === 'eBay' && '🔴 eBay'}
+                      {user?.vipLevel === 'Walmart' && '🔵 Walmart'}
+                      {user?.vipLevel === 'Temu' && '🟠 Temu'}
+                      {!['eBay', 'Walmart', 'Temu'].includes(user?.vipLevel) && `⭐ ${user?.vipLevel || 'eBay'}`}
+                    </span>
                   </div>
                   <ChevronDown size={14} className={`user-nav-chevron ${showUserMenu ? 'rotate-180' : ''}`} />
                 </button>
@@ -225,9 +392,14 @@ export default function Navbar() {
                       <div className="user-meta">
                         <div className="user-name-row">
                           <strong>{user?.name}</strong>
-                          <span className="vip-tag-small">⭐ {user?.vipLevel || 'eBay'}</span>
+                          <span className={`vip-tag-small ${(user?.vipLevel || 'ebay').toLowerCase()}`}>
+                            {user?.vipLevel === 'eBay' && '🔴 eBay'}
+                            {user?.vipLevel === 'Walmart' && '🔵 Walmart'}
+                            {user?.vipLevel === 'Temu' && '🟠 Temu'}
+                            {!['eBay', 'Walmart', 'Temu'].includes(user?.vipLevel) && `⭐ ${user?.vipLevel || 'eBay'}`}
+                          </span>
                         </div>
-                        <span className="user-email">{user?.email}</span>
+                        <span className="user-email">ID: #{user?.referralCode || user?.code || '505282'} • Verified Account</span>
                         <div className="user-bal-pill">
                           <Wallet size={12} />
                           <span>${(Number(user?.balance) || 0).toFixed(2)} USDT</span>
@@ -235,6 +407,17 @@ export default function Navbar() {
                       </div>
                     </div>
                     <div className="dropdown-divider"></div>
+                    <div
+                      className="dropdown-item"
+                      onClick={() => {
+                        setCurrentView('dashboard');
+                        setDashboardTab('home');
+                        setShowUserMenu(false);
+                      }}
+                    >
+                      <LayoutDashboard size={16} color="#2563eb" />
+                      <span>Dashboard Overview</span>
+                    </div>
                     <div
                       className="dropdown-item"
                       onClick={() => {
@@ -290,6 +473,11 @@ export default function Navbar() {
                     </div>
                   </div>
                 )}
+              </div>
+            ) : currentView === 'admin' ? (
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                <ShieldCheck size={13} />
+                <span>Admin Gateway</span>
               </div>
             ) : (
               <button

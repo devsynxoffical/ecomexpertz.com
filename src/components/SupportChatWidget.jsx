@@ -27,7 +27,22 @@ export default function SupportChatWidget() {
 
   // Initial load
   useEffect(() => {
-    api.getSupportSettings().then(setSettings).catch(() => {});
+    api.getSupportSettings().then((s) => {
+      const clean = s ? { ...s } : {};
+      if (!clean.agentName || clean.agentName.includes('WebSynx')) {
+        clean.agentName = 'Ecomxstocks Official Support';
+      }
+      if (!clean.telegram || clean.telegram.includes('websynx')) {
+        clean.telegram = 'https://t.me/ecomxstocks_support';
+      }
+      if (!clean.telegramChannel || clean.telegramChannel.includes('websynx')) {
+        clean.telegramChannel = 'https://t.me/ecomxstocks_official';
+      }
+      if (!clean.telegramSupportUser || clean.telegramSupportUser.includes('WebSynx')) {
+        clean.telegramSupportUser = '@Ecomxstocks_Support';
+      }
+      setSettings(clean);
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -51,7 +66,11 @@ export default function SupportChatWidget() {
         api.getMyChat(userId).then(setChat).catch(() => {});
       }
       if (event.type === 'support_settings_updated') {
-        setSettings(event.payload.settings);
+        const clean = event.payload?.settings ? { ...event.payload.settings } : {};
+        if (!clean.agentName || clean.agentName.includes('WebSynx')) {
+          clean.agentName = 'Ecomxstocks Official Support';
+        }
+        setSettings(clean);
       }
     });
     return () => unsub();
@@ -112,7 +131,7 @@ export default function SupportChatWidget() {
                 <span className={`support-status-dot ${isOnline ? 'online' : 'offline'}`}></span>
               </div>
               <div className="support-agent-info">
-                <strong>{settings?.agentName || 'Customer Support'}</strong>
+                <strong>{settings?.agentName && !settings.agentName.includes('WebSynx') ? settings.agentName : 'Ecomxstocks Official Support'}</strong>
                 <span>{isOnline ? 'Online • Typically replies in minutes' : 'Offline • Leave a message'}</span>
               </div>
             </div>
@@ -142,7 +161,9 @@ export default function SupportChatWidget() {
               <div key={m.id} className={`support-msg-row ${m.sender}`}>
                 <div className={`support-bubble ${m.sender} ${m.pending ? 'pending' : ''}`}>
                   {m.sender === 'admin' && !m.auto && m.agentName && (
-                    <span className="support-bubble-agent">{m.agentName}</span>
+                    <span className="support-bubble-agent">
+                      {m.agentName.includes('WebSynx') ? 'Ecomxstocks Official Support' : m.agentName}
+                    </span>
                   )}
                   <span className="support-bubble-text">{m.text}</span>
                   <span className="support-bubble-time">{m.pending ? 'Sending…' : formatTime(m.createdAt)}</span>
@@ -168,15 +189,11 @@ export default function SupportChatWidget() {
             </button>
           </form>
 
-          {(settings?.telegram || settings?.whatsapp || settings?.email) && (
+          {settings?.telegram && (
             <div className="support-chat-footer">
-              {settings?.telegram && <a href={settings.telegram} target="_blank" rel="noopener noreferrer">Telegram</a>}
-              {settings?.whatsapp && <a href={settings.whatsapp} target="_blank" rel="noopener noreferrer">WhatsApp</a>}
-              {settings?.email && (
-                <a href={`mailto:${settings.email}`}>
-                  <Mail size={11} /> Email
-                </a>
-              )}
+              <a href={settings.telegram} target="_blank" rel="noopener noreferrer">
+                Official Telegram Support
+              </a>
               {settings?.workingHours && <span className="support-hours">{settings.workingHours}</span>}
             </div>
           )}

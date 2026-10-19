@@ -34,13 +34,28 @@ import {
   RefreshCw,
   Pause,
   Play,
-  Send
+  Send,
+  Bell,
+  X
 } from 'lucide-react';
-import { openProductUrl, getProductUrl } from '../utils/productUrl';
+import { openProductUrl, getProductUrl, getProductImage } from '../utils/productUrl';
+import {
+  EbayLogo,
+  WalmartLogo,
+  TemuLogo,
+  AmazonLogo,
+  AliExpressLogo,
+  TargetLogo,
+  ShopifyLogo,
+  ShopeeLogo,
+  PlatformLogo
+} from '../components/PlatformIcons';
+
+import PlatformTasksView from './PlatformTasksView';
 import { api } from '../services/api';
 
 export default function DashboardView() {
-  const { dashboardTab } = useApp();
+  const { dashboardTab, activePlatform, setDashboardTab } = useApp();
 
   return (
     <div className="dashboard-page animate-fade-in">
@@ -50,6 +65,12 @@ export default function DashboardView() {
         {dashboardTab === 'records' && <TabRecords />}
         {dashboardTab === 'support' && <TabSupport />}
         {dashboardTab === 'mine' && <TabMine />}
+        {dashboardTab === 'platform-tasks' && (
+          <PlatformTasksView
+            platform={activePlatform || 'eBay'}
+            onBack={() => setDashboardTab('home')}
+          />
+        )}
       </div>
     </div>
   );
@@ -61,29 +82,45 @@ export default function DashboardView() {
 function TabHome() {
   const {
     user,
+    userTeam,
     setModalType,
     tasks,
     setSelectedTask,
     activityStream,
     records,
     setDashboardTab,
-    addNotification
+    addNotification,
+    openPlatformTasks,
+    openRecordsTab,
+    notifications = [],
+    markNotificationAsRead,
+    markAllNotificationsAsRead,
+    clearAllNotifications,
+    unreadNotificationsCount = 0
   } = useApp();
 
   const [copiedInvite, setCopiedInvite] = useState(false);
+  const [showNotifModal, setShowNotifModal] = useState(false);
 
   const ebayTasks = tasks.filter(t => t.platform === 'eBay').slice(0, 6);
   const walmartTasks = tasks.filter(t => t.platform === 'Walmart').slice(0, 6);
   const temuTasks = tasks.filter(t => t.platform === 'Temu').slice(0, 6);
 
-  const pendingRecord = records.find(r => r.status === 'Pending');
+  const pendingRecord = (records || []).find(r => r && r.status === 'Pending');
+
+  const isGuest = !user || !user.id || user.isGuest || user.name === 'Guest User';
+  const isLoggedIn = !isGuest;
+  const userReferralCode = user?.referralCode || user?.code || '';
 
   const handleCopyInviteCode = () => {
-    const code = user?.referralCode || user?.code || '505282';
-    navigator.clipboard.writeText(code);
+    if (!isLoggedIn || !userReferralCode) {
+      setModalType('auth');
+      return;
+    }
+    navigator.clipboard.writeText(userReferralCode);
     setCopiedInvite(true);
     if (addNotification) {
-      addNotification('Invitation Code Copied', `Invite Code ${code} copied to clipboard!`);
+      addNotification('Invitation Code Copied', `Invite Code ${userReferralCode} copied to clipboard!`);
     }
     setTimeout(() => setCopiedInvite(false), 2500);
   };
@@ -94,90 +131,273 @@ function TabHome() {
       <div className="dashboard-hero-banner">
         <div className="hero-banner-top">
           <div className="hero-greeting">
-            {/* INVITATION CODE BADGE ON UPPER SIDE OF WELCOME BACK */}
-            <div className="hero-invite-bar mb-2.5">
-              <div
-                className="hero-invite-badge"
-                onClick={handleCopyInviteCode}
-                title="Click to copy your unique invitation code"
-              >
-                <div className="invite-tag-label">
-                  <Gift size={13} className="text-amber-300" />
-                  <span>INVITE CODE:</span>
+            {/* INVITATION CODE BADGE - ONLY FOR LOGGED IN USERS */}
+            {isLoggedIn && userReferralCode && (
+              <div className="hero-invite-bar mb-2.5 flex items-center gap-2 flex-wrap">
+                <div
+                  className="hero-invite-badge"
+                  onClick={handleCopyInviteCode}
+                  title="Click to copy your unique invitation code"
+                >
+                  <div className="invite-tag-label">
+                    <Gift size={13} className="text-amber-300" />
+                    <span>INVITE CODE:</span>
+                  </div>
+                  <span className="invite-code-number">{userReferralCode}</span>
+                  <button
+                    type="button"
+                    className="invite-code-copy-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleCopyInviteCode();
+                    }}
+                    title="Copy code"
+                  >
+                    {copiedInvite ? (
+                      <>
+                        <Check size={11} className="text-emerald-300" />
+                        <span>Copied</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy size={11} />
+                        <span>Copy</span>
+                      </>
+                    )}
+                  </button>
                 </div>
-                <span className="invite-code-number">{user?.referralCode || user?.code || '505282'}</span>
+
                 <button
                   type="button"
-                  className="invite-code-copy-btn"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleCopyInviteCode();
-                  }}
-                  title="Copy code"
+                  className="hero-invite-team-btn"
+                  onClick={() => setModalType('referral')}
+                  title="View your referral network and share link"
                 >
-                  {copiedInvite ? (
-                    <>
-                      <Check size={11} className="text-emerald-300" />
-                      <span>Copied</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy size={11} />
-                      <span>Copy</span>
-                    </>
-                  )}
+                  <Users size={12} />
+                  <span>Team ({userTeam?.length || user?.teamMembersCount || 0})</span>
                 </button>
               </div>
-            </div>
+            )}
 
-            <h2>Welcome back,</h2>
+            <h2>{isLoggedIn ? 'Welcome back,' : 'Welcome to Ecomxstocks,'}</h2>
             <div className="greeting-name-row">
-              <span className="greeting-name">{user?.name || 'User'}</span>
+              <span className="greeting-name">{isLoggedIn ? (user?.name || 'User') : 'Guest'}</span>
               <span className="greeting-wave">👋</span>
             </div>
           </div>
-          <div className="hero-balance-col">
-            <span className="hero-bal-label">AVAILABLE BALANCE</span>
-            <div className="hero-bal-val">
-              <span className="bal-num">{(Number(user?.balance) || 0).toFixed(2)}</span>
-              <span className="bal-curr">USDT</span>
+
+          <div className="hero-balance-col" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div>
+              <span className="hero-bal-label">AVAILABLE BALANCE</span>
+              <div className="hero-bal-val">
+                <span className="bal-num">{isLoggedIn ? (Number(user?.balance) || 0).toFixed(2) : '0.00'}</span>
+                <span className="bal-curr">USDT</span>
+              </div>
             </div>
+
+            {/* Notification Bell button matching Screenshot 2 */}
+            <button
+              type="button"
+              className="hero-notif-bell-btn"
+              onClick={() => setShowNotifModal(true)}
+              title="Notifications"
+              style={{
+                position: 'relative',
+                width: '42px',
+                height: '42px',
+                borderRadius: '50%',
+                background: '#ffffff',
+                border: 'none',
+                color: '#1e293b',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                boxShadow: '0 4px 14px rgba(0, 0, 0, 0.15)',
+                transition: 'all 0.2s ease',
+                flexShrink: 0
+              }}
+            >
+              <Bell size={21} strokeWidth={2.2} />
+              {unreadNotificationsCount > 0 && (
+                <span
+                  style={{
+                    position: 'absolute',
+                    top: '-3px',
+                    right: '-3px',
+                    background: '#ef4444',
+                    color: '#ffffff',
+                    fontSize: '11px',
+                    fontWeight: '800',
+                    minWidth: '20px',
+                    height: '20px',
+                    borderRadius: '50%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    boxShadow: '0 2px 6px rgba(239, 68, 68, 0.5)',
+                    padding: '0 3px'
+                  }}
+                >
+                  {unreadNotificationsCount > 99 ? '99+' : unreadNotificationsCount}
+                </span>
+              )}
+            </button>
           </div>
         </div>
 
         {/* Deposit and Withdraw action buttons matching screenshot */}
         <div className="hero-action-row">
-          <button className="btn-hero-deposit" onClick={() => setModalType('deposit')}>
+          <button className="btn-hero-deposit" onClick={() => {
+            if (!isLoggedIn) { setModalType('auth'); return; }
+            setModalType('deposit');
+          }}>
             <Wallet size={16} />
             <span>Deposit</span>
           </button>
-          <button className="btn-hero-withdraw" onClick={() => setModalType('withdraw')}>
+          <button className="btn-hero-withdraw" onClick={() => {
+            if (!isLoggedIn) { setModalType('auth'); return; }
+            setModalType('withdraw');
+          }}>
             <ArrowUpRight size={16} />
             <span>Withdraw</span>
           </button>
         </div>
       </div>
 
-      {/* PARTNER PLATFORMS PILL ROW matching Screenshot 2 */}
+      {/* Notifications Drawer Modal */}
+      {showNotifModal && (
+        <div
+          className="modal-overlay animate-fade-in"
+          onClick={() => setShowNotifModal(false)}
+          style={{ zIndex: 99999 }}
+        >
+          <div
+            className="modal-box max-w-md animate-scale-up"
+            onClick={(e) => e.stopPropagation()}
+            style={{ padding: '20px', borderRadius: '20px' }}
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#fee2e2', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Bell size={18} />
+                </div>
+                <div>
+                  <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: '#0f172a' }}>
+                    Notifications
+                  </h4>
+                  <span style={{ fontSize: '11px', color: '#64748b' }}>
+                    {notifications.length} message(s)
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {unreadNotificationsCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => markAllNotificationsAsRead && markAllNotificationsAsRead()}
+                    style={{ background: '#f1f5f9', border: 'none', borderRadius: '8px', padding: '4px 8px', fontSize: '11px', fontWeight: 600, color: '#2563eb', cursor: 'pointer' }}
+                  >
+                    Mark read
+                  </button>
+                )}
+                {notifications.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => clearAllNotifications && clearAllNotifications()}
+                    style={{ background: 'none', border: 'none', fontSize: '11px', color: '#94a3b8', cursor: 'pointer' }}
+                  >
+                    Clear
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="close-btn"
+                  onClick={() => setShowNotifModal(false)}
+                  style={{ background: '#f1f5f9', border: 'none', borderRadius: '50%', width: '28px', height: '28px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <X size={15} />
+                </button>
+              </div>
+            </div>
+
+            <div className="notif-list-modal mt-3" style={{ maxHeight: '380px', overflowY: 'auto' }}>
+              {notifications.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '40px 10px', color: '#94a3b8' }}>
+                  <Bell size={36} style={{ margin: '0 auto 10px auto', opacity: 0.3 }} />
+                  <p style={{ margin: 0, fontSize: '14px' }}>No notifications yet</p>
+                  <span style={{ fontSize: '12px' }}>You will see task assignments and deposit/withdrawal updates here.</span>
+                </div>
+              ) : (
+                notifications.map((n) => {
+                  const isSuccess = n.type === 'success' || n.title?.includes('Approved') || n.title?.includes('Completed') || n.title?.includes('Assigned');
+                  const isError = n.type === 'error' || n.title?.includes('Rejected');
+                  const isWarning = n.type === 'warning';
+                  return (
+                    <div
+                      key={n.id}
+                      onClick={() => markNotificationAsRead && markNotificationAsRead(n.id)}
+                      style={{
+                        padding: '12px 14px',
+                        borderRadius: '12px',
+                        marginBottom: '8px',
+                        background: n.read ? '#ffffff' : '#f8fafc',
+                        border: '1px solid #f1f5f9',
+                        borderLeft: `4px solid ${isSuccess ? '#10b981' : isError ? '#ef4444' : isWarning ? '#f59e0b' : '#3b82f6'}`,
+                        cursor: 'pointer',
+                        transition: 'background 0.15s'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                        <strong style={{ fontSize: '13px', color: '#0f172a', fontWeight: n.read ? 600 : 800 }}>
+                          {n.title}
+                        </strong>
+                        <span style={{ fontSize: '11px', color: '#94a3b8' }}>{n.time || 'Just now'}</span>
+                      </div>
+                      <p style={{ margin: 0, fontSize: '12.5px', color: '#475569', lineHeight: 1.45 }}>
+                        {n.message}
+                      </p>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PARTNER PLATFORMS PILL ROW - 8 Unique Major Platforms */}
       <div className="partner-platforms-card mt-4">
         <span className="card-section-title">PARTNER PLATFORMS</span>
         <div className="platforms-pills-row">
           {[
-            { name: 'eBay', class: 'ebay-badge', logo: '🔴' },
-            { name: 'Walmart', class: 'walmart-badge', logo: '☀️' },
-            { name: 'Temu', class: 'temu-badge', logo: '🟠' },
-            { name: 'eBay', class: 'ebay-badge', logo: '🔴' },
-            { name: 'Walmart', class: 'walmart-badge', logo: '☀️' },
-            { name: 'Temu', class: 'temu-badge', logo: '🟠' },
-            { name: 'eBay', class: 'ebay-badge', logo: '🔴' },
-            { name: 'Walmart', class: 'walmart-badge', logo: '☀️' },
+            { name: 'eBay', platform: 'ebay', url: 'https://www.ebay.com', icon: <EbayLogo size={42} /> },
+            { name: 'Walmart', platform: 'walmart', url: 'https://www.walmart.com', icon: <WalmartLogo size={42} /> },
+            { name: 'Temu', platform: 'temu', url: 'https://www.temu.com', icon: <TemuLogo size={42} /> },
+            { name: 'Amazon', platform: 'amazon', url: 'https://www.amazon.com', icon: <AmazonLogo size={42} /> },
+            { name: 'AliExpress', platform: 'aliexpress', url: 'https://www.aliexpress.com', icon: <AliExpressLogo size={42} /> },
+            { name: 'Target', platform: 'target', url: 'https://www.target.com', icon: <TargetLogo size={42} /> },
+            { name: 'Shopify', platform: 'shopify', url: 'https://www.shopify.com', icon: <ShopifyLogo size={42} /> },
+            { name: 'Shopee', platform: 'shopee', url: 'https://www.shopee.com', icon: <ShopeeLogo size={42} /> },
           ].map((item, idx) => (
-            <div key={idx} className="partner-pill-item">
-              <div className={`platform-logo-circle ${item.class}`}>
-                <span>{item.logo}</span>
+            <a
+              key={idx}
+              href={item.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="partner-pill-item cursor-pointer"
+              title={`Visit official ${item.name} marketplace (backlink)`}
+              style={{ textDecoration: 'none', color: 'inherit' }}
+            >
+              <div className={`platform-logo-circle ${item.platform}`}>
+                {item.icon}
               </div>
-              <span className="partner-name">{item.name}</span>
-            </div>
+              <span className="partner-name" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px' }}>
+                <span>{item.name}</span>
+                <ExternalLink size={10} style={{ opacity: 0.6 }} />
+              </span>
+            </a>
           ))}
         </div>
       </div>
@@ -231,27 +451,70 @@ function TabHome() {
 
       {/* ACTIVITY COUNTERS ROW matching Screenshot 2 */}
       <div className="activity-counters-row mt-4">
-        <div className="counter-item">
+        {/* 1. Pending (25) */}
+        <div
+          className="counter-item clickable-counter"
+          onClick={() => {
+            if (!isLoggedIn) {
+              setModalType('auth');
+              return;
+            }
+            const activePkg = user?.assignedPackage || user?.assigned_package;
+            const targetPlatform = activePkg?.includes('Walmart')
+              ? 'Walmart'
+              : activePkg?.includes('Temu')
+              ? 'Temu'
+              : 'eBay';
+            openPlatformTasks(targetPlatform);
+          }}
+          title="Click to view and complete pending tasks"
+        >
           <div className="counter-icon-wrap amber">
             <Clock size={15} />
           </div>
           <div className="counter-info">
-            <strong className="counter-val">{user?.pendingTasks || 0}</strong>
+            <strong className="counter-val">
+              {user?.pendingTasks !== undefined ? user.pendingTasks : Math.max(0, 25 - (Number(user?.dailyCompleted ?? user?.completedTasks ?? 0)))}
+            </strong>
             <span className="counter-name">Pending</span>
           </div>
         </div>
 
-        <div className="counter-item">
+        {/* 2. Completed (0) */}
+        <div
+          className="counter-item clickable-counter"
+          onClick={() => {
+            if (!isLoggedIn) {
+              setModalType('auth');
+              return;
+            }
+            openRecordsTab('Ad Tasks', 'Completed');
+          }}
+          title="Click to view completed task records"
+        >
           <div className="counter-icon-wrap green">
             <CheckCircle2 size={15} />
           </div>
           <div className="counter-info">
-            <strong className="counter-val">{user?.completedTasks || 0}</strong>
+            <strong className="counter-val">
+              {Number(user?.dailyCompleted ?? user?.completedTasks ?? 0)}
+            </strong>
             <span className="counter-name">Completed</span>
           </div>
         </div>
 
-        <div className="counter-item">
+        {/* 3. Team Bonus ($0) */}
+        <div
+          className="counter-item clickable-counter"
+          onClick={() => {
+            if (!isLoggedIn) {
+              setModalType('auth');
+              return;
+            }
+            setModalType('referral');
+          }}
+          title="Click to view team referral network and bonus"
+        >
           <div className="counter-icon-wrap indigo">
             <Gift size={15} />
           </div>
@@ -261,7 +524,18 @@ function TabHome() {
           </div>
         </div>
 
-        <div className="counter-item">
+        {/* 4. This Month ($0) */}
+        <div
+          className="counter-item clickable-counter"
+          onClick={() => {
+            if (!isLoggedIn) {
+              setModalType('auth');
+              return;
+            }
+            openRecordsTab('Transactions', 'All');
+          }}
+          title="Click to view this month's earnings and transaction records"
+        >
           <div className="counter-icon-wrap blue">
             <Calendar size={15} />
           </div>
@@ -333,7 +607,7 @@ function TabHome() {
             <span className="platform-indicator ebay"></span>
             <h3>eBay Campaigns</h3>
           </div>
-          <button className="more-link" onClick={() => setDashboardTab('menu')}>
+          <button className="more-link" onClick={() => openPlatformTasks('eBay')}>
             <span>More</span>
             <ExternalLink size={13} />
           </button>
@@ -341,7 +615,11 @@ function TabHome() {
 
         <div className="horizontal-tasks-scroll">
           {ebayTasks.map((task) => {
-            const isRestricted = (task.requiredDeposit || 0) > 0 && user.balance < task.requiredDeposit && (user.totalDeposit || 0) < task.requiredDeposit;
+            const taskPrice = Number(task.price) || 0;
+            const explicitDep = Number(task.requiredDeposit || task.required_deposit || 0);
+            const minRequired = Math.max(taskPrice, explicitDep);
+            const userBal = Number(user?.balance) || 0;
+            const isRestricted = userBal < minRequired;
             return (
               <div
                 key={task.id}
@@ -351,13 +629,13 @@ function TabHome() {
                   setModalType('task');
                 }}
               >
-                <div className="dash-task-img-wrap">
+                <div className="dash-task-img-wrap cursor-pointer" onClick={(e) => openProductUrl(task, e)} title={`Open ${task.title} on ${task.platform}`}>
                   <img
-                    src={task.image}
+                    src={getProductImage(task)}
                     alt={task.title}
                     onError={(e) => {
                       e.currentTarget.onerror = null;
-                      e.currentTarget.src = 'https://images.unsplash.com/photo-1546868871-7041f2a55e12?w=600&auto=format&fit=crop&q=80';
+                      e.currentTarget.src = getProductImage(task);
                     }}
                   />
                   <button
@@ -374,7 +652,7 @@ function TabHome() {
                   {isRestricted && (
                     <div className="card-lock-overlay">
                       <Lock size={14} />
-                      <span>Min Dep ${(Number(task.requiredDeposit) || 0).toFixed(0)}</span>
+                      <span>Min ${minRequired.toFixed(0)}</span>
                     </div>
                   )}
                 </div>
@@ -390,7 +668,7 @@ function TabHome() {
                     <ExternalLink size={10} />
                   </button>
                 </div>
-                <h5 className="dash-task-title">{task.title}</h5>
+                <h5 className="dash-task-title cursor-pointer" onClick={(e) => openProductUrl(task, e)} title={`Open on ${task.platform}`}>{task.title}</h5>
                 <div className="dash-task-footer-row">
                   <div className="dash-task-price">${(Number(task.price) || 0).toFixed(2)}</div>
                   <span className="dash-task-profit">+${(((Number(task.price) || 0) * 4.0) / 100).toFixed(2)}</span>
@@ -416,10 +694,11 @@ function TabHome() {
 
         <div className="horizontal-tasks-scroll">
           {walmartTasks.map((task) => {
-            const reqDep = Number(task.requiredDeposit) || 0;
+            const taskPrice = Number(task.price) || 0;
+            const explicitDep = Number(task.requiredDeposit || task.required_deposit || 0);
+            const minRequired = Math.max(taskPrice, explicitDep);
             const userBal = Number(user?.balance) || 0;
-            const userTotDep = Number(user?.totalDeposit) || 0;
-            const isRestricted = reqDep > 0 && userBal < reqDep && userTotDep < reqDep;
+            const isRestricted = userBal < minRequired;
             return (
               <div
                 key={task.id}
@@ -429,13 +708,13 @@ function TabHome() {
                   setModalType('task');
                 }}
               >
-                <div className="dash-task-img-wrap">
+                <div className="dash-task-img-wrap cursor-pointer" onClick={(e) => openProductUrl(task, e)} title={`Open ${task.title} on ${task.platform}`}>
                   <img
-                    src={task.image}
+                    src={getProductImage(task)}
                     alt={task.title}
                     onError={(e) => {
                       e.currentTarget.onerror = null;
-                      e.currentTarget.src = 'https://images.unsplash.com/photo-1581094794329-c8112a89af12?w=600&auto=format&fit=crop&q=80';
+                      e.currentTarget.src = getProductImage(task);
                     }}
                   />
                   <button
@@ -452,7 +731,7 @@ function TabHome() {
                   {isRestricted && (
                     <div className="card-lock-overlay">
                       <Lock size={14} />
-                      <span>Min Dep ${reqDep.toFixed(0)}</span>
+                      <span>Min ${minRequired.toFixed(0)}</span>
                     </div>
                   )}
                 </div>
@@ -468,7 +747,7 @@ function TabHome() {
                     <ExternalLink size={10} />
                   </button>
                 </div>
-                <h5 className="dash-task-title">{task.title}</h5>
+                <h5 className="dash-task-title cursor-pointer" onClick={(e) => openProductUrl(task, e)} title={`Open on ${task.platform}`}>{task.title}</h5>
                 <div className="dash-task-footer-row">
                   <div className="dash-task-price">${(Number(task.price) || 0).toFixed(2)}</div>
                   <span className="dash-task-profit">+${(((Number(task.price) || 0) * 8.0) / 100).toFixed(2)}</span>
@@ -494,10 +773,11 @@ function TabHome() {
 
         <div className="horizontal-tasks-scroll">
           {temuTasks.map((task) => {
-            const reqDep = Number(task.requiredDeposit) || 0;
+            const taskPrice = Number(task.price) || 0;
+            const explicitDep = Number(task.requiredDeposit || task.required_deposit || 0);
+            const minRequired = Math.max(taskPrice, explicitDep);
             const userBal = Number(user?.balance) || 0;
-            const userTotDep = Number(user?.totalDeposit) || 0;
-            const isRestricted = reqDep > 0 && userBal < reqDep && userTotDep < reqDep;
+            const isRestricted = userBal < minRequired;
             return (
               <div
                 key={task.id}
@@ -507,13 +787,13 @@ function TabHome() {
                   setModalType('task');
                 }}
               >
-                <div className="dash-task-img-wrap">
+                <div className="dash-task-img-wrap cursor-pointer" onClick={(e) => openProductUrl(task, e)} title={`Open ${task.title} on ${task.platform}`}>
                   <img
-                    src={task.image}
+                    src={getProductImage(task)}
                     alt={task.title}
                     onError={(e) => {
                       e.currentTarget.onerror = null;
-                      e.currentTarget.src = 'https://images.unsplash.com/photo-1507582020474-9a35b7d455d9?w=600&auto=format&fit=crop&q=80';
+                      e.currentTarget.src = getProductImage(task);
                     }}
                   />
                   <button
@@ -530,7 +810,7 @@ function TabHome() {
                   {isRestricted && (
                     <div className="card-lock-overlay">
                       <Lock size={14} />
-                      <span>Min Dep ${reqDep.toFixed(0)}</span>
+                      <span>Min ${minRequired.toFixed(0)}</span>
                     </div>
                   )}
                 </div>
@@ -546,7 +826,7 @@ function TabHome() {
                     <ExternalLink size={10} />
                   </button>
                 </div>
-                <h5 className="dash-task-title">{task.title}</h5>
+                <h5 className="dash-task-title cursor-pointer" onClick={(e) => openProductUrl(task, e)} title={`Open on ${task.platform}`}>{task.title}</h5>
                 <div className="dash-task-footer-row">
                   <div className="dash-task-price">${(Number(task.price) || 0).toFixed(2)}</div>
                   <span className="dash-task-profit">+${(((Number(task.price) || 0) * 12.0) / 100).toFixed(2)}</span>
@@ -778,17 +1058,21 @@ function ScrollingActivityStream() {
 // 2. TAB: MENU / VIP TIERS (Matching Screenshot 3)
 // ==========================================
 function TabMenu() {
-  const { user, vipTiers, tasks, setSelectedTask, setModalType } = useApp();
+  const { user, vipTiers, tasks, setSelectedTask, setModalType, openPlatformTasks } = useApp();
 
   // Determine current tier progress
   const targetWalmart = 500;
   const progressPercent = Math.min(100, Math.round(((Number(user?.balance) || 0) / targetWalmart) * 100));
 
   const handleStartTasks = (platform) => {
-    const platformTasks = (tasks || []).filter(t => (t.platform || '').toLowerCase() === (platform || '').toLowerCase());
-    if (platformTasks.length > 0) {
-      setSelectedTask(platformTasks[0]);
-      setModalType('task');
+    if (openPlatformTasks) {
+      openPlatformTasks(platform);
+    } else {
+      const platformTasks = (tasks || []).filter(t => (t.platform || '').toLowerCase() === (platform || '').toLowerCase());
+      if (platformTasks.length > 0) {
+        setSelectedTask(platformTasks[0]);
+        setModalType('task');
+      }
     }
   };
 
@@ -799,7 +1083,7 @@ function TabMenu() {
       </div>
 
       {/* TOP TIER PROGRESS BANNER matching Screenshot 3 */}
-      <div className="tier-progress-banner mt-3">
+      <div className="tier-progress-banner mt-3 cursor-pointer" onClick={() => handleStartTasks('eBay')}>
         <div className="tier-banner-left">
           <div className="tier-icon-circle ebay-bg">
             <span className="ebay-text">ebay</span>
@@ -837,7 +1121,7 @@ function TabMenu() {
           <div className="vip-platform-name">
             <span className="platform-logo-big ebay">ebay</span>
             <h3>eBay</h3>
-            <span className="vip-price-range">$0 – $499</span>
+            <span className="vip-price-range">$0 - $499</span>
           </div>
 
           <div className="vip-card-desc">
@@ -867,7 +1151,7 @@ function TabMenu() {
           <div className="vip-platform-name">
             <span className="platform-logo-big walmart">W</span>
             <h3>Walmart</h3>
-            <span className="vip-price-range">$500 – $899</span>
+            <span className="vip-price-range">$500 - $899</span>
           </div>
 
           <div className="vip-card-desc">
@@ -936,9 +1220,18 @@ function TabMenu() {
 // 3. TAB: RECORDS (Matching Screenshot 4)
 // ==========================================
 function TabRecords() {
-  const { records, user } = useApp();
-  const [subTab, setSubTab] = useState('Transactions');
-  const [statusFilter, setStatusFilter] = useState('All');
+  const {
+    records,
+    user,
+    recordsSubTab,
+    setRecordsSubTab,
+    recordsStatusFilter,
+    setRecordsStatusFilter
+  } = useApp();
+  const subTab = recordsSubTab || 'Transactions';
+  const setSubTab = setRecordsSubTab || (() => {});
+  const statusFilter = recordsStatusFilter || 'All';
+  const setStatusFilter = setRecordsStatusFilter || (() => {});
   const [search, setSearch] = useState('');
 
   // Filter records belonging to the active user (or general records)
@@ -1189,54 +1482,35 @@ function TabSupport() {
       </div>
 
       <div className="support-channels-row mt-4">
-        {settings?.telegram && (
-          <a
-            href={settings.telegram}
-            target="_blank"
-            rel="noreferrer"
-            className="channel-box-link"
-          >
-            <div className="channel-box-icon tg">
-              <MessageCircle size={22} />
-            </div>
-            <div>
-              <strong>Telegram Channel</strong>
-              <span>Direct 24/7 messaging with support desk</span>
-            </div>
-          </a>
-        )}
+        <a
+          href={settings?.telegram && !settings.telegram.includes('websynx') ? settings.telegram : 'https://t.me/ecomxstocks_support'}
+          target="_blank"
+          rel="noreferrer"
+          className="channel-box-link"
+        >
+          <div className="channel-box-icon tg">
+            <MessageCircle size={22} />
+          </div>
+          <div>
+            <strong>Telegram Support Desk</strong>
+            <span>Direct 24/7 priority messaging with support desk</span>
+          </div>
+        </a>
 
-        {settings?.whatsapp && (
-          <a
-            href={settings.whatsapp}
-            target="_blank"
-            rel="noreferrer"
-            className="channel-box-link"
-          >
-            <div className="channel-box-icon tg" style={{ background: '#25D366' }}>
-              <MessageCircle size={22} />
-            </div>
-            <div>
-              <strong>WhatsApp Support</strong>
-              <span>Fast live support channel</span>
-            </div>
-          </a>
-        )}
-
-        {settings?.email && (
-          <a
-            href={`mailto:${settings.email}`}
-            className="channel-box-link"
-          >
-            <div className="channel-box-icon mail">
-              <Mail size={22} />
-            </div>
-            <div>
-              <strong>Email Ticket Desk</strong>
-              <span>{settings.email} • Priority desk</span>
-            </div>
-          </a>
-        )}
+        <a
+          href={settings?.telegramChannel && !settings.telegramChannel.includes('websynx') ? settings.telegramChannel : 'https://t.me/ecomxstocks_official'}
+          target="_blank"
+          rel="noreferrer"
+          className="channel-box-link"
+        >
+          <div className="channel-box-icon tg" style={{ background: '#0284c7' }}>
+            <Send size={22} />
+          </div>
+          <div>
+            <strong>Telegram Channel</strong>
+            <span>Official announcements & verified broadcast channel</span>
+          </div>
+        </a>
       </div>
 
       {/* Live Chat Panel connected to Admin Inbox */}
@@ -1245,7 +1519,7 @@ function TabSupport() {
           <div className="agent-avatar-wrap">
             <div className="agent-circle">🎧</div>
             <div className="agent-info">
-              <strong>{settings?.agentName || 'VIP Operations Specialist'}</strong>
+              <strong>{settings?.agentName && !settings.agentName.includes('WebSynx') ? settings.agentName : 'Ecomxstocks Official Support'}</strong>
               <span className={isOnline ? 'agent-status-online' : 'agent-status-offline'}>
                 {isOnline ? 'Online • Live Admin Connected' : 'Offline • Leave a message'}
               </span>
@@ -1260,7 +1534,7 @@ function TabSupport() {
           {/* Welcome Message */}
           <div className="chat-bubble-row incoming">
             <div className="chat-bubble">
-              <p>{isOnline ? (settings?.welcomeMessage || 'Hello! Welcome to WebSynx VIP Support. How can our operations team assist you today?') : (settings?.offlineMessage || 'We are currently offline. Leave a message and we will respond shortly.')}</p>
+              <p>{isOnline ? (settings?.welcomeMessage || 'Hello! Welcome to Ecomxstocks VIP Support. How can our operations team assist you today?') : (settings?.offlineMessage || 'We are currently offline. Leave a message and we will respond shortly.')}</p>
               <span className="bubble-time">Live System</span>
             </div>
           </div>
@@ -1307,15 +1581,41 @@ function TabSupport() {
 // 5. TAB: MINE / PROFILE (Matching Screenshot 5)
 // ==========================================
 function TabMine() {
-  const { user, setModalType, setDashboardTab, logoutAccount } = useApp();
+  const { user, userTeam, setModalType, setDashboardTab, logoutAccount, addNotification } = useApp();
   const [copiedCode, setCopiedCode] = useState(false);
   const [activeSubMenu, setActiveSubMenu] = useState(null); // 'profile' | 'team' | 'wallet' | 'settings' | null
 
+  const isGuest = !user || !user.id || user.isGuest || user.name === 'Guest User';
+  const ownRefCode = isGuest ? '' : (user?.referralCode || user?.code || '');
+  const referralLink = `${window.location.origin}/?ref=${ownRefCode}`;
+
   const handleCopyCode = () => {
-    navigator.clipboard.writeText(user.referralCode);
+    if (isGuest || !ownRefCode) {
+      setModalType('auth');
+      return;
+    }
+    navigator.clipboard.writeText(ownRefCode);
     setCopiedCode(true);
+    if (addNotification) {
+      addNotification('Invitation Code Copied', `Invite Code ${ownRefCode} copied to clipboard!`);
+    }
     setTimeout(() => setCopiedCode(false), 2000);
   };
+
+  const handleCopyLink = () => {
+    if (isGuest || !ownRefCode) {
+      setModalType('auth');
+      return;
+    }
+    navigator.clipboard.writeText(referralLink);
+    setCopiedCode(true);
+    if (addNotification) {
+      addNotification('Referral Link Copied', 'Your personal referral link is ready to share!');
+    }
+    setTimeout(() => setCopiedCode(false), 2000);
+  };
+
+  const members = userTeam || [];
 
   return (
     <div className="tab-mine-wrapper">
@@ -1324,7 +1624,7 @@ function TabMine() {
         <div className="container top-bar-container">
           <div className="mine-brand-left">
             <TrendingUp size={20} color="#2563eb" />
-            <span className="mine-brand-title">Web<span className="brand-highlight">Synx</span></span>
+            <span className="mine-brand-title">Ecom<span className="brand-highlight">xstocks</span></span>
           </div>
           <div className="mine-top-actions">
             <button className="btn-mine-deposit" onClick={() => setModalType('deposit')}>
@@ -1344,20 +1644,35 @@ function TabMine() {
         <div className="profile-sapphire-banner">
           <div className="profile-top-line">
             <div className="profile-avatar-circle">
-              {user.avatar}
+              {user?.avatar || (user?.name ? user.name.charAt(0).toUpperCase() : 'U')}
             </div>
             <div className="profile-user-details">
               <div className="name-and-vip">
-                <h3 className="profile-name">{user.name}</h3>
-                <span className="profile-vip-star">⭐ VIP</span>
+                <h3 className="profile-name">{user?.name || 'Guest User'}</h3>
+                {!isGuest && (
+                  <span className={`vip-tag-small ${(user?.vipLevel || 'ebay').toLowerCase()}`} style={{ marginLeft: '4px', verticalAlign: 'middle' }}>
+                    {user?.vipLevel === 'eBay' && '🔴 eBay'}
+                    {user?.vipLevel === 'Walmart' && '🔵 Walmart'}
+                    {user?.vipLevel === 'Temu' && '🟠 Temu'}
+                    {!['eBay', 'Walmart', 'Temu'].includes(user?.vipLevel) && `⭐ ${user?.vipLevel || 'eBay'}`}
+                  </span>
+                )}
               </div>
-              <div className="team-code-row">
-                <span>Team Code: <strong>{user.referralCode}</strong></span>
-                <button className="mini-copy-btn" onClick={handleCopyCode} title="Copy Team Code">
-                  {copiedCode ? <Check size={13} color="#10b981" /> : <Copy size={13} />}
-                </button>
-              </div>
-              <span className="profile-email">{user.email}</span>
+              {!isGuest && ownRefCode ? (
+                <div className="team-code-row">
+                  <span>Invite Code: <strong>{ownRefCode}</strong></span>
+                  <button className="mini-copy-btn" onClick={handleCopyCode} title="Copy Invite Code">
+                    {copiedCode ? <Check size={13} color="#10b981" /> : <Copy size={13} />}
+                  </button>
+                </div>
+              ) : (
+                <div className="team-code-row cursor-pointer" onClick={() => setModalType('auth')}>
+                  <span className="text-amber-300 font-semibold">Sign In / Register &rarr;</span>
+                </div>
+              )}
+              <span className="profile-email font-mono">
+                {!isGuest ? `ID: #${ownRefCode} • Verified Account` : 'Not logged in'}
+              </span>
             </div>
             <button
               className="gear-settings-btn"
@@ -1378,9 +1693,9 @@ function TabMine() {
               <strong>${(Number(user?.totalEarnings) || 0).toFixed(2)}</strong>
               <span>Total Earned</span>
             </div>
-            <div className="p-stat-col">
-              <strong>{user?.teamMembersCount || 0}</strong>
-              <span>Referrals</span>
+            <div className="p-stat-col cursor-pointer" onClick={() => setModalType('referral')} title="Click to view Team Network">
+              <strong className="text-amber-300">{members.length || user?.teamMembersCount || 0}</strong>
+              <span>Referrals (View)</span>
             </div>
           </div>
         </div>
@@ -1389,30 +1704,75 @@ function TabMine() {
         {activeSubMenu === 'team' && (
           <div className="mine-card-panel mt-4 animate-fade-in">
             <div className="panel-header">
-              <h4>Referral & Team Network</h4>
+              <div className="flex items-center gap-2">
+                <Users size={18} className="text-primary-brand" />
+                <h4>Referral & Team Network ({members.length} Members)</h4>
+              </div>
               <button className="close-panel-btn" onClick={() => setActiveSubMenu(null)}>✕</button>
             </div>
             <div className="referral-box mt-3">
-              <span className="input-label">Your Referral Link</span>
+              <span className="input-label">Your Shareable Referral Link</span>
               <div className="invite-link-row">
-                <code>https://websynx.com/register?ref={user.referralCode}</code>
-                <button className="copy-btn" onClick={handleCopyCode}>
+                <code>{referralLink}</code>
+                <button className="copy-btn" onClick={handleCopyLink}>
                   {copiedCode ? 'Copied' : 'Copy Link'}
                 </button>
               </div>
             </div>
+
+            {/* Downline Members List */}
+            <div className="mt-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-semibold text-gray-700 dark:text-gray-300">Direct Team Roster</span>
+                <button 
+                  type="button" 
+                  className="text-xs text-primary-brand font-medium hover:underline"
+                  onClick={() => setModalType('referral')}
+                >
+                  Open Full Team Modal →
+                </button>
+              </div>
+              {members.length === 0 ? (
+                <div className="text-xs text-muted py-4 text-center border border-dashed rounded-xl bg-gray-50/50">
+                  No members registered under code <strong>{ownRefCode}</strong> yet. Share your link to get started!
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {members.map(m => (
+                    <div key={m.id} className="p-2.5 rounded-lg bg-gray-50 dark:bg-gray-800/60 border border-gray-100 dark:border-gray-700 flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 font-bold flex items-center justify-center text-xs">
+                          {m.avatar || (m.name ? m.name.charAt(0) : 'U')}
+                        </div>
+                        <div>
+                          <div className="font-semibold text-gray-800 dark:text-gray-200">{m.name}</div>
+                          <div className="text-[10px] text-muted">ID: #{m.code || m.referralCode || (m.id ? m.id.slice(-6) : 'Verified')}</div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-semibold text-emerald-600">{m.completedTasks ?? 0} Done / {m.pendingTasks ?? 25} Pending</div>
+                        <span className={`vip-tag-small ${(m.vipLevel || 'ebay').toLowerCase()}`}>
+                          {m.vipLevel === 'eBay' ? '🔴 eBay' : m.vipLevel === 'Walmart' ? '🔵 Walmart' : m.vipLevel === 'Temu' ? '🟠 Temu' : m.vipLevel || 'eBay'}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <div className="team-tier-breakdown mt-4">
               <div className="team-tier-row">
                 <span>Level 1 Referrals (16% Commission)</span>
-                <strong>0 Members ($0.00 earned)</strong>
+                <strong>{members.length} Members</strong>
               </div>
               <div className="team-tier-row">
                 <span>Level 2 Referrals (8% Commission)</span>
-                <strong>0 Members ($0.00 earned)</strong>
+                <strong>Multi-tier Active</strong>
               </div>
               <div className="team-tier-row">
                 <span>Level 3 Referrals (4% Commission)</span>
-                <strong>0 Members ($0.00 earned)</strong>
+                <strong>Multi-tier Active</strong>
               </div>
             </div>
           </div>
@@ -1488,15 +1848,15 @@ function TabMine() {
           {/* My Team */}
           <div
             className="mine-menu-item"
-            onClick={() => setActiveSubMenu(activeSubMenu === 'team' ? null : 'team')}
+            onClick={() => setModalType('referral')}
           >
             <div className="menu-item-left">
               <div className="menu-icon-circle blue">
                 <Users size={18} />
               </div>
               <div className="menu-item-text">
-                <strong>My Team</strong>
-                <span>{user.teamMembersCount} members in your network</span>
+                <strong>My Referral Team</strong>
+                <span>{members.length || user?.teamMembersCount || 0} members in your network</span>
               </div>
             </div>
             <ChevronRight size={18} className="chevron-muted" />
@@ -1547,7 +1907,7 @@ function TabMine() {
               </div>
               <div className="menu-item-text">
                 <strong>Create New Account / Switch User</strong>
-                <span>Register a new WebSynx profile or log into another account</span>
+                <span>Register a new Ecomxstocks profile or log into another account</span>
               </div>
             </div>
             <ChevronRight size={18} className="chevron-muted" />
