@@ -1,30 +1,81 @@
-/* WebSynx Global Styles - Modern Website & Task Platform (Clean Electric Blue & Navy Palette - No Purple) */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap');
+
+/* WebSynx Global Styles - Modern Website & Task Platform (Clean Electric Blue & Slate Palette) */
 :root {
-  --font-main: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
-  
-  /* Primary & Brand Colors (Clean High-Performance Sapphire & Navy Blue) */
+  /* Typography System */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-heading: 'Plus Jakarta Sans', var(--font-sans);
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-main: var(--font-sans);
+
+  /* Type Scale (11, 12, 14, 16, 18, 20, 24, 32, 40px) */
+  --text-2xs: 11px;
+  --text-xs: 12px;
+  --text-sm: 14px;
+  --text-base: 16px;
+  --text-lg: 18px;
+  --text-xl: 20px;
+  --text-2xl: 24px;
+  --text-3xl: 32px;
+  --text-4xl: 40px;
+
+  /* Font Weights */
+  --font-normal: 400;
+  --font-medium: 500;
+  --font-semibold: 600;
+  --font-bold: 700;
+  --font-extrabold: 800;
+
+  /* Spacing Scale (4px Grid) */
+  --space-0: 0px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* Primary & Brand Colors (Unified Electric Sapphire & Deep Navy) */
   --primary-brand: #2563eb;
   --primary-brand-hover: #1d4ed8;
+  --primary-brand-active: #1e40af;
   --brand-gradient: linear-gradient(135deg, #0f172a 0%, #1e40af 50%, #2563eb 100%);
   --brand-glow: rgba(37, 99, 235, 0.25);
   --brand-subtle: #eff6ff;
-  
-  /* Platform Colors */
-  --ebay-red: #e53238;
-  --walmart-blue: #0071dc;
-  --temu-orange: #ff7200;
-  
-  /* Status Colors */
+
+  /* Semantic Status Colors (Single curated set) */
   --green-success: #10b981;
   --green-bg: #ecfdf5;
+  --green-border: #a7f3d0;
+  
   --amber-warning: #f59e0b;
   --amber-bg: #fffbeb;
+  --amber-border: #fde68a;
+
   --red-danger: #ef4444;
   --red-bg: #fef2f2;
+  --red-border: #fecaca;
+
   --blue-info: #0284c7;
   --blue-bg: #f0f9ff;
-  
+  --blue-border: #bae6fd;
+
+  /* Slate Scale */
+  --slate-50: #f8fafc;
+  --slate-100: #f1f5f9;
+  --slate-200: #e2e8f0;
+  --slate-300: #cbd5e1;
+  --slate-400: #94a3b8;
+  --slate-500: #64748b;
+  --slate-600: #475569;
+  --slate-700: #334155;
+  --slate-800: #1e293b;
+  --slate-900: #0f172a;
+  --slate-950: #0b0f19;
+
   /* Light Theme Defaults */
   --bg-page: #f8fafc;
   --bg-surface: #ffffff;
@@ -40,14 +91,14 @@
   --border-subtle: #e2e8f0;
   --border-strong: #cbd5e1;
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -2px rgba(0, 0, 0, 0.04);
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.03);
   --shadow-brand: 0 10px 25px -5px rgba(37, 99, 235, 0.35);
 
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 18px;
-  --radius-xl: 24px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
   --radius-full: 9999px;
   
   --transition-fast: 0.15s ease;
@@ -70,6 +121,16 @@ html.dark {
   --border-subtle: #1e293b;
   --border-strong: #334155;
   --brand-subtle: rgba(37, 99, 235, 0.15);
+
+  --green-bg: rgba(16, 185, 129, 0.12);
+  --green-border: rgba(16, 185, 129, 0.25);
+  --amber-bg: rgba(245, 158, 11, 0.12);
+  --amber-border: rgba(245, 158, 11, 0.25);
+  --red-bg: rgba(239, 68, 68, 0.12);
+  --red-border: rgba(239, 68, 68, 0.25);
+  --blue-bg: rgba(2, 132, 199, 0.12);
+  --blue-border: rgba(2, 132, 199, 0.25);
+
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
@@ -91,7 +152,7 @@ html {
 }
 
 body {
-  font-family: var(--font-main);
+  font-family: var(--font-sans);
   background-color: var(--bg-page);
   color: var(--text-primary);
   width: 100%;
@@ -102,6 +163,7 @@ body {
   overflow-x: hidden;
   position: relative;
   line-height: 1.5;
+  font-size: var(--text-sm);
   transition: background-color var(--transition-normal), color var(--transition-normal);
 }
 
@@ -113,6 +175,25 @@ body {
   display: flex;
   flex-direction: column;
 }
+
+/* Headings use Plus Jakarta Sans */
+h1, h2, h3, h4, h5, h6,
+.font-heading,
+.admin-page-title,
+.modal-title,
+.section-title,
+.hero-title {
+  font-family: var(--font-heading);
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+h1 { font-size: var(--text-3xl); line-height: 1.2; font-weight: var(--font-bold); }
+h2 { font-size: var(--text-2xl); line-height: 1.25; font-weight: var(--font-bold); }
+h3 { font-size: var(--text-xl); line-height: 1.3; font-weight: var(--font-semibold); }
+h4 { font-size: var(--text-lg); line-height: 1.35; font-weight: var(--font-semibold); }
+h5 { font-size: var(--text-base); line-height: 1.4; font-weight: var(--font-semibold); }
+h6 { font-size: var(--text-sm); line-height: 1.4; font-weight: var(--font-semibold); }
 
 button {
   font-family: inherit;
@@ -130,6 +211,21 @@ input, select, textarea {
 a {
   color: inherit;
   text-decoration: none;
+}
+
+/* Monospace exclusively for IDs, Wallets, Hashes */
+code, pre, kbd, samp,
+.font-mono,
+.cell-mono-addr {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Tabular numerals & Financial Design Utilities */
+.tabular-nums,
+.financial-num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1, 'cv05' 1;
 }
 
 /* Custom scrollbars */
@@ -172,15 +268,237 @@ a {
   animation: slideDown 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-/* Tabular numerals & Financial Design Utilities */
-.tabular-nums,
-.financial-num {
-  font-variant-numeric: tabular-nums;
-  font-feature-settings: 'tnum' on, 'lnum' on;
+/* ==========================================================================
+   TAILWIND UTILITY CLASSES (Restoring functionality for all 170+ references)
+   ========================================================================== */
+
+/* Typography Utilities */
+.text-2xs { font-size: var(--text-2xs) !important; line-height: 14px !important; }
+.text-xs { font-size: var(--text-xs) !important; line-height: 16px !important; }
+.text-sm { font-size: var(--text-sm) !important; line-height: 20px !important; }
+.text-base { font-size: var(--text-base) !important; line-height: 24px !important; }
+.text-lg { font-size: var(--text-lg) !important; line-height: 26px !important; }
+.text-xl { font-size: var(--text-xl) !important; line-height: 28px !important; }
+.text-2xl { font-size: var(--text-2xl) !important; line-height: 32px !important; }
+.text-3xl { font-size: var(--text-3xl) !important; line-height: 40px !important; }
+
+.font-normal { font-weight: var(--font-normal) !important; }
+.font-medium { font-weight: var(--font-medium) !important; }
+.font-semibold { font-weight: var(--font-semibold) !important; }
+.font-bold { font-weight: var(--font-bold) !important; }
+.font-extrabold { font-weight: var(--font-extrabold) !important; }
+
+.uppercase { text-transform: uppercase !important; }
+.lowercase { text-transform: lowercase !important; }
+.capitalize { text-transform: capitalize !important; }
+.tracking-tight { letter-spacing: -0.02em !important; }
+.tracking-normal { letter-spacing: normal !important; }
+.tracking-wide { letter-spacing: 0.03em !important; }
+.tracking-wider { letter-spacing: 0.06em !important; }
+.tracking-widest { letter-spacing: 0.1em !important; }
+
+.truncate { overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important; }
+.break-all { word-break: break-all !important; }
+.break-words { overflow-wrap: break-word !important; }
+
+/* Color Utilities */
+.text-slate-200 { color: var(--slate-200) !important; }
+.text-slate-300 { color: var(--slate-300) !important; }
+.text-slate-400 { color: var(--slate-400) !important; }
+.text-slate-500 { color: var(--slate-500) !important; }
+.text-slate-600 { color: var(--slate-600) !important; }
+.text-slate-700 { color: var(--slate-700) !important; }
+.text-slate-800 { color: var(--slate-800) !important; }
+.text-slate-900 { color: var(--slate-900) !important; }
+.text-white { color: #ffffff !important; }
+
+.text-emerald-500, .text-green-500 { color: var(--green-success) !important; }
+.text-emerald-600, .text-green-600 { color: #059669 !important; }
+.text-red-500, .text-rose-500 { color: var(--red-danger) !important; }
+.text-red-600 { color: #dc2626 !important; }
+.text-amber-500, .text-yellow-500 { color: var(--amber-warning) !important; }
+.text-amber-600 { color: #d97706 !important; }
+.text-blue-500, .text-sky-500 { color: var(--primary-brand) !important; }
+.text-blue-600 { color: var(--primary-brand-hover) !important; }
+
+/* Flexbox & Layout Utilities */
+.flex { display: flex !important; }
+.inline-flex { display: inline-flex !important; }
+.flex-col { flex-direction: column !important; }
+.flex-row { flex-direction: row !important; }
+.flex-wrap { flex-wrap: wrap !important; }
+.flex-nowrap { flex-wrap: nowrap !important; }
+.flex-1 { flex: 1 1 0% !important; }
+.shrink-0 { flex-shrink: 0 !important; }
+
+.items-center { align-items: center !important; }
+.items-start { align-items: flex-start !important; }
+.items-end { align-items: flex-end !important; }
+.items-stretch { align-items: stretch !important; }
+
+.justify-start { justify-content: flex-start !important; }
+.justify-end { justify-content: flex-end !important; }
+.justify-center { justify-content: center !important; }
+.justify-between { justify-content: space-between !important; }
+.justify-around { justify-content: space-around !important; }
+
+.grid { display: grid !important; }
+.grid-cols-1 { grid-template-columns: repeat(1, minmax(0, 1fr)) !important; }
+.grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+.grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+.grid-cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
+
+/* Gap Utilities */
+.gap-0 { gap: 0 !important; }
+.gap-1 { gap: var(--space-1) !important; }
+.gap-1\.5 { gap: 6px !important; }
+.gap-2 { gap: var(--space-2) !important; }
+.gap-2\.5 { gap: 10px !important; }
+.gap-3 { gap: var(--space-3) !important; }
+.gap-4 { gap: var(--space-4) !important; }
+.gap-5 { gap: var(--space-5) !important; }
+.gap-6 { gap: var(--space-6) !important; }
+.gap-8 { gap: var(--space-8) !important; }
+
+/* Spacing Utilities */
+.mb-0 { margin-bottom: 0 !important; }
+.mb-1 { margin-bottom: var(--space-1) !important; }
+.mb-2 { margin-bottom: var(--space-2) !important; }
+.mb-3 { margin-bottom: var(--space-3) !important; }
+.mb-4 { margin-bottom: var(--space-4) !important; }
+.mb-5 { margin-bottom: var(--space-5) !important; }
+.mb-6 { margin-bottom: var(--space-6) !important; }
+
+.mt-0 { margin-top: 0 !important; }
+.mt-1 { margin-top: var(--space-1) !important; }
+.mt-2 { margin-top: var(--space-2) !important; }
+.mt-3 { margin-top: var(--space-3) !important; }
+.mt-4 { margin-top: var(--space-4) !important; }
+.mt-5 { margin-top: var(--space-5) !important; }
+.mt-6 { margin-top: var(--space-6) !important; }
+
+.mr-1 { margin-right: var(--space-1) !important; }
+.mr-2 { margin-right: var(--space-2) !important; }
+.mr-3 { margin-right: var(--space-3) !important; }
+.ml-1 { margin-left: var(--space-1) !important; }
+.ml-2 { margin-left: var(--space-2) !important; }
+
+.p-0 { padding: 0 !important; }
+.p-1 { padding: var(--space-1) !important; }
+.p-2 { padding: var(--space-2) !important; }
+.p-3 { padding: var(--space-3) !important; }
+.p-4 { padding: var(--space-4) !important; }
+.p-5 { padding: var(--space-5) !important; }
+.p-6 { padding: var(--space-6) !important; }
+
+.py-0 { padding-top: 0 !important; padding-bottom: 0 !important; }
+.py-1 { padding-top: var(--space-1) !important; padding-bottom: var(--space-1) !important; }
+.py-1\.5 { padding-top: 6px !important; padding-bottom: 6px !important; }
+.py-2 { padding-top: var(--space-2) !important; padding-bottom: var(--space-2) !important; }
+.py-3 { padding-top: var(--space-3) !important; padding-bottom: var(--space-3) !important; }
+.py-4 { padding-top: var(--space-4) !important; padding-bottom: var(--space-4) !important; }
+
+.px-0 { padding-left: 0 !important; padding-right: 0 !important; }
+.px-1 { padding-left: var(--space-1) !important; padding-right: var(--space-1) !important; }
+.px-2 { padding-left: var(--space-2) !important; padding-right: var(--space-2) !important; }
+.px-3 { padding-left: var(--space-3) !important; padding-right: var(--space-3) !important; }
+.px-4 { padding-left: var(--space-4) !important; padding-right: var(--space-4) !important; }
+.px-5 { padding-left: var(--space-5) !important; padding-right: var(--space-5) !important; }
+.px-6 { padding-left: var(--space-6) !important; padding-right: var(--space-6) !important; }
+
+/* Border & Radii Utilities */
+.rounded-none { border-radius: 0 !important; }
+.rounded-sm { border-radius: var(--radius-sm) !important; }
+.rounded, .rounded-md { border-radius: var(--radius-md) !important; }
+.rounded-lg { border-radius: var(--radius-lg) !important; }
+.rounded-xl { border-radius: var(--radius-xl) !important; }
+.rounded-full { border-radius: var(--radius-full) !important; }
+
+.border { border: 1px solid var(--border-subtle) !important; }
+.border-t { border-top: 1px solid var(--border-subtle) !important; }
+.border-b { border-bottom: 1px solid var(--border-subtle) !important; }
+.border-slate-200 { border-color: var(--slate-200) !important; }
+.border-slate-300 { border-color: var(--slate-300) !important; }
+.border-slate-700 { border-color: var(--slate-700) !important; }
+.border-slate-800 { border-color: var(--slate-800) !important; }
+
+.w-full { width: 100% !important; }
+.w-auto { width: auto !important; }
+.h-full { height: 100% !important; }
+.h-auto { height: auto !important; }
+.block { display: block !important; }
+.inline-block { display: inline-block !important; }
+.hidden { display: none !important; }
+
+/* ==========================================================================
+   UNIFIED DESIGN SYSTEM COMPONENTS
+   ========================================================================== */
+
+/* Badges */
+.ui-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  border-radius: var(--radius-full);
+  line-height: 1;
+  white-space: nowrap;
 }
 
-.mono-num {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
+.ui-badge-success {
+  background: var(--green-bg);
+  color: var(--green-success);
+  border: 1px solid var(--green-border);
 }
 
+.ui-badge-warning {
+  background: var(--amber-bg);
+  color: var(--amber-warning);
+  border: 1px solid var(--amber-border);
+}
+
+.ui-badge-danger {
+  background: var(--red-bg);
+  color: var(--red-danger);
+  border: 1px solid var(--red-border);
+}
+
+.ui-badge-info {
+  background: var(--blue-bg);
+  color: var(--blue-info);
+  border: 1px solid var(--blue-border);
+}
+
+.ui-badge-neutral {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+}
+
+/* Monospace Pill for true Crypto Hashes & Wallet Addresses */
+.ui-code-pill,
+.cell-mono-addr {
+  font-family: var(--font-mono) !important;
+  font-size: var(--text-xs) !important;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  padding: 3px 7px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* Direct Deposit / Plain text fallback shouldn't look like code */
+.cell-text-label {
+  font-family: var(--font-sans) !important;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  font-weight: var(--font-medium);
+}

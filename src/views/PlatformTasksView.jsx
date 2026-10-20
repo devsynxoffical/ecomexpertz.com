@@ -182,7 +182,7 @@ export default function PlatformTasksView({ platform = 'eBay', onBack }) {
                     <p className="text-xs text-slate-500 m-0">
                       {completedCount >= totalQuota
                         ? 'All 25 tasks completed! Great job!'
-                        : `Task #${completedCount + 1} is currently active & unlocked. Next tasks unlock 1 by 1.`}
+                        : `Task #${completedCount + 1} is currently active & unlocked. Next tasks unlock strictly 1 by 1.`}
                     </p>
                   </div>
                   <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300">
@@ -190,189 +190,208 @@ export default function PlatformTasksView({ platform = 'eBay', onBack }) {
                   </span>
                 </div>
 
-                <div className="task-queue-grid">
-                  {assignedQueue.map((t, idx) => {
-                    const taskPrice = Number(t.price) || 0;
-                    const explicitDep = Number(t.requiredDeposit || t.required_deposit || 0);
-                    const minRequired = explicitDep > 0 ? explicitDep : 0;
-                    const userBal = Number(user?.balance) || 0;
-                    const isRestricted = minRequired > 0 && userBal < minRequired;
+                {/* Active Unlocked Task Hero (when tasks remaining) */}
+                {assignedQueue[completedCount] && completedCount < totalQuota && (
+                  <div className="active-unlocked-task-hero mt-3 mb-4 p-4 rounded-2xl bg-gradient-to-r from-purple-50 to-indigo-50 border-2 border-purple-300 dark:from-purple-950/40 dark:to-indigo-950/40 dark:border-purple-800 shadow-sm">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-purple-600 text-white flex items-center gap-1.5 shadow-sm">
+                        <Zap size={13} /> Active Unlocked Task • Step #{completedCount + 1}
+                      </span>
+                      <span className="text-xs font-semibold text-purple-700 dark:text-purple-300">
+                        Task {completedCount + 1} of {totalQuota}
+                      </span>
+                    </div>
 
-                    const isCompleted = idx < completedCount;
-                    const isActive = idx === completedCount;
-                    const isLocked = idx > completedCount;
-
-                    return (
-                      <div
-                        key={t.id || idx}
-                        className={`queue-task-card ${
-                          isCompleted
-                            ? 'queue-task-completed'
-                            : isActive
-                            ? 'queue-task-active ring-2 ring-purple-500 shadow-md'
-                            : 'queue-task-locked opacity-60'
-                        }`}
-                        style={{
-                          position: 'relative',
-                          transition: 'all 0.2s ease',
-                          cursor: isLocked ? 'not-allowed' : 'pointer'
+                    <div className="flex items-center gap-3.5">
+                      <img
+                        src={getProductImage(assignedQueue[completedCount])}
+                        alt={assignedQueue[completedCount].title}
+                        className="w-16 h-16 rounded-xl object-cover border border-purple-200 shadow-sm flex-shrink-0"
+                        onError={(e) => {
+                          e.currentTarget.onerror = null;
+                          e.currentTarget.src = getProductImage(assignedQueue[completedCount]);
                         }}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <h5 className="text-sm font-bold text-slate-800 dark:text-slate-100 truncate mb-1">
+                          {assignedQueue[completedCount].title}
+                        </h5>
+                        <div className="flex items-center gap-2 text-xs">
+                          <span className="font-bold text-slate-900 dark:text-white">
+                            ${(Number(assignedQueue[completedCount].price) || 0).toFixed(2)} USDT
+                          </span>
+                          <span className="text-emerald-600 font-bold bg-emerald-50 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded">
+                            +{assignedQueue[completedCount].yieldRate || `${(assignedQueue[completedCount].commissionRate || 4.0).toFixed(1)}%`} Commission
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn-primary text-xs font-bold py-2.5 px-4 rounded-xl shadow-md whitespace-nowrap"
                         onClick={() => {
-                          if (isCompleted) {
-                            if (addNotification) {
-                              addNotification('Task Completed', `Task #${idx + 1} has already been completed.`, 'info');
-                            }
-                            return;
-                          }
-                          if (isLocked) {
-                            if (addNotification) {
-                              addNotification(
-                                'Task Locked',
-                                `Please complete Task #${completedCount + 1} first to unlock Task #${idx + 1}. Tasks unlock strictly 1 by 1.`,
-                                'warning'
-                              );
-                            }
-                            return;
-                          }
-                          setSelectedTask(t);
+                          setSelectedTask(assignedQueue[completedCount]);
                           setModalType('task');
                         }}
                       >
-                        <div className="queue-task-thumb" style={{ position: 'relative' }}>
-                          <img
-                            src={getProductImage(t)}
-                            alt={t.title}
-                            onError={(e) => {
-                              e.currentTarget.onerror = null;
-                              e.currentTarget.src = getProductImage(t);
-                            }}
-                          />
-                          <span className="queue-order-badge">#{idx + 1}</span>
+                        Start Task →
+                      </button>
+                    </div>
+                  </div>
+                )}
 
-                          {isCompleted && (
-                            <span
-                              className="queue-done-badge"
-                              title="Task Completed"
+                {/* When all tasks are completed */}
+                {completedCount >= totalQuota && (
+                  <div className="mt-3 mb-4 p-4 rounded-2xl bg-emerald-50 border border-emerald-300 dark:bg-emerald-950/40 dark:border-emerald-800 text-center">
+                    <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-emerald-500 text-white mb-2 shadow-sm">
+                      <CheckCircle2 size={22} />
+                    </div>
+                    <h4 className="text-emerald-800 dark:text-emerald-200 font-bold text-base mb-1">All 25 Tasks Completed!</h4>
+                    <p className="text-xs text-emerald-700 dark:text-emerald-300 m-0">
+                      Congratulations! You have successfully completed all sequential tasks in this package. Commissions have been credited to your balance.
+                    </p>
+                  </div>
+                )}
+
+                {/* STRICT SEQUENTIAL PROGRESSION:
+                    Only unlocked tasks are visible (all completed tasks + the currently active unlocked task).
+                    Future locked tasks remain hidden until the preceding task is submitted! */}
+                <div className="task-queue-grid">
+                  {assignedQueue
+                    .filter((_, idx) => idx <= completedCount)
+                    .map((t, idx) => {
+                      const taskPrice = Number(t.price) || 0;
+                      const explicitDep = Number(t.requiredDeposit || t.required_deposit || 0);
+                      const minRequired = explicitDep > 0 ? explicitDep : 0;
+                      const userBal = Number(user?.balance) || 0;
+                      const isRestricted = minRequired > 0 && userBal < minRequired;
+
+                      const isCompleted = idx < completedCount;
+                      const isActive = idx === completedCount;
+
+                      return (
+                        <div
+                          key={t.id || idx}
+                          className={`queue-task-card ${
+                            isCompleted
+                              ? 'queue-task-completed'
+                              : 'queue-task-active ring-2 ring-purple-500 shadow-md'
+                          }`}
+                          style={{
+                            position: 'relative',
+                            transition: 'all 0.2s ease',
+                            cursor: 'pointer'
+                          }}
+                          onClick={() => {
+                            if (isCompleted) {
+                              if (addNotification) {
+                                addNotification('Task Completed', `Task #${idx + 1} has already been completed.`, 'info');
+                              }
+                              return;
+                            }
+                            setSelectedTask(t);
+                            setModalType('task');
+                          }}
+                        >
+                          <div className="queue-task-thumb" style={{ position: 'relative' }}>
+                            <img
+                              src={getProductImage(t)}
+                              alt={t.title}
+                              onError={(e) => {
+                                e.currentTarget.onerror = null;
+                                e.currentTarget.src = getProductImage(t);
+                              }}
+                            />
+                            <span className="queue-order-badge">#{idx + 1}</span>
+
+                            {isCompleted && (
+                              <span
+                                className="queue-done-badge"
+                                title="Task Completed"
+                                style={{
+                                  position: 'absolute',
+                                  top: '6px',
+                                  right: '6px',
+                                  background: '#10b981',
+                                  color: '#fff',
+                                  borderRadius: '50%',
+                                  width: '22px',
+                                  height: '22px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  boxShadow: '0 2px 5px rgba(16, 185, 129, 0.4)'
+                                }}
+                              >
+                                <Check size={13} strokeWidth={3} />
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="queue-task-info">
+                            <div className="flex items-center gap-1.5 mb-1">
+                              {isCompleted && (
+                                <span className="text-xs font-bold text-emerald-600 flex items-center gap-0.5">
+                                  <CheckCircle2 size={12} /> Completed
+                                </span>
+                              )}
+                              {isActive && (
+                                <span className="text-xs font-bold text-purple-600 bg-purple-50 dark:bg-purple-950 px-1.5 py-0.5 rounded animate-pulse flex items-center gap-1">
+                                  <Zap size={11} /> Active Step • Unlocked
+                                </span>
+                              )}
+                            </div>
+                            <h6>{t.title}</h6>
+                            <div className="queue-task-pricing">
+                              <span className="queue-price">${taskPrice.toFixed(2)}</span>
+                              <span className="queue-yield">+{t.yieldRate || `${(t.commissionRate || 4.0).toFixed(1)}%`}</span>
+                            </div>
+                          </div>
+
+                          {isCompleted ? (
+                            <div
+                              className="queue-start-btn"
                               style={{
-                                position: 'absolute',
-                                top: '6px',
-                                right: '6px',
-                                background: '#10b981',
-                                color: '#fff',
-                                borderRadius: '50%',
-                                width: '22px',
-                                height: '22px',
+                                background: '#ecfdf5',
+                                color: '#059669',
+                                border: '1px solid #a7f3d0',
+                                cursor: 'default',
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                boxShadow: '0 2px 5px rgba(16, 185, 129, 0.4)'
+                                gap: '4px'
                               }}
                             >
-                              <Check size={13} strokeWidth={3} />
-                            </span>
-                          )}
-
-                          {isLocked && (
-                            <span
-                              className="queue-lock-badge"
-                              title={`Locked: Complete Task #${idx} first`}
-                              style={{
-                                position: 'absolute',
-                                top: '6px',
-                                right: '6px',
-                                background: 'rgba(15, 23, 42, 0.75)',
-                                color: '#cbd5e1',
-                                borderRadius: '50%',
-                                width: '22px',
-                                height: '22px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center'
+                              <Check size={13} strokeWidth={2.6} />
+                              <span>Done</span>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              className={`queue-start-btn ${isRestricted ? 'btn-restricted' : ''}`}
+                              style={!isRestricted ? { background: 'linear-gradient(135deg, #7c3aed 0%, #6366f1 100%)', color: '#fff', fontWeight: '700' } : {}}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedTask(t);
+                                setModalType('task');
                               }}
                             >
-                              <Lock size={12} />
-                            </span>
+                              {isRestricted ? `Unlock ($${minRequired.toFixed(0)})` : 'Start Task'}
+                            </button>
                           )}
                         </div>
-
-                        <div className="queue-task-info">
-                          <div className="flex items-center gap-1.5 mb-1">
-                            {isCompleted && (
-                              <span className="text-xs font-bold text-emerald-600 flex items-center gap-0.5">
-                                <CheckCircle2 size={12} /> Completed
-                              </span>
-                            )}
-                            {isActive && (
-                              <span className="text-xs font-bold text-purple-600 bg-purple-50 dark:bg-purple-950 px-1.5 py-0.5 rounded animate-pulse flex items-center gap-1">
-                                <Zap size={11} /> Active Step • Unlocked
-                              </span>
-                            )}
-                            {isLocked && (
-                              <span className="text-xs font-medium text-slate-400 flex items-center gap-0.5">
-                                <Lock size={10} /> Locked
-                              </span>
-                            )}
-                          </div>
-                          <h6>{t.title}</h6>
-                          <div className="queue-task-pricing">
-                            <span className="queue-price">${taskPrice.toFixed(2)}</span>
-                            <span className="queue-yield">+{t.yieldRate || `${(t.commissionRate || 4.0).toFixed(1)}%`}</span>
-                          </div>
-                        </div>
-
-                        {isCompleted ? (
-                          <div
-                            className="queue-start-btn"
-                            style={{
-                              background: '#ecfdf5',
-                              color: '#059669',
-                              border: '1px solid #a7f3d0',
-                              cursor: 'default',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              gap: '4px'
-                            }}
-                          >
-                            <Check size={13} strokeWidth={2.6} />
-                            <span>Done</span>
-                          </div>
-                        ) : isActive ? (
-                          <button
-                            type="button"
-                            className={`queue-start-btn ${isRestricted ? 'btn-restricted' : ''}`}
-                            style={!isRestricted ? { background: 'linear-gradient(135deg, #7c3aed 0%, #6366f1 100%)', color: '#fff', fontWeight: '700' } : {}}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedTask(t);
-                              setModalType('task');
-                            }}
-                          >
-                            {isRestricted ? `Unlock ($${minRequired.toFixed(0)})` : 'Start Task'}
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            className="queue-start-btn btn-locked"
-                            disabled
-                            style={{
-                              background: '#f1f5f9',
-                              color: '#94a3b8',
-                              border: '1px solid #e2e8f0',
-                              cursor: 'not-allowed',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '4px'
-                            }}
-                          >
-                            <Lock size={12} />
-                            <span>Locked</span>
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
                 </div>
+
+                {/* Locked Teaser for next upcoming task */}
+                {completedCount < totalQuota && (
+                  <div className="next-task-locked-banner mt-3 p-3.5 rounded-xl bg-slate-50 border border-slate-200 dark:bg-slate-900/50 dark:border-slate-800 text-center flex items-center justify-center gap-2 text-xs text-slate-500 font-medium">
+                    <Lock size={13} className="text-slate-400" />
+                    <span>
+                      Task #{completedCount + 2} will unlock automatically after you complete Task #{completedCount + 1}. ({totalQuota - completedCount - 1} remaining in package)
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* Footer Actions */}

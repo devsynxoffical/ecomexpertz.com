@@ -125,6 +125,17 @@ function TabHome() {
     setTimeout(() => setCopiedInvite(false), 2500);
   };
 
+  const handleLaunchTask = (task, platformName = 'eBay') => {
+    const userQueue = user?.assignedTasks || [];
+    const completedCount = Number(user?.dailyCompleted ?? user?.completedTasks ?? 0);
+    if (userQueue.length > 0 && userQueue[completedCount]) {
+      setSelectedTask(userQueue[completedCount]);
+      setModalType('task');
+    } else {
+      openPlatformTasks(platformName);
+    }
+  };
+
   return (
     <div className="container tab-home-container">
       {/* SAPPHIRE HERO BANNER matching Screenshot 2 */}
@@ -624,10 +635,7 @@ function TabHome() {
               <div
                 key={task.id}
                 className={`dash-task-card ${isRestricted ? 'task-card-restricted' : ''}`}
-                onClick={() => {
-                  setSelectedTask(task);
-                  setModalType('task');
-                }}
+                onClick={() => handleLaunchTask(task, 'eBay')}
               >
                 <div className="dash-task-img-wrap cursor-pointer" onClick={(e) => openProductUrl(task, e)} title={`Open ${task.title} on ${task.platform}`}>
                   <img
@@ -703,10 +711,7 @@ function TabHome() {
               <div
                 key={task.id}
                 className={`dash-task-card ${isRestricted ? 'task-card-restricted' : ''}`}
-                onClick={() => {
-                  setSelectedTask(task);
-                  setModalType('task');
-                }}
+                onClick={() => handleLaunchTask(task, 'Walmart')}
               >
                 <div className="dash-task-img-wrap cursor-pointer" onClick={(e) => openProductUrl(task, e)} title={`Open ${task.title} on ${task.platform}`}>
                   <img
@@ -782,10 +787,7 @@ function TabHome() {
               <div
                 key={task.id}
                 className={`dash-task-card ${isRestricted ? 'task-card-restricted' : ''}`}
-                onClick={() => {
-                  setSelectedTask(task);
-                  setModalType('task');
-                }}
+                onClick={() => handleLaunchTask(task, 'Temu')}
               >
                 <div className="dash-task-img-wrap cursor-pointer" onClick={(e) => openProductUrl(task, e)} title={`Open ${task.title} on ${task.platform}`}>
                   <img

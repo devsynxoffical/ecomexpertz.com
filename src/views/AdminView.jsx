@@ -907,7 +907,7 @@ export default function AdminView() {
           {/* Section: Financial Operations */}
           {(!sidebarNavSearch || 'deposits withdrawals gateways credit financial operations'.includes(sidebarNavSearch.toLowerCase())) && (
             <div className="admin-nav-section">
-              <span className="nav-section-title">Financial Operations ›</span>
+              <span className="nav-section-title">Financial Operations</span>
               <div className="nav-items-list">
                 <button
                   className={`admin-nav-item ${activeAdminTab === 'deposits' ? 'active' : ''}`}
@@ -965,7 +965,7 @@ export default function AdminView() {
           {/* Section: User Management */}
           {(!sidebarNavSearch || 'users accounts balances ledger members'.includes(sidebarNavSearch.toLowerCase())) && (
             <div className="admin-nav-section">
-              <span className="nav-section-title">Customers & Accounts ›</span>
+              <span className="nav-section-title">Customers & Accounts</span>
               <div className="nav-items-list">
                 <button
                   className={`admin-nav-item ${activeAdminTab === 'users' ? 'active' : ''}`}
@@ -984,7 +984,7 @@ export default function AdminView() {
           {/* Section: Tasks & Engine */}
           {(!sidebarNavSearch || 'tasks pool vip commission rules catalogue 25 steps'.includes(sidebarNavSearch.toLowerCase())) && (
             <div className="admin-nav-section">
-              <span className="nav-section-title">Task Engine & VIP Rules ›</span>
+              <span className="nav-section-title">Task Engine & VIP Rules</span>
               <div className="nav-items-list">
                 <button
                   className={`admin-nav-item ${activeAdminTab === 'tasks' ? 'active' : ''}`}
@@ -1014,7 +1014,7 @@ export default function AdminView() {
           {/* Section: Customer Support & Telegram */}
           {(!sidebarNavSearch || 'support chat telegram bot channels messages'.includes(sidebarNavSearch.toLowerCase())) && (
             <div className="admin-nav-section">
-              <span className="nav-section-title">Support & Channels ›</span>
+              <span className="nav-section-title">Support & Channels</span>
               <div className="nav-items-list">
                 <button
                   id="admin-nav-support"
@@ -1050,7 +1050,7 @@ export default function AdminView() {
           {/* Section: Security & Audit */}
           {(!sidebarNavSearch || 'audit security system logs trail'.includes(sidebarNavSearch.toLowerCase())) && (
             <div className="admin-nav-section">
-              <span className="nav-section-title">System & Security ›</span>
+              <span className="nav-section-title">System & Security</span>
               <div className="nav-items-list">
                 <button
                   className={`admin-nav-item ${activeAdminTab === 'audit' ? 'active' : ''}`}
@@ -1311,42 +1311,50 @@ export default function AdminView() {
               </div>
             </div>
 
-            {/* PARTNER PLATFORMS PILL ROW (Exact match to User Side) */}
-            <div className="partner-platforms-card mb-6">
-              <span className="card-section-title">PARTNER PLATFORMS & CAMPAIGN DISPATCH</span>
-              <div className="platforms-pills-row">
-                {[
-                  { name: 'eBay', platform: 'ebay', url: 'https://www.ebay.com', icon: <EbayLogo size={42} /> },
-                  { name: 'Walmart', platform: 'walmart', url: 'https://www.walmart.com', icon: <WalmartLogo size={42} /> },
-                  { name: 'Temu', platform: 'temu', url: 'https://www.temu.com', icon: <TemuLogo size={42} /> },
-                  { name: 'Amazon', platform: 'amazon', url: 'https://www.amazon.com', icon: <AmazonLogo size={42} /> },
-                  { name: 'AliExpress', platform: 'aliexpress', url: 'https://www.aliexpress.com', icon: <AliExpressLogo size={42} /> },
-                  { name: 'Target', platform: 'target', url: 'https://www.target.com', icon: <TargetLogo size={42} /> },
-                  { name: 'Shopify', platform: 'shopify', url: 'https://www.shopify.com', icon: <ShopifyLogo size={42} /> },
-                  { name: 'Shopee', platform: 'shopee', url: 'https://www.shopee.com', icon: <ShopeeLogo size={42} /> },
-                ].map((item, idx) => (
-                  <div
-                    key={idx}
-                    className="partner-pill-item cursor-pointer"
-                    onClick={() => {
-                      setActiveAdminTab('tasks');
-                      setTaskSearch(item.name);
-                    }}
-                    title={`Filter ${item.name} catalog tasks`}
-                  >
-                    <div className={`platform-logo-circle ${item.platform}`}>
-                      {item.icon}
-                    </div>
-                    <span className="partner-name" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px' }}>
-                      <span>{item.name}</span>
-                      <ExternalLink size={10} style={{ opacity: 0.6 }} />
-                    </span>
+            {/* IMMEDIATE ATTENTION: URGENT AUTHORIZATION QUEUE */}
+            {(pendingDeposits.length > 0 || pendingWithdrawals.length > 0) && (
+              <div className="admin-action-required-banner mb-6 animate-slide-down">
+                <div className="action-required-left">
+                  <div className="action-required-badge">
+                    <AlertTriangle size={15} className="text-amber-500" />
+                    <span>ACTION REQUIRED</span>
                   </div>
-                ))}
+                  <div className="action-required-text">
+                    <strong>
+                      {pendingDeposits.length > 0 && `${pendingDeposits.length} Deposit${pendingDeposits.length > 1 ? 's' : ''}`}
+                      {pendingDeposits.length > 0 && pendingWithdrawals.length > 0 && ' & '}
+                      {pendingWithdrawals.length > 0 && `${pendingWithdrawals.length} Withdrawal${pendingWithdrawals.length > 1 ? 's' : ''}`}
+                      {' '}Awaiting Verification
+                    </strong>
+                    <span className="action-required-sub">Pending financial requests require admin authorization before balance ledger settlement.</span>
+                  </div>
+                </div>
+                <div className="action-required-buttons">
+                  {pendingDeposits.length > 0 && (
+                    <button
+                      type="button"
+                      className="btn-action-banner deposit"
+                      onClick={() => setActiveAdminTab('deposits')}
+                    >
+                      <Wallet size={14} />
+                      <span>Review Deposits ({pendingDeposits.length})</span>
+                    </button>
+                  )}
+                  {pendingWithdrawals.length > 0 && (
+                    <button
+                      type="button"
+                      className="btn-action-banner withdrawal"
+                      onClick={() => setActiveAdminTab('withdrawals')}
+                    >
+                      <ArrowUpRight size={14} />
+                      <span>Review Payouts ({pendingWithdrawals.length})</span>
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
 
-            {/* 4 COLORED STAT CARDS (Exact match to User Side .four-stats-grid) */}
+            {/* 4 REFINED STAT CARDS */}
             <div className="four-stats-grid mb-6">
               {/* Sapphire Card */}
               <div className="stat-card sapphire-card">
@@ -1440,19 +1448,22 @@ export default function AdminView() {
             <div className="admin-pending-approvals-grid">
               {/* Column 1: Pending Deposits */}
               <div className="admin-panel-card">
-                <div className="admin-panel-header">
-                  <h3 className="admin-panel-title">
-                    <span>Pending Deposits</span>
-                    <span className="admin-panel-count-pill">{pendingDeposits.length}</span>
-                  </h3>
-                  <button type="button" className="admin-panel-link" onClick={() => setActiveAdminTab('deposits')}>
-                    View All →
+                <div className="admin-gateway-card-header">
+                  <div className="admin-gateway-title-wrap">
+                    <Wallet size={18} className="text-blue-600" />
+                    <h3 className="admin-gateway-title">Pending Deposits</h3>
+                  </div>
+                  <button type="button" className="admin-badge neutral" style={{ cursor: 'pointer' }} onClick={() => setActiveAdminTab('deposits')}>
+                    View All ({pendingDeposits.length}) →
                   </button>
                 </div>
 
                 {pendingDeposits.length === 0 ? (
                   <div className="admin-pending-empty">
-                    <CheckCircle2 size={24} color="#059669" />
+                    <div className="admin-pending-empty-icon">
+                      <CheckCircle2 size={22} />
+                    </div>
+                    <strong>Queue Cleared</strong>
                     <span>All deposits approved and settled.</span>
                   </div>
                 ) : (
@@ -1460,20 +1471,30 @@ export default function AdminView() {
                     {pendingDeposits.slice(0, 5).map(dep => {
                       const depKey = dep.id || dep.code;
                       const isProcessing = processingDepositId === depKey;
+                      const uInitial = ((dep.userName || dep.user_name || 'M')[0] || 'M').toUpperCase();
                       return (
                         <div key={depKey} className="admin-pending-item">
-                          <div className="admin-pending-item-info">
-                            <span className="admin-pending-item-user">
-                              {dep.userName || dep.user_name || 'Member'}
-                              <span className="cell-tracking-code">{dep.code || dep.id}</span>
-                            </span>
-                            <span className="admin-pending-item-meta">
-                              <span>{dep.date}</span>
-                              <span>•</span>
-                              <span>{dep.network || 'TRC20'}</span>
-                              <span>•</span>
-                              <span className="cell-mono-addr">{formatCompactAddress(dep.txHash || dep.tx_hash || 'Direct Deposit')}</span>
-                            </span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
+                            <div className="admin-pending-avatar">
+                              {uInitial}
+                            </div>
+                            <div className="admin-pending-item-info">
+                              <span className="admin-pending-item-user">
+                                {dep.userName || dep.user_name || 'Member'}
+                                <span className="cell-tracking-code">{dep.code || dep.id}</span>
+                              </span>
+                              <span className="admin-pending-item-meta">
+                                <span>{dep.date}</span>
+                                <span>•</span>
+                                <span>{dep.network || 'TRC20'}</span>
+                                <span>•</span>
+                                {(dep.txHash || dep.tx_hash) && (dep.txHash || dep.tx_hash) !== 'Direct Deposit' ? (
+                                  <span className="cell-mono-addr">{formatCompactAddress(dep.txHash || dep.tx_hash)}</span>
+                                ) : (
+                                  <span className="cell-text-label">Direct Deposit</span>
+                                )}
+                              </span>
+                            </div>
                           </div>
                           <div className="admin-pending-item-actions">
                             <span className="admin-pending-item-amount deposit">
@@ -1521,62 +1542,108 @@ export default function AdminView() {
 
               {/* Column 2: Pending Withdrawals */}
               <div className="admin-panel-card">
-                <div className="admin-panel-header">
-                  <h3 className="admin-panel-title">
-                    <span>Pending Withdrawals</span>
-                    <span className="admin-panel-count-pill">{pendingWithdrawals.length}</span>
-                  </h3>
-                  <button type="button" className="admin-panel-link" onClick={() => setActiveAdminTab('withdrawals')}>
-                    View All →
+                <div className="admin-gateway-card-header">
+                  <div className="admin-gateway-title-wrap">
+                    <ArrowUpRight size={18} className="text-blue-600" />
+                    <h3 className="admin-gateway-title">Pending Withdrawals</h3>
+                  </div>
+                  <button type="button" className="admin-badge neutral" style={{ cursor: 'pointer' }} onClick={() => setActiveAdminTab('withdrawals')}>
+                    View All ({pendingWithdrawals.length}) →
                   </button>
                 </div>
 
                 {pendingWithdrawals.length === 0 ? (
                   <div className="admin-pending-empty">
-                    <CheckCircle2 size={24} color="#059669" />
-                    <span>No pending withdrawal requests.</span>
+                    <div className="admin-pending-empty-icon" style={{ background: '#f8fafc', color: '#64748b' }}>
+                      <CheckCircle2 size={22} />
+                    </div>
+                    <strong>No Pending Payouts</strong>
+                    <span>No pending withdrawal requests in queue.</span>
                   </div>
                 ) : (
                   <div className="admin-pending-list">
-                    {pendingWithdrawals.slice(0, 5).map(wth => (
-                      <div key={wth.id} className="admin-pending-item">
-                        <div className="admin-pending-item-info">
-                          <span className="admin-pending-item-user">
-                            {wth.userName || 'Member'}
-                            <span className="cell-tracking-code">{wth.code}</span>
-                          </span>
-                          <span className="admin-pending-item-meta">
-                            <span>{wth.date}</span>
-                            <span>•</span>
-                            <span className="cell-mono-addr">{formatCompactAddress(wth.destination)}</span>
-                          </span>
+                    {pendingWithdrawals.slice(0, 5).map(wth => {
+                      const uInitial = ((wth.userName || 'M')[0] || 'M').toUpperCase();
+                      return (
+                        <div key={wth.id} className="admin-pending-item">
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
+                            <div className="admin-pending-avatar withdrawal">
+                              {uInitial}
+                            </div>
+                            <div className="admin-pending-item-info">
+                              <span className="admin-pending-item-user">
+                                {wth.userName || 'Member'}
+                                <span className="cell-tracking-code">{wth.code}</span>
+                              </span>
+                              <span className="admin-pending-item-meta">
+                                <span>{wth.date}</span>
+                                <span>•</span>
+                                <span className="cell-mono-addr">{formatCompactAddress(wth.destination)}</span>
+                              </span>
+                            </div>
+                          </div>
+                          <div className="admin-pending-item-actions">
+                            <span className="admin-pending-item-amount withdrawal">
+                              {formatUSDT(wth.amount, false)}
+                            </span>
+                            <button
+                              type="button"
+                              className="btn-table-action-approve"
+                              onClick={() => {
+                                setDispatchModalRecord(wth);
+                                setDispatchTxHash(`0x${Math.random().toString(16).substring(2, 10)}${Math.random().toString(16).substring(2, 10)}`);
+                              }}
+                            >
+                              Dispatch TX
+                            </button>
+                            <button
+                              type="button"
+                              className="btn-table-action-reject"
+                              onClick={() => setRejectModalRecord(wth)}
+                            >
+                              Reject & Refund
+                            </button>
+                          </div>
                         </div>
-                        <div className="admin-pending-item-actions">
-                          <span className="admin-pending-item-amount withdrawal">
-                            {formatUSDT(wth.amount, false)}
-                          </span>
-                          <button
-                            type="button"
-                            className="btn-table-action-approve"
-                            onClick={() => {
-                              setDispatchModalRecord(wth);
-                              setDispatchTxHash(`0x${Math.random().toString(16).substring(2, 10)}${Math.random().toString(16).substring(2, 10)}`);
-                            }}
-                          >
-                            Dispatch TX
-                          </button>
-                          <button
-                            type="button"
-                            className="btn-table-action-reject"
-                            onClick={() => setRejectModalRecord(wth)}
-                          >
-                            Reject & Refund
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
+              </div>
+            </div>
+
+            {/* PARTNER PLATFORMS & CAMPAIGN DISPATCH */}
+            <div className="partner-platforms-card mb-6">
+              <span className="card-section-title">PARTNER PLATFORMS & CAMPAIGN DISPATCH</span>
+              <div className="platforms-pills-row">
+                {[
+                  { name: 'eBay', platform: 'ebay', url: 'https://www.ebay.com', icon: <EbayLogo size={42} /> },
+                  { name: 'Walmart', platform: 'walmart', url: 'https://www.walmart.com', icon: <WalmartLogo size={42} /> },
+                  { name: 'Temu', platform: 'temu', url: 'https://www.temu.com', icon: <TemuLogo size={42} /> },
+                  { name: 'Amazon', platform: 'amazon', url: 'https://www.amazon.com', icon: <AmazonLogo size={42} /> },
+                  { name: 'AliExpress', platform: 'aliexpress', url: 'https://www.aliexpress.com', icon: <AliExpressLogo size={42} /> },
+                  { name: 'Target', platform: 'target', url: 'https://www.target.com', icon: <TargetLogo size={42} /> },
+                  { name: 'Shopify', platform: 'shopify', url: 'https://www.shopify.com', icon: <ShopifyLogo size={42} /> },
+                  { name: 'Shopee', platform: 'shopee', url: 'https://www.shopee.com', icon: <ShopeeLogo size={42} /> },
+                ].map((item, idx) => (
+                  <div
+                    key={idx}
+                    className="partner-pill-item cursor-pointer"
+                    onClick={() => {
+                      setActiveAdminTab('tasks');
+                      setTaskSearch(item.name);
+                    }}
+                    title={`Filter ${item.name} catalog tasks`}
+                  >
+                    <div className={`platform-logo-circle ${item.platform}`}>
+                      {item.icon}
+                    </div>
+                    <span className="partner-name" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px' }}>
+                      <span>{item.name}</span>
+                      <ExternalLink size={10} style={{ opacity: 0.6 }} />
+                    </span>
+                  </div>
+                ))}
               </div>
             </div>
 
@@ -1774,24 +1841,26 @@ export default function AdminView() {
 
             {/* Announcement Broadcast Card */}
             <div className="admin-panel-card mt-6">
-              <div className="admin-panel-header">
-                <h3 className="admin-panel-title">
-                  <Bell size={16} color="#059669" />
-                  <span>Publish Global Platform Announcement</span>
-                </h3>
+              <div className="admin-gateway-card-header">
+                <div className="admin-gateway-title-wrap">
+                  <Bell size={18} className="text-blue-600" />
+                  <h3 className="admin-gateway-title">Publish Global Platform Announcement</h3>
+                </div>
+                <span className="admin-badge neutral">Global Broadcast</span>
               </div>
-              <div style={{ padding: '16px 18px' }}>
-                <form onSubmit={handleSendBroadcast} style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              <div style={{ padding: '20px 24px' }}>
+                <form onSubmit={handleSendBroadcast} style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
                   <input
                     type="text"
                     placeholder="e.g. System upgrade scheduled for midnight. All deposits and task commissions running normally."
                     value={broadcastText}
                     onChange={(e) => setBroadcastText(e.target.value)}
                     className="admin-form-input"
-                    style={{ flex: 1, minWidth: '240px' }}
+                    style={{ flex: 1, minWidth: '260px' }}
                   />
-                  <button type="submit" className="btn-admin-secondary">
-                    Broadcast Notice
+                  <button type="submit" className="btn-admin-primary" style={{ padding: '10px 20px', borderRadius: '10px' }}>
+                    <Send size={14} />
+                    <span>Broadcast Notice</span>
                   </button>
                 </form>
               </div>
@@ -2040,16 +2109,20 @@ export default function AdminView() {
                             </td>
                             <td>
                               <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
-                                <code className="cell-mono-addr">{formatCompactAddress(rec.txHash || rec.tx_hash || 'Direct Deposit')}</code>
-                                {(rec.txHash || rec.tx_hash) && (
-                                  <button
-                                    type="button"
-                                    className="cell-copy-btn"
-                                    title="Copy TX Hash"
-                                    onClick={() => copyToClipboard(rec.txHash || rec.tx_hash, 'TX Hash')}
-                                  >
-                                    <Copy size={11} />
-                                  </button>
+                                {(rec.txHash || rec.tx_hash) && (rec.txHash || rec.tx_hash) !== 'Direct Deposit' ? (
+                                  <>
+                                    <code className="cell-mono-addr">{formatCompactAddress(rec.txHash || rec.tx_hash)}</code>
+                                    <button
+                                      type="button"
+                                      className="cell-copy-btn"
+                                      title="Copy TX Hash"
+                                      onClick={() => copyToClipboard(rec.txHash || rec.tx_hash, 'TX Hash')}
+                                    >
+                                      <Copy size={11} />
+                                    </button>
+                                  </>
+                                ) : (
+                                  <span className="cell-text-label">Direct Credit</span>
                                 )}
                               </div>
                             </td>
