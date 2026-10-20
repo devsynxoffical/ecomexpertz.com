@@ -930,14 +930,14 @@ function TaskExecutionModal({ task, onClose }) {
               <h3 className="mt-2 text-amber-warning font-bold">Deposit Required to Unlock Task</h3>
               <p className="modal-desc mt-1">
                 Your available balance is <strong>${userBalance.toFixed(2)} USDT</strong>.
-                This task order value is <strong>${taskPrice.toFixed(2)} USDT</strong>.
-                Please add deposit to unlock and complete this campaign task.
+                This task requires a minimum balance of <strong>${minRequiredBalance.toFixed(2)} USDT</strong>.
+                Please deposit the required funds to unlock and complete this campaign task.
               </p>
 
               <div className="restriction-breakdown-box mt-3">
                 <div className="breakdown-row">
-                  <span>Task Order Amount:</span>
-                  <strong>${taskPrice.toFixed(2)} USDT</strong>
+                  <span>Required Account Balance:</span>
+                  <strong>${minRequiredBalance.toFixed(2)} USDT</strong>
                 </div>
                 <div className="breakdown-row">
                   <span>Your Current Balance:</span>

@@ -36,6 +36,7 @@ import {
   Play,
   Send,
   Bell,
+  Eye,
   X
 } from 'lucide-react';
 import { openProductUrl, getProductUrl, getProductImage } from '../utils/productUrl';
@@ -128,11 +129,15 @@ function TabHome() {
     setTimeout(() => setCopiedInvite(false), 2500);
   };
 
+  const completedCount = Number(user?.dailyCompleted ?? user?.completedTasks ?? 0);
+  const assignedQueue = Array.isArray(user?.assignedTasks) ? user.assignedTasks : [];
+  const totalQuota = assignedQueue.length || 25;
+  const isAssigned = (user?.taskPackageStatus === 'assigned' || !!user?.assignedPackage) && assignedQueue.length > 0;
+  const isPendingRequest = !isAssigned && !!user?.taskPackageRequested;
+
   const handleLaunchTask = (task, platformName = 'eBay') => {
-    const userQueue = user?.assignedTasks || [];
-    const completedCount = Number(user?.dailyCompleted ?? user?.completedTasks ?? 0);
-    if (userQueue.length > 0 && userQueue[completedCount]) {
-      setSelectedTask(userQueue[completedCount]);
+    if (assignedQueue.length > 0 && assignedQueue[completedCount]) {
+      setSelectedTask(assignedQueue[completedCount]);
       setModalType('task');
     } else {
       openPlatformTasks(platformName);
@@ -644,6 +649,156 @@ function TabHome() {
         </div>
       )}
 
+      {/* CAMPAIGN STATUS HERO CARD (Sequential 1-by-1 Flow) */}
+      {isAssigned ? (
+        <div className="active-campaign-hero-card mt-6" style={{
+          background: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4338ca 100%)',
+          borderRadius: '20px',
+          padding: '20px 24px',
+          color: '#ffffff',
+          boxShadow: '0 12px 32px rgba(67, 56, 202, 0.25)',
+          position: 'relative',
+          overflow: 'hidden'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px' }}>
+            <div>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '4px 10px', borderRadius: '999px', background: 'rgba(255,255,255,0.15)', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
+                <Sparkles size={12} className="text-amber-300" />
+                <span>Active Campaign • {user?.assignedPackage || '25 Tasks Package'}</span>
+              </div>
+              <h3 style={{ fontSize: '19px', fontWeight: '800', margin: '0 0 4px 0', color: '#fff' }}>
+                {completedCount >= totalQuota ? 'All 25 Tasks Completed!' : `Current Step: Task #${completedCount + 1} Unlocked`}
+              </h3>
+              <p style={{ fontSize: '13px', color: '#c7d2fe', margin: 0, maxWidth: '480px' }}>
+                {completedCount >= totalQuota
+                  ? 'All tasks in this batch are completed! Commissions credited to balance.'
+                  : `Strict 1-by-1 sequence: Complete Task #${completedCount + 1} to automatically reveal Task #${completedCount + 2}.`}
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => {
+                  if (assignedQueue[completedCount]) {
+                    setSelectedTask(assignedQueue[completedCount]);
+                    setModalType('task');
+                  } else {
+                    openPlatformTasks('eBay');
+                  }
+                }}
+                style={{
+                  background: '#ffffff',
+                  color: '#4338ca',
+                  fontWeight: '800',
+                  padding: '12px 20px',
+                  borderRadius: '12px',
+                  boxShadow: '0 4px 14px rgba(0,0,0,0.15)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px'
+                }}
+              >
+                <Zap size={16} />
+                <span>{completedCount >= totalQuota ? 'View Completed Tasks' : `Continue Task #${completedCount + 1}`}</span>
+              </button>
+            </div>
+          </div>
+          {/* Progress bar */}
+          <div style={{ marginTop: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#e0e7ff', marginBottom: '6px' }}>
+              <span>Progress: {completedCount} of {totalQuota} Tasks Completed</span>
+              <span>{Math.min(100, Math.round((completedCount / totalQuota) * 100))}%</span>
+            </div>
+            <div style={{ width: '100%', height: '8px', background: 'rgba(255,255,255,0.2)', borderRadius: '999px', overflow: 'hidden' }}>
+              <div style={{ width: `${Math.min(100, Math.round((completedCount / totalQuota) * 100))}%`, height: '100%', background: '#38bdf8', borderRadius: '999px', transition: 'width 0.4s ease' }} />
+            </div>
+          </div>
+        </div>
+      ) : isPendingRequest ? (
+        <div className="active-campaign-hero-card mt-6" style={{
+          background: 'linear-gradient(135deg, #78350f 0%, #92400e 50%, #b45309 100%)',
+          borderRadius: '20px',
+          padding: '20px 24px',
+          color: '#ffffff',
+          boxShadow: '0 12px 32px rgba(180, 83, 9, 0.25)'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+            <div>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '4px 10px', borderRadius: '999px', background: 'rgba(255,255,255,0.2)', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
+                <Clock size={12} className="spin-slow" />
+                <span>Assignment Pending</span>
+              </div>
+              <h3 style={{ fontSize: '18px', fontWeight: '800', margin: '0 0 4px 0', color: '#fff' }}>
+                Task Package Request Sent to Admin
+              </h3>
+              <p style={{ fontSize: '13px', color: '#fef3c7', margin: 0 }}>
+                Tracking ID: <strong>{user?.taskRequestId || '130-SYTL'}</strong>. Admin is allocating your 25 tasks with sequential 1-by-1 unlock.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => openPlatformTasks('eBay')}
+              style={{
+                background: '#ffffff',
+                color: '#b45309',
+                fontWeight: '800',
+                padding: '12px 20px',
+                borderRadius: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              <Eye size={16} />
+              <span>View Request Status</span>
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="active-campaign-hero-card mt-6" style={{
+          background: 'linear-gradient(135deg, #064e3b 0%, #065f46 50%, #047857 100%)',
+          borderRadius: '20px',
+          padding: '20px 24px',
+          color: '#ffffff',
+          boxShadow: '0 12px 32px rgba(4, 120, 87, 0.25)'
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+            <div>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '4px 10px', borderRadius: '999px', background: 'rgba(255,255,255,0.2)', fontSize: '11px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
+                <Sparkles size={12} />
+                <span>Ready for 25-Task Batch</span>
+              </div>
+              <h3 style={{ fontSize: '18px', fontWeight: '800', margin: '0 0 4px 0', color: '#fff' }}>
+                Deposit Approved? Request Your 25 Tasks
+              </h3>
+              <p style={{ fontSize: '13px', color: '#d1fae5', margin: 0 }}>
+                Submit a task assignment request to admin to unlock your 25 campaign tasks sequentially 1 by 1.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => openPlatformTasks('eBay')}
+              style={{
+                background: '#ffffff',
+                color: '#047857',
+                fontWeight: '800',
+                padding: '12px 20px',
+                borderRadius: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+            >
+              <Zap size={16} />
+              <span>Request 25 Tasks</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* EBAY TASK CAROUSEL matching Screenshot 2 */}
       <div className="platform-task-section mt-6">
         <div className="platform-header-row">
@@ -661,9 +816,9 @@ function TabHome() {
           {ebayTasks.map((task) => {
             const taskPrice = Number(task.price) || 0;
             const explicitDep = Number(task.requiredDeposit || task.required_deposit || 0);
-            const minRequired = Math.max(taskPrice, explicitDep);
+            const minRequired = explicitDep > 0 ? explicitDep : 0;
             const userBal = Number(user?.balance) || 0;
-            const isRestricted = userBal < minRequired;
+            const isRestricted = minRequired > 0 && userBal < minRequired;
             return (
               <div
                 key={task.id}
@@ -693,7 +848,7 @@ function TabHome() {
                   {isRestricted && (
                     <div className="card-lock-overlay">
                       <Lock size={14} />
-                      <span>Min ${minRequired.toFixed(0)}</span>
+                      <span>Deposit Req: ${minRequired.toFixed(0)}</span>
                     </div>
                   )}
                 </div>
@@ -737,9 +892,9 @@ function TabHome() {
           {walmartTasks.map((task) => {
             const taskPrice = Number(task.price) || 0;
             const explicitDep = Number(task.requiredDeposit || task.required_deposit || 0);
-            const minRequired = Math.max(taskPrice, explicitDep);
+            const minRequired = explicitDep > 0 ? explicitDep : 0;
             const userBal = Number(user?.balance) || 0;
-            const isRestricted = userBal < minRequired;
+            const isRestricted = minRequired > 0 && userBal < minRequired;
             return (
               <div
                 key={task.id}
@@ -769,7 +924,7 @@ function TabHome() {
                   {isRestricted && (
                     <div className="card-lock-overlay">
                       <Lock size={14} />
-                      <span>Min ${minRequired.toFixed(0)}</span>
+                      <span>Deposit Req: ${minRequired.toFixed(0)}</span>
                     </div>
                   )}
                 </div>
@@ -813,9 +968,9 @@ function TabHome() {
           {temuTasks.map((task) => {
             const taskPrice = Number(task.price) || 0;
             const explicitDep = Number(task.requiredDeposit || task.required_deposit || 0);
-            const minRequired = Math.max(taskPrice, explicitDep);
+            const minRequired = explicitDep > 0 ? explicitDep : 0;
             const userBal = Number(user?.balance) || 0;
-            const isRestricted = userBal < minRequired;
+            const isRestricted = minRequired > 0 && userBal < minRequired;
             return (
               <div
                 key={task.id}
