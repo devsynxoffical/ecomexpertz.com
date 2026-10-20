@@ -130,9 +130,27 @@ function TabHome() {
   };
 
   const completedCount = Number(user?.dailyCompleted ?? user?.completedTasks ?? 0);
-  const assignedQueue = Array.isArray(user?.assignedTasks) ? user.assignedTasks : [];
+  let assignedQueue = Array.isArray(user?.assignedTasks) && user.assignedTasks.length > 0 ? user.assignedTasks : [];
+  if (assignedQueue.length === 0) {
+    try {
+      const cached = localStorage.getItem(`websynx_user_assigned_tasks_${user?.id}`);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) assignedQueue = parsed;
+      }
+    } catch (e) {}
+  }
+  if (assignedQueue.length === 0) {
+    const allTasks = tasks && tasks.length > 0 ? tasks : [];
+    assignedQueue = allTasks.slice(0, 25);
+  }
   const totalQuota = assignedQueue.length || 25;
-  const isAssigned = (user?.taskPackageStatus === 'assigned' || !!user?.assignedPackage) && assignedQueue.length > 0;
+  const hasQuotaOrPending = (Number(user?.pendingTasks || 0) > 0) ||
+                            (Number(user?.dailyQuota || 0) > 0) ||
+                            (Number(user?.dailyCompleted || user?.completedTasks || 0) > 0) ||
+                            !!user?.assignedPackage ||
+                            user?.taskPackageStatus === 'assigned';
+  const isAssigned = hasQuotaOrPending && assignedQueue.length > 0;
   const isPendingRequest = !isAssigned && !!user?.taskPackageRequested;
 
   const handleLaunchTask = (task, platformName = 'eBay') => {

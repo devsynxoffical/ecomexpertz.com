@@ -37,9 +37,50 @@ export default function PlatformTasksView({ platform = 'eBay', onBack }) {
   const [showPendingModal, setShowPendingModal] = useState(false);
 
   const displayPlatform = platform || 'eBay';
-  const hasAssignedTasks = Array.isArray(user?.assignedTasks) && user.assignedTasks.length > 0;
-  const isAssigned = (user?.taskPackageStatus === 'assigned' || !!user?.assignedPackage) && hasAssignedTasks;
-  const isPending = !!(user?.taskPackageRequested || justRequested);
+
+  // 1. Resolve assigned tasks queue from user object, local cache, or platform tasks
+  let assignedQueue = [];
+  if (Array.isArray(user?.assignedTasks) && user.assignedTasks.length > 0) {
+    assignedQueue = user.assignedTasks;
+  } else {
+    try {
+      const cached = localStorage.getItem(`websynx_user_assigned_tasks_${user?.id}`);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) assignedQueue = parsed;
+      }
+    } catch (e) {}
+  }
+
+  const allPlatformTasks = (tasks || []).filter(
+    t => (t.platform || '').toLowerCase() === displayPlatform.toLowerCase()
+  );
+
+  if (assignedQueue.length === 0) {
+    if (allPlatformTasks.length >= 25) {
+      assignedQueue = allPlatformTasks.slice(0, 25);
+    } else {
+      const others = (tasks || []).filter(
+        t => (t.platform || '').toLowerCase() !== displayPlatform.toLowerCase()
+      );
+      const combined = [...allPlatformTasks, ...others];
+      assignedQueue = combined.slice(0, 25);
+      while (assignedQueue.length < 25 && combined.length > 0) {
+        assignedQueue = [...assignedQueue, ...combined.slice(0, 25 - assignedQueue.length)];
+      }
+    }
+  }
+
+  // 2. Determine if user has an assigned package:
+  // If user has pendingTasks > 0 (e.g. 25 Pending on dashboard) or dailyQuota or completedTasks or assignedPackage:
+  const hasQuotaOrPending = (Number(user?.pendingTasks || 0) > 0) ||
+                            (Number(user?.dailyQuota || 0) > 0) ||
+                            (Number(user?.dailyCompleted || user?.completedTasks || 0) > 0) ||
+                            !!user?.assignedPackage ||
+                            user?.taskPackageStatus === 'assigned';
+
+  const isAssigned = hasQuotaOrPending && assignedQueue.length > 0;
+  const isPending = !isAssigned && !!(user?.taskPackageRequested || justRequested);
 
   const handleRequest = async () => {
     if (!user || user.role === 'guest' || !user.id) {
@@ -289,7 +330,6 @@ export default function PlatformTasksView({ platform = 'eBay', onBack }) {
           /* STATE B: TASKS ASSIGNED -> STRICT 1-BY-1 SEQUENTIAL VISIBILITY */
           (() => {
             const completedCount = Number(user?.dailyCompleted ?? user?.completedTasks ?? 0);
-            const assignedQueue = Array.isArray(user?.assignedTasks) ? user.assignedTasks : [];
             const totalQuota = assignedQueue.length || 25;
             const progressPct = Math.min(100, Math.round((completedCount / totalQuota) * 100));
             const currentActiveTask = assignedQueue[completedCount] || null;
