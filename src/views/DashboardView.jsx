@@ -815,7 +815,8 @@ function TabHome() {
         <div className="horizontal-tasks-scroll">
           {ebayTasks.map((task) => {
             const taskPrice = Number(task.price) || 0;
-            const explicitDep = Number(task.requiredDeposit || task.required_deposit || 0);
+            const rawDep = Number(task.requiredDeposit || task.required_deposit || 0);
+            const explicitDep = task.adminCustomized === true || (!task.isLearning && rawDep > 0) ? rawDep : 0;
             const minRequired = explicitDep > 0 ? explicitDep : 0;
             const userBal = Number(user?.balance) || 0;
             const isRestricted = minRequired > 0 && userBal < minRequired;
@@ -891,7 +892,8 @@ function TabHome() {
         <div className="horizontal-tasks-scroll">
           {walmartTasks.map((task) => {
             const taskPrice = Number(task.price) || 0;
-            const explicitDep = Number(task.requiredDeposit || task.required_deposit || 0);
+            const rawDep = Number(task.requiredDeposit || task.required_deposit || 0);
+            const explicitDep = task.adminCustomized === true || (!task.isLearning && rawDep > 0) ? rawDep : 0;
             const minRequired = explicitDep > 0 ? explicitDep : 0;
             const userBal = Number(user?.balance) || 0;
             const isRestricted = minRequired > 0 && userBal < minRequired;
@@ -967,7 +969,8 @@ function TabHome() {
         <div className="horizontal-tasks-scroll">
           {temuTasks.map((task) => {
             const taskPrice = Number(task.price) || 0;
-            const explicitDep = Number(task.requiredDeposit || task.required_deposit || 0);
+            const rawDep = Number(task.requiredDeposit || task.required_deposit || 0);
+            const explicitDep = task.adminCustomized === true || (!task.isLearning && rawDep > 0) ? rawDep : 0;
             const minRequired = explicitDep > 0 ? explicitDep : 0;
             const userBal = Number(user?.balance) || 0;
             const isRestricted = minRequired > 0 && userBal < minRequired;

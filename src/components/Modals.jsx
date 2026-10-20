@@ -673,10 +673,13 @@ function TaskExecutionModal({ task, onClose }) {
     }
   }, [task]);
 
-  // Balance & Deposit restriction check:
+  // Balance & Deposit restriction check (only locks when Admin explicitly sets a requirement):
   const userBalance = Number(user?.balance || 0);
   const taskPrice = Number(currentTask?.price || 0);
-  const explicitDeposit = Number(currentTask?.requiredDeposit || currentTask?.required_deposit || 0);
+  const rawDeposit = Number(currentTask?.requiredDeposit || currentTask?.required_deposit || 0);
+  const explicitDeposit = currentTask?.adminCustomized === true || (!currentTask?.isLearning && rawDeposit > 0)
+    ? rawDeposit
+    : 0;
   const minRequiredBalance = explicitDeposit > 0 ? explicitDeposit : 0;
   const isDepositRestricted = currentTask && minRequiredBalance > 0 && userBalance < minRequiredBalance;
   const shortfall = Math.max(0, minRequiredBalance - userBalance);

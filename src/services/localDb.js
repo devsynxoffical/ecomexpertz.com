@@ -73,7 +73,13 @@ export const ensureAllInitialTasks = (taskList) => {
       existingMap.set(String(init.id), init);
     }
   }
-  return result;
+  // Sanitize: clear legacy hardcoded 10-300 default deposits unless admin specifically configured it
+  return result.map(t => {
+    if (t.isLearning && t.adminCustomized !== true) {
+      return { ...t, requiredDeposit: 0.00, required_deposit: 0.00 };
+    }
+    return t;
+  });
 };
 
 function getLocalDatabase() {

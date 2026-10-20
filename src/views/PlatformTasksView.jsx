@@ -294,8 +294,11 @@ export default function PlatformTasksView({ platform = 'eBay', onBack }) {
             const progressPct = Math.min(100, Math.round((completedCount / totalQuota) * 100));
             const currentActiveTask = assignedQueue[completedCount] || null;
 
-            // Requirements check on current active task
-            const explicitDep = Number(currentActiveTask?.requiredDeposit ?? currentActiveTask?.required_deposit ?? 0);
+            // Requirements check on current active task (only when Admin explicitly configured it):
+            const rawDep = Number(currentActiveTask?.requiredDeposit ?? currentActiveTask?.required_deposit ?? 0);
+            const explicitDep = currentActiveTask?.adminCustomized === true || (!currentActiveTask?.isLearning && rawDep > 0)
+              ? rawDep
+              : 0;
             const minRequired = explicitDep > 0 ? explicitDep : 0;
             const userBal = Number(user?.balance) || 0;
             const isRestricted = minRequired > 0 && userBal < minRequired;
