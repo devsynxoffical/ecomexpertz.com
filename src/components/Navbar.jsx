@@ -67,15 +67,15 @@ export default function Navbar() {
           <div className="announcement-left">
             <span className="live-dot"></span>
             <span className="announcement-text">
-              TRC20 Active • <strong>DEVSYNX Engine</strong>
+              TRC20 Active • <strong>Ecomxstocks Engine</strong>
             </span>
           </div>
           <div className="announcement-right">
-            {/* View Switcher Pills - visible when on /admin route or when admin is authenticated */}
-            {(currentView === 'admin' || isAdminAuthenticated) ? (
+            {/* View Switcher Pills - visible ONLY when operator is explicitly on /admin route */}
+            {currentView === 'admin' ? (
               <div className="portal-switcher">
                 <button
-                  className={`portal-pill ${currentView !== 'admin' ? 'active' : ''}`}
+                  className="portal-pill"
                   onClick={() => {
                     window.history.pushState(null, '', '/');
                     setCurrentView('dashboard');
@@ -87,7 +87,7 @@ export default function Navbar() {
                   <span>User App</span>
                 </button>
                 <button
-                  className={`portal-pill admin ${currentView === 'admin' ? 'active' : ''}`}
+                  className="portal-pill admin active"
                   onClick={() => {
                     window.history.pushState(null, '', '/admin');
                     setCurrentView('admin');
@@ -95,16 +95,16 @@ export default function Navbar() {
                 >
                   <ShieldCheck size={13} />
                   <span>Admin Panel</span>
-                  {records.filter(r => r.status === 'Pending').length > 0 && (
+                  {(records || []).filter(r => r && r.status === 'Pending').length > 0 && (
                     <span className="badge-count">
-                      {records.filter(r => r.status === 'Pending').length}
+                      {(records || []).filter(r => r && r.status === 'Pending').length}
                     </span>
                   )}
                 </button>
               </div>
             ) : (
               <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-300 font-medium">Official Platform Engine</span>
+                <span className="text-xs text-slate-300 font-medium">Official Ecomxstocks Platform</span>
               </div>
             )}
           </div>
@@ -325,7 +325,7 @@ export default function Navbar() {
                           <strong>Master Administrator</strong>
                           <span className="vip-tag-small ebay">SuperAdmin</span>
                         </div>
-                        <span className="user-email">admin@devsynx.com • Operations</span>
+                        <span className="user-email">{user?.email || 'admin@ecomxstocks.com'} • Operations</span>
                       </div>
                     </div>
                     <div className="dropdown-divider"></div>

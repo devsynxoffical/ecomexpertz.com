@@ -757,7 +757,7 @@ export default function AdminView() {
             <ShieldCheck size={36} color="#2563eb" />
           </div>
           <span className="admin-security-tag">🔒 RESTRICTED PORTAL - ADMINISTRATORS ONLY</span>
-          <h2>DEVSYNX Operations Admin Control</h2>
+          <h2>Ecomxstocks Operations Admin Control</h2>
           <p className="admin-login-desc">
             Sign in with verified administrator credentials to access financial records, user ledger, task configuration, and ledger approvals.
           </p>

@@ -55,7 +55,8 @@ class ErrorBoundary extends React.Component {
   render() {
     if (this.state.hasError) {
       const isAdminRoute = typeof window !== 'undefined' && 
-        (window.location.pathname.startsWith('/admin') || window.location.hash.includes('admin'));
+        window.location.pathname === '/admin' &&
+        localStorage.getItem('websynx_admin_auth') === 'true';
 
       if (isAdminRoute) {
         return (
@@ -81,13 +82,13 @@ class ErrorBoundary extends React.Component {
             }}>
               <h2 style={{ margin: '0 0 12px 0', color: '#38bdf8' }}>Ecomxstocks Operations Console</h2>
               <p style={{ margin: '0 0 20px 0', color: '#94a3b8', fontSize: '14px' }}>
-                An admin interface rendering anomaly was caught and isolated. Click below to refresh the console state.
+                Console session refreshed. Click below to reload console state.
               </p>
               <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
                 <button
                   onClick={() => {
                     this.setState({ hasError: false });
-                    window.location.href = '/admin';
+                    window.location.reload();
                   }}
                   style={{
                     padding: '10px 20px',
@@ -99,7 +100,7 @@ class ErrorBoundary extends React.Component {
                     cursor: 'pointer'
                   }}
                 >
-                  Reload Admin Panel
+                  Refresh Console
                 </button>
                 <button
                   onClick={() => {
@@ -116,7 +117,7 @@ class ErrorBoundary extends React.Component {
                     cursor: 'pointer'
                   }}
                 >
-                  Go to Home
+                  Return to Home
                 </button>
               </div>
             </div>

@@ -126,14 +126,14 @@ function DepositModal({ onClose }) {
         </div>
         <h4 className="mt-3">Payment Request Sent Successfully</h4>
         <p className="modal-desc">
-          Your payment deposit request of <strong>{amount} USDT</strong> has been sent to admin for verification under record:
+          Your payment deposit request of <strong>{amount} USDT</strong> has been submitted for network verification under record:
         </p>
         <div className="code-pill mt-2">
           <code>{displayCode}</code>
         </div>
         <div className="alert-box-info mt-4">
           <AlertCircle size={16} />
-          <span>Status: <strong>Payment request sent. Awaiting admin review & network confirmation.</strong> Your balance will update automatically upon verification.</span>
+          <span>Status: <strong>Payment request submitted. Awaiting network confirmation.</strong> Your balance will update automatically upon verification.</span>
         </div>
         <div className="modal-btn-row mt-4" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <button className="btn-primary w-full" onClick={() => {
@@ -364,7 +364,7 @@ function WithdrawModal({ onClose }) {
         </div>
         <h4 className="mt-3">Payment Request Sent Successfully</h4>
         <p className="modal-desc">
-          Your payment withdrawal request of <strong>{numAmount} USDT</strong> ({netReceived.toFixed(2)} USDT net) has been sent to admin for processing:
+          Your payment withdrawal request of <strong>{numAmount} USDT</strong> ({netReceived.toFixed(2)} USDT net) has been submitted for network settlement processing:
         </p>
         <div className="code-pill mt-2">
           <code>{submittedCode}</code>
@@ -1014,7 +1014,7 @@ function ApkModal({ onClose }) {
           </div>
           <div>
             <h3>Download Android App</h3>
-            <span className="sub-text">DEVSYNX Mobile Task & Wallet APK</span>
+            <span className="sub-text">Ecomxstocks Mobile Task & Wallet APK</span>
           </div>
         </div>
         <button className="close-btn" onClick={onClose}><X size={18} /></button>

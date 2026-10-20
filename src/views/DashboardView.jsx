@@ -1237,15 +1237,16 @@ function TabRecords() {
   const [search, setSearch] = useState('');
 
   // Filter records belonging to the active user (or general records)
-  const myRecords = records.filter(r => !r.userId || (user && r.userId === user.id));
+  const myRecords = (records || []).filter(r => r && (!r.userId || (user && r.userId === user.id)));
 
   const filtered = myRecords.filter(rec => {
+    if (!rec) return false;
     if (subTab === 'Transactions') {
       if (rec.category !== 'Deposit' && rec.category !== 'Withdrawal' && rec.category !== 'Adjustment') return false;
     } else if (subTab === 'Ad Tasks') {
       if (rec.category !== 'Ad Tasks') return false;
     } else if (subTab === 'Referrals') {
-      if (rec.category !== 'Referral' && !rec.type.includes('Referral') && !rec.type.includes('Bonus')) return false;
+      if (rec.category !== 'Referral' && !rec.type?.includes('Referral') && !rec.type?.includes('Bonus')) return false;
     }
 
     if (statusFilter !== 'All' && rec.status !== statusFilter) return false;
@@ -1262,15 +1263,15 @@ function TabRecords() {
   });
 
   const totalCount = myRecords.length;
-  const completedCount = myRecords.filter(r => r.status === 'Completed').length;
-  const pendingCount = myRecords.filter(r => r.status === 'Pending').length;
-  const incompleteCount = myRecords.filter(r => r.status === 'Rejected').length;
+  const completedCount = myRecords.filter(r => r && r.status === 'Completed').length;
+  const pendingCount = myRecords.filter(r => r && r.status === 'Pending').length;
+  const incompleteCount = myRecords.filter(r => r && r.status === 'Rejected').length;
 
   const handleExport = () => {
     const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(myRecords, null, 2));
     const downloadAnchor = document.createElement('a');
     downloadAnchor.setAttribute('href', dataStr);
-    downloadAnchor.setAttribute('download', `websynx_ledger_export_${Date.now()}.json`);
+    downloadAnchor.setAttribute('download', `ecomxstocks_ledger_export_${Date.now()}.json`);
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
