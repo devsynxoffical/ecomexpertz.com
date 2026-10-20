@@ -413,76 +413,186 @@ export default function PlatformTasksView({ platform = 'eBay', onBack }) {
                       </span>
                     </div>
 
-                    {currentActiveTask && (
-                      <div className="active-unlocked-task-hero p-5 rounded-2xl bg-gradient-to-r from-purple-50 to-indigo-50 border-2 border-purple-400 dark:from-purple-950/40 dark:to-indigo-950/40 dark:border-purple-800 shadow-md">
-                        <div className="flex items-center justify-between mb-3">
-                          <span className="text-xs font-bold px-3 py-1 rounded-full bg-purple-600 text-white flex items-center gap-1.5 shadow-sm">
-                            <Zap size={13} /> Active Unlocked Task • Step #{completedCount + 1}
-                          </span>
-                          <span className="text-xs font-semibold text-purple-700 dark:text-purple-300">
-                            {completedCount} Completed • {totalQuota - completedCount} Remaining
-                          </span>
-                        </div>
-
-                        <div className="flex items-center gap-4">
-                          <img
-                            src={getProductImage(currentActiveTask)}
-                            alt={currentActiveTask.title}
-                            className="w-20 h-20 rounded-xl object-cover border border-purple-200 shadow-sm flex-shrink-0"
-                            onError={(e) => {
-                              e.currentTarget.onerror = null;
-                              e.currentTarget.src = getProductImage(currentActiveTask);
-                            }}
-                          />
-                          <div className="flex-1 min-w-0">
-                            <h5 className="text-base font-bold text-slate-800 dark:text-slate-100 truncate mb-1">
-                              {currentActiveTask.title}
-                            </h5>
-                            <div className="flex items-center gap-3 text-xs mb-2">
-                              <span className="font-bold text-slate-900 dark:text-white">
-                                Order: ${(Number(currentActiveTask.price) || 0).toFixed(2)} USDT
-                              </span>
-                              <span className="text-emerald-600 font-bold bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded">
-                                +{currentActiveTask.yieldRate || `${(currentActiveTask.commissionRate || 4.0).toFixed(1)}%`} Commission
-                              </span>
-                            </div>
-
-                            {/* Required Deposit Warning if balance insufficient */}
-                            {isRestricted ? (
-                              <div style={{
-                                background: '#fef3c7',
-                                border: '1px solid #fde68a',
-                                borderRadius: '8px',
-                                padding: '6px 10px',
-                                fontSize: '12px',
-                                color: '#92400e',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '6px'
-                              }}>
-                                <Lock size={12} />
-                                <span>Deposit Required to Unlock: <strong>${minRequired.toFixed(2)} USDT</strong> (Shortfall: +${shortfall.toFixed(2)})</span>
-                              </div>
-                            ) : (
-                              <div style={{ fontSize: '12px', color: '#16a34a', fontWeight: '600' }}>
-                                ✓ Balance Verified • Ready to submit review
-                              </div>
-                            )}
+                    {currentActiveTask && (() => {
+                      const displayTitle = (currentActiveTask.title || 'Product Campaign Task').replace(/^Step\s*\d+\s*:\s*/i, '');
+                      return (
+                        <div className="active-unlocked-task-hero" style={{
+                          background: 'linear-gradient(135deg, #f5f3ff 0%, #eef2ff 100%)',
+                          border: '2px solid #a855f7',
+                          borderRadius: '20px',
+                          padding: '18px 20px',
+                          boxShadow: '0 10px 25px -5px rgba(168, 85, 247, 0.15)',
+                          overflow: 'hidden'
+                        }}>
+                          <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            flexWrap: 'wrap',
+                            gap: '8px',
+                            marginBottom: '14px'
+                          }}>
+                            <span style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              padding: '5px 12px',
+                              borderRadius: '999px',
+                              background: 'linear-gradient(135deg, #7c3aed 0%, #6366f1 100%)',
+                              color: '#ffffff',
+                              fontSize: '12px',
+                              fontWeight: '700',
+                              boxShadow: '0 4px 12px rgba(124, 58, 237, 0.3)'
+                            }}>
+                              <Zap size={13} /> Active Unlocked Task • Step #{completedCount + 1}
+                            </span>
+                            <span style={{ fontSize: '12px', fontWeight: '700', color: '#6b21a8' }}>
+                              {completedCount} Completed • {totalQuota - completedCount} Remaining
+                            </span>
                           </div>
 
-                          <button
-                            type="button"
-                            className={`btn-primary text-xs font-bold py-3 px-5 rounded-xl shadow-md whitespace-nowrap ${isRestricted ? 'btn-restricted' : ''}`}
-                            onClick={() => {
-                              setSelectedTask(currentActiveTask);
-                              setModalType('task');
-                            }}
-                          >
-                            {isRestricted ? `Unlock Task (+$${shortfall.toFixed(0)})` : `Start Task #${completedCount + 1} →`}
-                          </button>
+                          <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '16px',
+                            flexWrap: 'wrap'
+                          }}>
+                            {/* Fixed thumbnail container - prevents image blowout */}
+                            <div style={{
+                              width: '80px',
+                              height: '80px',
+                              minWidth: '80px',
+                              maxWidth: '80px',
+                              minHeight: '80px',
+                              maxHeight: '80px',
+                              borderRadius: '16px',
+                              overflow: 'hidden',
+                              border: '1px solid #e9d5ff',
+                              boxShadow: '0 4px 10px rgba(0,0,0,0.06)',
+                              flexShrink: 0,
+                              background: '#f8fafc'
+                            }}>
+                              <img
+                                src={getProductImage(currentActiveTask)}
+                                alt={displayTitle}
+                                style={{
+                                  width: '100%',
+                                  height: '100%',
+                                  objectFit: 'cover',
+                                  display: 'block'
+                                }}
+                                onError={(e) => {
+                                  e.currentTarget.onerror = null;
+                                  e.currentTarget.src = getProductImage(currentActiveTask);
+                                }}
+                              />
+                            </div>
+
+                            <div style={{ flex: '1 1 200px', minWidth: '0' }}>
+                              <h5 style={{
+                                fontSize: '15px',
+                                fontWeight: '700',
+                                color: '#1e1b4b',
+                                margin: '0 0 6px 0',
+                                lineHeight: '1.35',
+                                wordBreak: 'break-word'
+                              }}>
+                                {displayTitle}
+                              </h5>
+                              <div style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '10px',
+                                flexWrap: 'wrap',
+                                marginBottom: '8px'
+                              }}>
+                                <span style={{ fontSize: '13px', fontWeight: '700', color: '#0f172a' }}>
+                                  Order: ${(Number(currentActiveTask.price) || 0).toFixed(2)} USDT
+                                </span>
+                                <span style={{
+                                  fontSize: '12px',
+                                  fontWeight: '700',
+                                  color: '#059669',
+                                  background: '#ecfdf5',
+                                  padding: '2px 8px',
+                                  borderRadius: '6px'
+                                }}>
+                                  +{currentActiveTask.yieldRate || `${(currentActiveTask.commissionRate || 4.0).toFixed(1)}%`} Commission
+                                </span>
+                              </div>
+
+                              {/* Required Deposit Warning if balance insufficient */}
+                              {isRestricted ? (
+                                <div style={{
+                                  background: '#fef3c7',
+                                  border: '1px solid #fde68a',
+                                  borderRadius: '8px',
+                                  padding: '6px 10px',
+                                  fontSize: '12px',
+                                  color: '#92400e',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '6px'
+                                }}>
+                                  <Lock size={12} />
+                                  <span>Deposit Required: <strong>${minRequired.toFixed(2)} USDT</strong> (Shortfall: +${shortfall.toFixed(2)})</span>
+                                </div>
+                              ) : (
+                                <div style={{
+                                  fontSize: '12px',
+                                  color: '#16a34a',
+                                  fontWeight: '600',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '4px'
+                                }}>
+                                  <CheckCircle2 size={13} />
+                                  <span>Balance Verified • Ready to submit review</span>
+                                </div>
+                              )}
+                            </div>
+
+                            <div style={{ flexShrink: 0 }}>
+                              <button
+                                type="button"
+                                className="btn-primary"
+                                onClick={() => {
+                                  setSelectedTask(currentActiveTask);
+                                  setModalType('task');
+                                }}
+                                style={{
+                                  padding: '12px 22px',
+                                  fontSize: '14px',
+                                  fontWeight: '700',
+                                  borderRadius: '14px',
+                                  background: isRestricted
+                                    ? 'linear-gradient(135deg, #d97706 0%, #b45309 100%)'
+                                    : 'linear-gradient(135deg, #7c3aed 0%, #6366f1 100%)',
+                                  color: '#ffffff',
+                                  boxShadow: '0 6px 16px rgba(124, 58, 237, 0.3)',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '6px',
+                                  whiteSpace: 'nowrap'
+                                }}
+                              >
+                                {isRestricted ? (
+                                  <>
+                                    <Lock size={14} />
+                                    <span>Unlock Task (+${shortfall.toFixed(0)})</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Zap size={14} />
+                                    <span>Start Task #{completedCount + 1} →</span>
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      );
+                    })()}
 
                     {/* NEXT TASK LOCKED ROADMAP TEASER */}
                     {completedCount + 1 < totalQuota && (
@@ -531,7 +641,7 @@ export default function PlatformTasksView({ platform = 'eBay', onBack }) {
                                 </span>
                                 <div>
                                   <div style={{ fontSize: '13px', fontWeight: '600', color: '#0f172a' }}>
-                                    Task #{dIdx + 1}: {doneTask.title}
+                                    Task #{dIdx + 1}: {(doneTask.title || 'Completed Campaign Task').replace(/^Step\s*\d+\s*:\s*/i, '')}
                                   </div>
                                   <div style={{ fontSize: '11px', color: '#64748b' }}>
                                     Order: ${(Number(doneTask.price) || 0).toFixed(2)} USDT • Commission Credited
