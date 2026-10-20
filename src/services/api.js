@@ -170,15 +170,24 @@ export const api = {
   // Deposits
   createDeposit: async (amount, txHash, network, userId) => {
     let result = null;
+    const numAmount = parseFloat(amount) || 0;
     try {
-      result = await supabaseService.createDeposit(amount, txHash, network, userId);
+      result = await supabaseService.createDeposit(numAmount, txHash, network, userId);
     } catch (err) {
       console.warn('Supabase createDeposit fallback:', err.message);
     }
     try {
       const localRec = await handleLocalApi('/deposits', {
         method: 'POST',
-        body: JSON.stringify({ amount, txHash, network, userId, record: result })
+        body: JSON.stringify({
+          amount: numAmount,
+          txHash,
+          network,
+          userId,
+          record: result,
+          id: result?.id,
+          code: result?.code
+        })
       });
       if (!result) result = localRec;
     } catch (err) {}
@@ -186,7 +195,15 @@ export const api = {
       fetch('/api/deposits', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount, txHash, network, userId, tx_hash: txHash })
+        body: JSON.stringify({
+          amount: numAmount,
+          txHash,
+          network,
+          userId,
+          tx_hash: txHash,
+          id: result?.id,
+          code: result?.code
+        })
       }).catch(() => {});
     } catch (e) {}
     return result;
@@ -196,7 +213,7 @@ export const api = {
     return handleLocalApi('/deposits/dummy', { method: 'POST', body: JSON.stringify({ amount, userId }) });
   },
 
-  approveDeposit: async (id) => {
+  approveDeposit: async (id, depositData = {}) => {
     let result = null;
     try {
       result = await supabaseService.approveDeposit(id);
@@ -204,16 +221,30 @@ export const api = {
       console.warn('Supabase approveDeposit fallback:', err.message);
     }
     try {
-      const localRes = await handleLocalApi(`/deposits/${id}/approve`, { method: 'POST' });
+      const localRes = await handleLocalApi(`/deposits/${id}/approve`, {
+        method: 'POST',
+        body: JSON.stringify({
+          amount: depositData?.amount || result?.record?.amount,
+          userId: depositData?.userId || result?.record?.userId || result?.user?.id,
+          record: result?.record || depositData
+        })
+      });
       if (!result) result = localRes;
     } catch (err) {}
     try {
-      fetch(`/api/deposits/${id}/approve`, { method: 'POST' }).catch(() => {});
+      fetch(`/api/deposits/${id}/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: depositData?.amount || result?.record?.amount,
+          userId: depositData?.userId || result?.record?.userId
+        })
+      }).catch(() => {});
     } catch (e) {}
     return result;
   },
 
-  rejectDeposit: async (id, reason) => {
+  rejectDeposit: async (id, reason, depositData = {}) => {
     let result = null;
     try {
       result = await supabaseService.rejectDeposit(id, reason);
@@ -221,14 +252,25 @@ export const api = {
       console.warn('Supabase rejectDeposit fallback:', err.message);
     }
     try {
-      const localRes = await handleLocalApi(`/deposits/${id}/reject`, { method: 'POST', body: JSON.stringify({ reason }) });
+      const localRes = await handleLocalApi(`/deposits/${id}/reject`, {
+        method: 'POST',
+        body: JSON.stringify({
+          reason,
+          amount: depositData?.amount || result?.record?.amount,
+          userId: depositData?.userId || result?.record?.userId
+        })
+      });
       if (!result) result = localRes;
     } catch (err) {}
     try {
       fetch(`/api/deposits/${id}/reject`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason })
+        body: JSON.stringify({
+          reason,
+          amount: depositData?.amount || result?.record?.amount,
+          userId: depositData?.userId || result?.record?.userId
+        })
       }).catch(() => {});
     } catch (e) {}
     return result;

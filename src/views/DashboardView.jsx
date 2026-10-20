@@ -96,7 +96,10 @@ function TabHome() {
     markNotificationAsRead,
     markAllNotificationsAsRead,
     clearAllNotifications,
-    unreadNotificationsCount = 0
+    unreadNotificationsCount = 0,
+    depositRefreshNotice,
+    refreshUserBalance,
+    isRefreshingBalance
   } = useApp();
 
   const [copiedInvite, setCopiedInvite] = useState(false);
@@ -197,7 +200,7 @@ function TabHome() {
             </div>
           </div>
 
-          <div className="hero-balance-col" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div className="hero-balance-col" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <div>
               <span className="hero-bal-label">AVAILABLE BALANCE</span>
               <div className="hero-bal-val">
@@ -205,6 +208,36 @@ function TabHome() {
                 <span className="bal-curr">USDT</span>
               </div>
             </div>
+
+            {/* Refresh Balance button */}
+            <button
+              type="button"
+              className="hero-refresh-bal-btn"
+              onClick={refreshUserBalance}
+              disabled={isRefreshingBalance}
+              title={depositRefreshNotice ? `Deposit approved! Click to refresh balance (+${depositRefreshNotice.amount} USDT)` : "Refresh Balance"}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: depositRefreshNotice ? '8px 14px' : '9px',
+                borderRadius: '999px',
+                background: depositRefreshNotice ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : '#ffffff',
+                color: depositRefreshNotice ? '#ffffff' : '#1e293b',
+                border: depositRefreshNotice ? '1px solid #059669' : '1px solid #e2e8f0',
+                cursor: 'pointer',
+                fontWeight: '700',
+                fontSize: '12px',
+                transition: 'all 0.2s ease',
+                boxShadow: depositRefreshNotice ? '0 0 16px rgba(16, 185, 129, 0.65)' : '0 4px 14px rgba(0, 0, 0, 0.12)',
+                flexShrink: 0
+              }}
+            >
+              <RefreshCw size={17} className={isRefreshingBalance ? 'spin-fast' : ''} />
+              {depositRefreshNotice && (
+                <span style={{ whiteSpace: 'nowrap' }}>Refresh +${depositRefreshNotice.amount}</span>
+              )}
+            </button>
 
             {/* Notification Bell button matching Screenshot 2 */}
             <button
@@ -1584,7 +1617,17 @@ function TabSupport() {
 // 5. TAB: MINE / PROFILE (Matching Screenshot 5)
 // ==========================================
 function TabMine() {
-  const { user, userTeam, setModalType, setDashboardTab, logoutAccount, addNotification } = useApp();
+  const {
+    user,
+    userTeam,
+    setModalType,
+    setDashboardTab,
+    logoutAccount,
+    addNotification,
+    depositRefreshNotice,
+    refreshUserBalance,
+    isRefreshingBalance
+  } = useApp();
   const [copiedCode, setCopiedCode] = useState(false);
   const [activeSubMenu, setActiveSubMenu] = useState(null); // 'profile' | 'team' | 'wallet' | 'settings' | null
 
@@ -1688,8 +1731,29 @@ function TabMine() {
 
           {/* 3 STATS COLUMNS inside sapphire card matching Screenshot 5 */}
           <div className="profile-stats-three-col mt-6">
-            <div className="p-stat-col">
-              <strong>${(Number(user?.balance) || 0).toFixed(2)}</strong>
+            <div className="p-stat-col" style={{ position: 'relative' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                <strong>${(Number(user?.balance) || 0).toFixed(2)}</strong>
+                <button
+                  type="button"
+                  onClick={refreshUserBalance}
+                  disabled={isRefreshingBalance}
+                  title={depositRefreshNotice ? `Admin approved deposit! Click to refresh balance (+${depositRefreshNotice.amount} USDT)` : "Refresh Balance"}
+                  style={{
+                    background: depositRefreshNotice ? '#10b981' : 'rgba(255, 255, 255, 0.15)',
+                    border: 'none',
+                    color: '#ffffff',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    padding: '3px 6px',
+                    borderRadius: '6px',
+                    boxShadow: depositRefreshNotice ? '0 0 10px rgba(16, 185, 129, 0.7)' : 'none'
+                  }}
+                >
+                  <RefreshCw size={13} className={isRefreshingBalance ? 'spin-fast' : ''} />
+                </button>
+              </div>
               <span>Available Balance</span>
             </div>
             <div className="p-stat-col">

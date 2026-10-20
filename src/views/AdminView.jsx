@@ -1508,7 +1508,7 @@ export default function AdminView() {
                                 if (processingDepositId) return;
                                 setProcessingDepositId(depKey);
                                 try {
-                                  await adminApproveDeposit(depKey);
+                                  await adminApproveDeposit(depKey, dep);
                                 } finally {
                                   setProcessingDepositId(null);
                                 }
@@ -1524,7 +1524,7 @@ export default function AdminView() {
                                 if (processingDepositId) return;
                                 setProcessingDepositId(depKey);
                                 try {
-                                  await adminRejectDeposit(depKey, 'Deposit unverified or invalid transaction hash');
+                                  await adminRejectDeposit(depKey, 'Deposit unverified or invalid transaction hash', dep);
                                 } finally {
                                   setProcessingDepositId(null);
                                 }
@@ -2146,7 +2146,7 @@ export default function AdminView() {
                                       if (processingDepositId) return;
                                       setProcessingDepositId(recKey);
                                       try {
-                                        await adminApproveDeposit(recKey);
+                                        await adminApproveDeposit(recKey, rec);
                                       } finally {
                                         setProcessingDepositId(null);
                                       }
@@ -2163,7 +2163,7 @@ export default function AdminView() {
                                       if (processingDepositId) return;
                                       setProcessingDepositId(recKey);
                                       try {
-                                        await adminRejectDeposit(recKey, 'Deposit unverified or invalid transaction hash');
+                                        await adminRejectDeposit(recKey, 'Deposit unverified or invalid transaction hash', rec);
                                       } finally {
                                         setProcessingDepositId(null);
                                       }

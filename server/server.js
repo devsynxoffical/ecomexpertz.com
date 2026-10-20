@@ -671,7 +671,7 @@ app.post('/api/deposits/:id/reject', (req, res) => {
       code: paramId.startsWith('DEP-') ? paramId : `DEP-${paramId}`,
       type: 'USDT Deposit',
       category: 'Deposit',
-      amount: 50,
+      amount: parseFloat(req.body.amount || 0),
       currency: 'USDT',
       date: new Date().toISOString().split('T')[0],
       status: 'Pending',

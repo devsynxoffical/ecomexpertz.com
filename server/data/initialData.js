@@ -741,7 +741,7 @@ export const INITIAL_DATA = {
       code: 'DEP-1790011005819',
       type: 'USDT Deposit',
       category: 'Deposit',
-      amount: 50.00,
+      amount: 100.00,
       currency: 'USDT',
       date: 'Sep 21, 2026',
       status: 'Pending',

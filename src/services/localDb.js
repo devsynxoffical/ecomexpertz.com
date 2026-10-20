@@ -567,24 +567,31 @@ export async function handleLocalApi(endpoint, options = {}) {
 
   // 9. /deposits
   if (endpoint === '/deposits' && method === 'POST') {
-    const { amount, txHash, network, userId } = body;
+    const { amount, txHash, network, userId, record: incomingRec, id, code } = body;
     const user = db.users.find((u) => u.id === (userId || currentUserId)) || db.user;
-    const record = {
-      id: `rec-${Date.now()}`,
-      code: `DEP-${Math.floor(100000 + Math.random() * 900000)}`,
+    const numAmount = parseFloat(amount || incomingRec?.amount || 0);
+    const record = incomingRec ? {
+      ...incomingRec,
+      amount: numAmount,
+      userId: user.id,
+      userName: user.name
+    } : {
+      id: id || `rec-${Date.now()}`,
+      code: code || `DEP-${Math.floor(100000 + Math.random() * 900000)}`,
       userId: user.id,
       userName: user.name,
-      type: 'Deposit',
-      amount: parseFloat(amount),
+      type: `${network || 'TRC20'} Deposit`,
+      category: 'Deposit',
+      amount: numAmount,
       currency: 'USDT',
       status: 'Pending',
-      channel: `${network} TRON`,
-      date: new Date().toISOString(),
+      channel: `${network || 'TRC20'} TRON`,
+      date: new Date().toISOString().split('T')[0],
       txHash: txHash || `0x${Math.random().toString(36).substring(2, 15)}...`,
       note: 'User submitted blockchain transaction hash for approval'
     };
     user.pendingRequests = (user.pendingRequests || 0) + 1;
-    db.records = [record, ...(db.records || [])];
+    db.records = [record, ...(db.records || []).filter(r => r.id !== record.id && r.code !== record.code)];
     saveLocalDatabase(db);
     emitLocalEvent('deposit_created', { record, user });
     return record;
@@ -621,22 +628,27 @@ export async function handleLocalApi(endpoint, options = {}) {
   if (endpoint.includes('/deposits/') && endpoint.endsWith('/approve')) {
     const id = endpoint.split('/')[2];
     let rec = (db.records || []).find((r) => r.id === id || r.code === id || String(r.id) === String(id));
+    const passedAmt = parseFloat(body?.amount || body?.record?.amount || 0);
+    const passedUserId = body?.userId || body?.record?.userId;
+
     if (!rec) {
       rec = {
         id,
         code: id.startsWith('DEP-') ? id : `DEP-${id}`,
         type: 'USDT Deposit',
         category: 'Deposit',
-        amount: 50,
+        amount: passedAmt > 0 ? passedAmt : 0,
         currency: 'USDT',
         date: new Date().toISOString().split('T')[0],
         status: 'Pending',
-        userId: currentUserId,
+        userId: passedUserId || currentUserId,
         userName: db.user?.name || 'User'
       };
       db.records = [rec, ...(db.records || [])];
+    } else if (passedAmt > 0 && (!rec.amount || rec.amount <= 0)) {
+      rec.amount = passedAmt;
     }
-    const user = (db.users || []).find((u) => u.id === (rec.userId || rec.user_id)) || db.user;
+    const user = (db.users || []).find((u) => u.id === (rec.userId || rec.user_id || passedUserId)) || db.user;
 
     // Guard against double approval / double credit
     if (rec.status === 'Completed') {
@@ -654,8 +666,9 @@ export async function handleLocalApi(endpoint, options = {}) {
     rec.note = 'Deposit verified and credited';
 
     if (user) {
-      user.balance = parseFloat(((user.balance || 0) + (rec.amount || 0)).toFixed(2));
-      user.totalDeposit = parseFloat(((user.totalDeposit || 0) + (rec.amount || 0)).toFixed(2));
+      const creditAmt = parseFloat(rec.amount || passedAmt || 0);
+      user.balance = parseFloat(((user.balance || 0) + creditAmt).toFixed(2));
+      user.totalDeposit = parseFloat(((user.totalDeposit || 0) + creditAmt).toFixed(2));
       user.pendingRequests = Math.max(0, (user.pendingRequests || 1) - 1);
     }
     db.records = deduplicateRecordsList(db.records);
@@ -666,6 +679,8 @@ export async function handleLocalApi(endpoint, options = {}) {
   if (endpoint.includes('/deposits/') && endpoint.endsWith('/reject')) {
     const id = endpoint.split('/')[2];
     let rec = (db.records || []).find((r) => r.id === id || r.code === id || String(r.id) === String(id));
+    const passedAmt = parseFloat(body?.amount || body?.record?.amount || 0);
+    const passedUserId = body?.userId || body?.record?.userId;
     const reason = (body && (body.reason || body.note)) || 'Deposit unverified or invalid transaction hash';
     if (!rec) {
       rec = {
@@ -673,11 +688,11 @@ export async function handleLocalApi(endpoint, options = {}) {
         code: id.startsWith('DEP-') ? id : `DEP-${id}`,
         type: 'USDT Deposit',
         category: 'Deposit',
-        amount: 50,
+        amount: passedAmt > 0 ? passedAmt : 0,
         currency: 'USDT',
         date: new Date().toISOString().split('T')[0],
         status: 'Pending',
-        userId: currentUserId,
+        userId: passedUserId || currentUserId,
         userName: db.user?.name || 'User'
       };
       db.records = [rec, ...(db.records || [])];

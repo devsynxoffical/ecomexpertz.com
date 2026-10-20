@@ -494,6 +494,94 @@ export function AppProvider({ children }) {
   const [modalType, setModalType] = useState(null); // 'deposit' | 'withdraw' | 'task' | 'apk' | 'kyc' | 'auth' | 'referral' | 'team' | null
   const [selectedTask, setSelectedTask] = useState(null);
 
+  // Deposit refresh notification when admin approves a deposit
+  const [depositRefreshNotice, setDepositRefreshNotice] = useState(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const currentId = localStorage.getItem('websynx_current_user_id');
+        if (currentId) {
+          const saved = localStorage.getItem(`websynx_deposit_approved_notice_${currentId}`);
+          if (saved) return JSON.parse(saved);
+        }
+      }
+    } catch (e) {}
+    return null;
+  });
+  const [isRefreshingBalance, setIsRefreshingBalance] = useState(false);
+
+  // Listen for deposit approved notices from multi-tab / local storage events
+  useEffect(() => {
+    const handleNotice = (e) => {
+      if (e.detail && user && (user.id === e.detail.userId || String(user.id) === String(e.detail.userId))) {
+        setDepositRefreshNotice(e.detail);
+      }
+    };
+    window.addEventListener('ecomx_deposit_approved_notice', handleNotice);
+    return () => window.removeEventListener('ecomx_deposit_approved_notice', handleNotice);
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (user?.id && !user.isGuest) {
+      try {
+        const saved = localStorage.getItem(`websynx_deposit_approved_notice_${user.id}`);
+        if (saved) {
+          setDepositRefreshNotice(JSON.parse(saved));
+        }
+      } catch (e) {}
+    }
+  }, [user?.id, user?.isGuest]);
+
+  // Synchronize and refresh user balance cleanly on demand
+  const refreshUserBalance = useCallback(async () => {
+    setIsRefreshingBalance(true);
+    try {
+      const [u, r] = await Promise.all([api.getMe(), api.getRecords()]);
+      let newBalance = null;
+      let newTotalDep = null;
+
+      if (u && u.id && !u.isGuest && (u.id === user?.id || String(u.id) === String(user?.id))) {
+        newBalance = parseFloat(u.balance || 0);
+        newTotalDep = parseFloat(u.totalDeposit || u.total_deposit || 0);
+        setUser(prev => ({
+          ...prev,
+          ...u,
+          balance: newBalance,
+          totalDeposit: newTotalDep,
+          total_deposit: newTotalDep
+        }));
+        localStorage.setItem('websynx_user', JSON.stringify({ ...user, ...u, balance: newBalance }));
+      } else {
+        const db = getLocalDatabase();
+        const localU = (db.users || []).find(x => x.id === user?.id) || db.user;
+        if (localU) {
+          newBalance = parseFloat(localU.balance || 0);
+          newTotalDep = parseFloat(localU.totalDeposit || 0);
+          setUser(prev => ({
+            ...prev,
+            balance: newBalance,
+            totalDeposit: newTotalDep
+          }));
+        }
+      }
+
+      if (r && Array.isArray(r) && r.length > 0) {
+        setRecords(deduplicateRecords(r));
+      }
+
+      if (user?.id) {
+        localStorage.removeItem(`websynx_deposit_approved_notice_${user.id}`);
+      }
+      setDepositRefreshNotice(null);
+
+      const balStr = newBalance !== null ? `$${newBalance.toFixed(2)} USDT` : '';
+      addNotification('Balance Refreshed!', `Your balance has been updated to ${balStr}.`, 'success');
+    } catch (err) {
+      console.warn('refreshUserBalance error:', err);
+    } finally {
+      setTimeout(() => setIsRefreshingBalance(false), 500);
+    }
+  }, [user, addNotification]);
+
 
 
   // Fetch team members for a given user
@@ -628,14 +716,33 @@ export function AppProvider({ children }) {
 
       if (event.type === 'deposit_approved') {
         const { record, user: updatedUser, activity } = event.payload;
-        setRecords(prev => deduplicateRecords(prev.map(r => (r.id === record.id || r.code === record.code) ? record : r)));
-        if (updatedUser && updatedUser.id === user.id) {
-          setUser(updatedUser);
-          addNotification('Deposit Approved!', `${record.amount} USDT credited to your account!`);
+        setRecords(prev => deduplicateRecords((prev || []).map(r => (r && (r.id === record.id || r.code === record.code)) ? { ...r, ...record, status: 'Completed' } : r)));
+        
+        const targetUserId = record?.userId || record?.user_id || updatedUser?.id;
+        if (user && (user.id === targetUserId || String(user.id) === String(targetUserId))) {
+          const recAmt = parseFloat(record?.amount || 0);
+          const noticeObj = {
+            userId: user.id,
+            amount: recAmt > 0 ? recAmt.toFixed(2) : (record?.amount || '100.00'),
+            code: record?.code || record?.id,
+            recordId: record?.id,
+            timestamp: Date.now()
+          };
+          setDepositRefreshNotice(noticeObj);
+          try {
+            localStorage.setItem(`websynx_deposit_approved_notice_${user.id}`, JSON.stringify(noticeObj));
+          } catch (e) {}
+
+          if (updatedUser) {
+            setUser(updatedUser);
+          }
+          addNotification('Deposit Approved!', `${record.amount || recAmt} USDT approved! Please refresh your balance.`);
         }
-        setAdminUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
+        if (updatedUser) {
+          setAdminUsers(prev => (prev || []).map(u => (u.id === updatedUser.id || String(u.id) === String(updatedUser.id)) ? updatedUser : u));
+        }
         if (activity) {
-          setActivityStream(prev => [activity, ...prev.slice(0, 14)]);
+          setActivityStream(prev => [activity, ...(prev || []).slice(0, 14)]);
         }
       }
 
@@ -1005,26 +1112,25 @@ export function AppProvider({ children }) {
   };
 
   // Admin Approve Deposit
-  const adminApproveDeposit = async (recordId) => {
+  const adminApproveDeposit = async (recordId, recordData = null) => {
     try {
-      const existing = (records || []).find(r => r.id === recordId || r.code === recordId || String(r.id) === String(recordId));
+      const existing = recordData || (records || []).find(r => r && (r.id === recordId || r.code === recordId || String(r.id) === String(recordId)));
       if (existing && existing.status === 'Completed') {
         addNotification('Already Approved', `Deposit ${existing.code || recordId} was already approved.`);
         return { record: existing, alreadyApproved: true };
       }
 
-      const res = await api.approveDeposit(recordId);
-      const updatedRec = res?.record || { id: recordId, status: 'Completed', note: 'Deposit verified and credited' };
+      const res = await api.approveDeposit(recordId, existing || {});
+      const updatedRec = res?.record || existing || { id: recordId, status: 'Completed', note: 'Deposit verified and credited' };
       const targetCode = updatedRec.code || existing?.code;
-
-      setRecords(prev => deduplicateRecords(prev.map(r => 
-        (r.id === recordId || (targetCode && r.code === targetCode) || String(r.id) === String(recordId)) 
-          ? { ...r, ...updatedRec, status: 'Completed', note: 'Deposit verified and credited' } 
-          : r
-      )));
-
       const targetUserId = updatedRec.userId || updatedRec.user_id || existing?.userId || existing?.user_id;
       const depositAmt = parseFloat(updatedRec.amount || existing?.amount || 0);
+
+      setRecords(prev => deduplicateRecords((prev || []).map(r => 
+        (r && (r.id === recordId || (targetCode && r.code === targetCode) || String(r.id) === String(recordId))) 
+          ? { ...r, ...updatedRec, status: 'Completed', note: 'Deposit verified and credited', amount: depositAmt > 0 ? depositAmt : r.amount } 
+          : r
+      )));
 
       if (res?.user) {
         if (user && (res.user.id === user.id || String(res.user.id) === String(user.id))) {
@@ -1057,14 +1163,31 @@ export function AppProvider({ children }) {
       }
 
       if (targetUserId) {
+        const notifAmt = depositAmt > 0 ? depositAmt.toFixed(2) : (updatedRec.amount || existing?.amount || '');
         sendUserNotification(targetUserId, {
           title: 'Deposit Approved',
-          message: `Your deposit of ${updatedRec.amount || existing?.amount || ''} USDT has been verified and credited to your wallet balance.`,
+          message: `Your deposit of ${notifAmt} USDT has been verified and credited to your wallet balance.`,
           type: 'success'
         });
+
+        const refreshNotice = {
+          userId: targetUserId,
+          amount: notifAmt || '100.00',
+          code: targetCode || recordId,
+          recordId,
+          timestamp: Date.now()
+        };
+        try {
+          localStorage.setItem(`websynx_deposit_approved_notice_${targetUserId}`, JSON.stringify(refreshNotice));
+          window.dispatchEvent(new CustomEvent('ecomx_deposit_approved_notice', { detail: refreshNotice }));
+        } catch (e) {}
+
+        if (user && (user.id === targetUserId || String(user.id) === String(targetUserId))) {
+          setDepositRefreshNotice(refreshNotice);
+        }
       }
 
-      addNotification('Deposit Approved', `${updatedRec.amount || ''} USDT credited to ${updatedRec.userName || updatedRec.user_name || 'Member'}`);
+      addNotification('Deposit Approved', `${depositAmt > 0 ? depositAmt.toFixed(2) : (updatedRec.amount || '')} USDT credited to ${updatedRec.userName || updatedRec.user_name || 'Member'}`);
       return res;
     } catch (err) {
       console.error('adminApproveDeposit failed:', err);
@@ -2058,7 +2181,11 @@ export function AppProvider({ children }) {
         adminRestoreDefaultTasks,
         sendPaymentRequestToUser,
         supportSettings,
-        updateSupportSettings
+        updateSupportSettings,
+        depositRefreshNotice,
+        setDepositRefreshNotice,
+        refreshUserBalance,
+        isRefreshingBalance
       }}
     >
       {children}
