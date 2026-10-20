@@ -51,27 +51,11 @@ export default function Modals() {
     completeTask,
     setDashboardTab,
     setCurrentView,
-    currentView,
-    depositRefreshNotice,
-    setDepositRefreshNotice,
-    refreshUserBalance,
-    isRefreshingBalance
+    currentView
   } = useApp();
 
   return (
     <>
-      {depositRefreshNotice && currentView !== 'admin' && (
-        <DepositApprovedRefreshModal
-          notice={depositRefreshNotice}
-          onRefresh={refreshUserBalance}
-          isRefreshing={isRefreshingBalance}
-          onClose={() => {
-            if (user?.id) localStorage.removeItem(`websynx_deposit_approved_notice_${user.id}`);
-            setDepositRefreshNotice(null);
-          }}
-        />
-      )}
-
       {modalType && (
         <div className="modal-overlay animate-fade-in" onClick={() => setModalType(null)}>
           <div className="modal-container" onClick={(e) => e.stopPropagation()}>
@@ -90,155 +74,6 @@ export default function Modals() {
         </div>
       )}
     </>
-  );
-}
-
-// 0. DEPOSIT APPROVED & REFRESH BALANCE PROMPT MODAL
-function DepositApprovedRefreshModal({ notice, onRefresh, isRefreshing, onClose }) {
-  const amountStr = Number(notice?.amount || 100).toFixed(2);
-  const codeStr = notice?.code || notice?.recordId || 'DEP-VERIFIED';
-
-  return (
-    <div className="modal-overlay animate-fade-in" style={{ zIndex: 9999 }}>
-      <div
-        className="modal-box text-center max-w-md animate-scale-up"
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          background: '#ffffff',
-          borderRadius: '24px',
-          padding: '32px 24px',
-          boxShadow: '0 25px 60px rgba(0,0,0,0.28)',
-          border: '1px solid #e2e8f0',
-          position: 'relative'
-        }}
-      >
-        <button
-          className="close-btn"
-          onClick={onClose}
-          style={{ position: 'absolute', top: '16px', right: '16px' }}
-        >
-          <X size={18} />
-        </button>
-
-        <div style={{
-          width: '70px',
-          height: '70px',
-          borderRadius: '50%',
-          background: 'linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)',
-          color: '#10b981',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          margin: '0 auto 16px auto',
-          boxShadow: '0 8px 20px rgba(16, 185, 129, 0.25)'
-        }}>
-          <CheckCircle2 size={42} strokeWidth={2.4} />
-        </div>
-
-        <div style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: '6px',
-          padding: '4px 12px',
-          borderRadius: '999px',
-          background: '#f0fdf4',
-          color: '#15803d',
-          fontSize: '12px',
-          fontWeight: '700',
-          textTransform: 'uppercase',
-          letterSpacing: '0.05em',
-          marginBottom: '10px',
-          border: '1px solid #bbf7d0'
-        }}>
-          <Sparkles size={14} />
-          <span>Admin Approved</span>
-        </div>
-
-        <h3 style={{ fontSize: '22px', fontWeight: '800', color: '#0f172a', margin: '0 0 10px 0' }}>
-          Deposit Request Accepted!
-        </h3>
-
-        <p style={{ fontSize: '14px', color: '#64748b', lineHeight: '1.6', margin: '0 0 18px 0' }}>
-          Your deposit request of <strong style={{ color: '#059669', fontSize: '17px' }}>+{amountStr} USDT</strong>{' '}
-          under tracking <code style={{ background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', fontSize: '12px' }}>{codeStr}</code> has been verified and confirmed by the administrator.
-        </p>
-
-        <div style={{
-          background: '#f8fafc',
-          border: '1px solid #e2e8f0',
-          borderRadius: '16px',
-          padding: '14px 16px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '12px',
-          textAlign: 'left',
-          marginBottom: '22px'
-        }}>
-          <div style={{
-            width: '38px',
-            height: '38px',
-            borderRadius: '50%',
-            background: '#eff6ff',
-            color: '#2563eb',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0
-          }}>
-            <RefreshCw size={20} className={isRefreshing ? 'spin-fast' : ''} />
-          </div>
-          <div style={{ fontSize: '13px', color: '#334155', lineHeight: '1.4' }}>
-            <strong>Refresh to see updated balance:</strong> Click <strong>Refresh Balance Now</strong> below to sync your funds and unlock package tasks.
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          <button
-            type="button"
-            onClick={onRefresh}
-            disabled={isRefreshing}
-            style={{
-              width: '100%',
-              padding: '14px',
-              borderRadius: '14px',
-              background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-              color: '#ffffff',
-              border: 'none',
-              fontSize: '15px',
-              fontWeight: '700',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px',
-              boxShadow: '0 6px 20px rgba(16, 185, 129, 0.35)',
-              transition: 'all 0.2s ease'
-            }}
-          >
-            <RefreshCw size={18} className={isRefreshing ? 'spin-fast' : ''} />
-            <span>{isRefreshing ? 'Refreshing Balance...' : 'Refresh Balance Now'}</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={onClose}
-            style={{
-              width: '100%',
-              padding: '10px',
-              borderRadius: '12px',
-              background: 'transparent',
-              color: '#94a3b8',
-              border: 'none',
-              fontSize: '13px',
-              fontWeight: '600',
-              cursor: 'pointer'
-            }}
-          >
-            Dismiss (Refresh Later)
-          </button>
-        </div>
-      </div>
-    </div>
   );
 }
 

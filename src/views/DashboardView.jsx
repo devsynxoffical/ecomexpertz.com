@@ -98,7 +98,6 @@ function TabHome() {
     markAllNotificationsAsRead,
     clearAllNotifications,
     unreadNotificationsCount = 0,
-    depositRefreshNotice,
     refreshUserBalance,
     isRefreshingBalance
   } = useApp();
@@ -236,30 +235,27 @@ function TabHome() {
             <button
               type="button"
               className="hero-refresh-bal-btn"
-              onClick={refreshUserBalance}
+              onClick={() => refreshUserBalance(false)}
               disabled={isRefreshingBalance}
-              title={depositRefreshNotice ? `Deposit approved! Click to refresh balance (+${depositRefreshNotice.amount} USDT)` : "Refresh Balance"}
+              title="Refresh Balance"
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: '6px',
-                padding: depositRefreshNotice ? '8px 14px' : '9px',
+                padding: '9px',
                 borderRadius: '999px',
-                background: depositRefreshNotice ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : '#ffffff',
-                color: depositRefreshNotice ? '#ffffff' : '#1e293b',
-                border: depositRefreshNotice ? '1px solid #059669' : '1px solid #e2e8f0',
+                background: '#ffffff',
+                color: '#1e293b',
+                border: '1px solid #e2e8f0',
                 cursor: 'pointer',
                 fontWeight: '700',
                 fontSize: '12px',
                 transition: 'all 0.2s ease',
-                boxShadow: depositRefreshNotice ? '0 0 16px rgba(16, 185, 129, 0.65)' : '0 4px 14px rgba(0, 0, 0, 0.12)',
+                boxShadow: '0 4px 14px rgba(0, 0, 0, 0.12)',
                 flexShrink: 0
               }}
             >
               <RefreshCw size={17} className={isRefreshingBalance ? 'spin-fast' : ''} />
-              {depositRefreshNotice && (
-                <span style={{ whiteSpace: 'nowrap' }}>Refresh +${depositRefreshNotice.amount}</span>
-              )}
             </button>
 
             {/* Notification Bell button matching Screenshot 2 */}
@@ -1800,7 +1796,6 @@ function TabMine() {
     setDashboardTab,
     logoutAccount,
     addNotification,
-    depositRefreshNotice,
     refreshUserBalance,
     isRefreshingBalance
   } = useApp();
@@ -1912,19 +1907,18 @@ function TabMine() {
                 <strong>${(Number(user?.balance) || 0).toFixed(2)}</strong>
                 <button
                   type="button"
-                  onClick={refreshUserBalance}
+                  onClick={() => refreshUserBalance(false)}
                   disabled={isRefreshingBalance}
-                  title={depositRefreshNotice ? `Admin approved deposit! Click to refresh balance (+${depositRefreshNotice.amount} USDT)` : "Refresh Balance"}
+                  title="Refresh Balance"
                   style={{
-                    background: depositRefreshNotice ? '#10b981' : 'rgba(255, 255, 255, 0.15)',
+                    background: 'rgba(255, 255, 255, 0.15)',
                     border: 'none',
                     color: '#ffffff',
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
                     padding: '3px 6px',
-                    borderRadius: '6px',
-                    boxShadow: depositRefreshNotice ? '0 0 10px rgba(16, 185, 129, 0.7)' : 'none'
+                    borderRadius: '6px'
                   }}
                 >
                   <RefreshCw size={13} className={isRefreshingBalance ? 'spin-fast' : ''} />

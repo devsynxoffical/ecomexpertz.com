@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../services/api';
 import {
   INITIAL_USER,
@@ -494,46 +494,13 @@ export function AppProvider({ children }) {
   const [modalType, setModalType] = useState(null); // 'deposit' | 'withdraw' | 'task' | 'apk' | 'kyc' | 'auth' | 'referral' | 'team' | null
   const [selectedTask, setSelectedTask] = useState(null);
 
-  // Deposit refresh notification when admin approves a deposit
-  const [depositRefreshNotice, setDepositRefreshNotice] = useState(() => {
-    try {
-      if (typeof window !== 'undefined') {
-        const currentId = localStorage.getItem('websynx_current_user_id');
-        if (currentId) {
-          const saved = localStorage.getItem(`websynx_deposit_approved_notice_${currentId}`);
-          if (saved) return JSON.parse(saved);
-        }
-      }
-    } catch (e) {}
-    return null;
-  });
+  // Deposit refresh notification - kept null to eliminate manual pop up completely
+  const [depositRefreshNotice, setDepositRefreshNotice] = useState(null);
   const [isRefreshingBalance, setIsRefreshingBalance] = useState(false);
 
-  // Listen for deposit approved notices from multi-tab / local storage events
-  useEffect(() => {
-    const handleNotice = (e) => {
-      if (e.detail && user && (user.id === e.detail.userId || String(user.id) === String(e.detail.userId))) {
-        setDepositRefreshNotice(e.detail);
-      }
-    };
-    window.addEventListener('ecomx_deposit_approved_notice', handleNotice);
-    return () => window.removeEventListener('ecomx_deposit_approved_notice', handleNotice);
-  }, [user?.id]);
-
-  useEffect(() => {
-    if (user?.id && !user.isGuest) {
-      try {
-        const saved = localStorage.getItem(`websynx_deposit_approved_notice_${user.id}`);
-        if (saved) {
-          setDepositRefreshNotice(JSON.parse(saved));
-        }
-      } catch (e) {}
-    }
-  }, [user?.id, user?.isGuest]);
-
-  // Synchronize and refresh user balance cleanly on demand
-  const refreshUserBalance = useCallback(async () => {
-    setIsRefreshingBalance(true);
+  // Synchronize and refresh user balance cleanly on demand or automatically
+  const refreshUserBalance = useCallback(async (silent = false) => {
+    if (!silent) setIsRefreshingBalance(true);
     try {
       const [u, r] = await Promise.all([api.getMe(), api.getRecords()]);
       let newBalance = null;
@@ -542,25 +509,42 @@ export function AppProvider({ children }) {
       if (u && u.id && !u.isGuest && (u.id === user?.id || String(u.id) === String(user?.id))) {
         newBalance = parseFloat(u.balance || 0);
         newTotalDep = parseFloat(u.totalDeposit || u.total_deposit || 0);
-        setUser(prev => ({
-          ...prev,
-          ...u,
-          balance: newBalance,
-          totalDeposit: newTotalDep,
-          total_deposit: newTotalDep
-        }));
-        localStorage.setItem('websynx_user', JSON.stringify({ ...user, ...u, balance: newBalance }));
+        setUser(prev => {
+          if (!prev) return prev;
+          const prevBal = parseFloat(prev.balance || 0);
+          const prevDep = parseFloat(prev.totalDeposit || prev.total_deposit || 0);
+          if (prevBal === newBalance && prevDep === newTotalDep && (prev.assignedTasks?.length || 0) === (u.assignedTasks?.length || 0)) {
+            return prev;
+          }
+          const merged = {
+            ...prev,
+            ...u,
+            balance: newBalance,
+            totalDeposit: newTotalDep,
+            total_deposit: newTotalDep
+          };
+          try {
+            localStorage.setItem('websynx_user', JSON.stringify(merged));
+          } catch (e) {}
+          return merged;
+        });
       } else {
         const db = getLocalDatabase();
         const localU = (db.users || []).find(x => x.id === user?.id) || db.user;
         if (localU) {
           newBalance = parseFloat(localU.balance || 0);
           newTotalDep = parseFloat(localU.totalDeposit || 0);
-          setUser(prev => ({
-            ...prev,
-            balance: newBalance,
-            totalDeposit: newTotalDep
-          }));
+          setUser(prev => {
+            if (!prev) return prev;
+            if (parseFloat(prev.balance || 0) === newBalance && parseFloat(prev.totalDeposit || 0) === newTotalDep) {
+              return prev;
+            }
+            return {
+              ...prev,
+              balance: newBalance,
+              totalDeposit: newTotalDep
+            };
+          });
         }
       }
 
@@ -569,18 +553,79 @@ export function AppProvider({ children }) {
       }
 
       if (user?.id) {
-        localStorage.removeItem(`websynx_deposit_approved_notice_${user.id}`);
+        try {
+          localStorage.removeItem(`websynx_deposit_approved_notice_${user.id}`);
+        } catch (e) {}
       }
-      setDepositRefreshNotice(null);
 
-      const balStr = newBalance !== null ? `$${newBalance.toFixed(2)} USDT` : '';
-      addNotification('Balance Refreshed!', `Your balance has been updated to ${balStr}.`, 'success');
+      if (!silent) {
+        const balStr = newBalance !== null ? `$${newBalance.toFixed(2)} USDT` : '';
+        addNotification('Balance Refreshed!', `Your balance has been updated to ${balStr}.`, 'success');
+      }
     } catch (err) {
       console.warn('refreshUserBalance error:', err);
     } finally {
-      setTimeout(() => setIsRefreshingBalance(false), 500);
+      if (!silent) setTimeout(() => setIsRefreshingBalance(false), 500);
     }
-  }, [user, addNotification]);
+  }, [user?.id, addNotification]);
+
+  const refreshUserBalanceRef = useRef(refreshUserBalance);
+  useEffect(() => {
+    refreshUserBalanceRef.current = refreshUserBalance;
+  }, [refreshUserBalance]);
+
+  // Real-time automatic background polling & visibility synchronization
+  useEffect(() => {
+    if (!user?.id || user.isGuest) return;
+
+    // Clean up any lingering deposit notice from storage
+    try {
+      localStorage.removeItem(`websynx_deposit_approved_notice_${user.id}`);
+    } catch (e) {}
+
+    // Auto-refresh balance every 3 seconds so admin approval reflects automatically
+    const interval = setInterval(() => {
+      if (refreshUserBalanceRef.current) {
+        refreshUserBalanceRef.current(true);
+      }
+    }, 3000);
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible' && refreshUserBalanceRef.current) {
+        refreshUserBalanceRef.current(true);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [user?.id, user?.isGuest]);
+
+  // Listen for deposit approved notices from multi-tab / local storage events & auto refresh
+  useEffect(() => {
+    const handleNotice = (e) => {
+      if (e.detail && user && (user.id === e.detail.userId || String(user.id) === String(e.detail.userId))) {
+        if (refreshUserBalanceRef.current) {
+          refreshUserBalanceRef.current(true);
+        }
+      }
+    };
+    const handleStorage = (e) => {
+      if (e.key && (e.key === 'websynx_user' || e.key.startsWith('websynx_deposit_') || e.key === 'websynx_records')) {
+        if (refreshUserBalanceRef.current) {
+          refreshUserBalanceRef.current(true);
+        }
+      }
+    };
+    window.addEventListener('ecomx_deposit_approved_notice', handleNotice);
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      window.removeEventListener('ecomx_deposit_approved_notice', handleNotice);
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, [user?.id]);
 
 
 
@@ -721,22 +766,22 @@ export function AppProvider({ children }) {
         const targetUserId = record?.userId || record?.user_id || updatedUser?.id;
         if (user && (user.id === targetUserId || String(user.id) === String(targetUserId))) {
           const recAmt = parseFloat(record?.amount || 0);
-          const noticeObj = {
-            userId: user.id,
-            amount: recAmt > 0 ? recAmt.toFixed(2) : (record?.amount || '100.00'),
-            code: record?.code || record?.id,
-            recordId: record?.id,
-            timestamp: Date.now()
-          };
-          setDepositRefreshNotice(noticeObj);
-          try {
-            localStorage.setItem(`websynx_deposit_approved_notice_${user.id}`, JSON.stringify(noticeObj));
-          } catch (e) {}
 
           if (updatedUser) {
-            setUser(updatedUser);
+            setUser(prev => ({
+              ...prev,
+              ...updatedUser,
+              balance: parseFloat(updatedUser.balance ?? prev?.balance ?? 0),
+              totalDeposit: parseFloat(updatedUser.totalDeposit ?? updatedUser.total_deposit ?? prev?.totalDeposit ?? 0)
+            }));
+            try {
+              localStorage.setItem('websynx_user', JSON.stringify({ ...user, ...updatedUser }));
+            } catch (e) {}
           }
-          addNotification('Deposit Approved!', `${record.amount || recAmt} USDT approved! Please refresh your balance.`);
+          if (refreshUserBalanceRef.current) {
+            refreshUserBalanceRef.current(true);
+          }
+          addNotification('Deposit Approved!', `${record?.amount || recAmt} USDT credited to your wallet balance.`, 'success');
         }
         if (updatedUser) {
           setAdminUsers(prev => (prev || []).map(u => (u.id === updatedUser.id || String(u.id) === String(updatedUser.id)) ? updatedUser : u));
@@ -1170,20 +1215,15 @@ export function AppProvider({ children }) {
           type: 'success'
         });
 
-        const refreshNotice = {
-          userId: targetUserId,
-          amount: notifAmt || '100.00',
-          code: targetCode || recordId,
-          recordId,
-          timestamp: Date.now()
-        };
         try {
-          localStorage.setItem(`websynx_deposit_approved_notice_${targetUserId}`, JSON.stringify(refreshNotice));
-          window.dispatchEvent(new CustomEvent('ecomx_deposit_approved_notice', { detail: refreshNotice }));
+          localStorage.removeItem(`websynx_deposit_approved_notice_${targetUserId}`);
+          window.dispatchEvent(new CustomEvent('ecomx_deposit_approved_notice', { detail: { userId: targetUserId, amount: notifAmt } }));
         } catch (e) {}
 
         if (user && (user.id === targetUserId || String(user.id) === String(targetUserId))) {
-          setDepositRefreshNotice(refreshNotice);
+          if (refreshUserBalanceRef.current) {
+            refreshUserBalanceRef.current(true);
+          }
         }
       }
 
