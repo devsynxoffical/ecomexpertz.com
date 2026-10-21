@@ -530,6 +530,11 @@ export function AppProvider({ children }) {
             totalDeposit: newTotalDep,
             total_deposit: newTotalDep
           };
+          if ((!merged.assignedTasks || merged.assignedTasks.length === 0) && (merged.assignedPackage || Number(merged.pendingTasks || merged.pending_tasks || 0) > 0)) {
+            merged.assignedPackage = merged.assignedPackage || 'Standard 25 Package';
+            merged.taskPackageStatus = 'assigned';
+            merged.assignedTasks = INITIAL_TASKS.slice(0, 25);
+          }
           try {
             localStorage.setItem('websynx_user', JSON.stringify(merged));
             localStorage.setItem('websynx_current_user_id', merged.id);
@@ -1565,12 +1570,7 @@ export function AppProvider({ children }) {
       setAdminUsers(prev => prev.map(u => u.id === user?.id ? { ...u, ...updatedUser } : u));
 
       if (user?.id) {
-        api.updateUser(user.id, {
-          taskPackageRequested: true,
-          task_package_requested: 1,
-          taskPackageStatus: 'pending',
-          task_package_status: 'pending'
-        }).catch(() => {});
+        api.requestTaskPackage(user.id, platform, reqId).catch(() => {});
       }
 
       // Append ledger record for transparency
@@ -1617,12 +1617,7 @@ export function AppProvider({ children }) {
       localStorage.setItem('websynx_user', JSON.stringify(updatedUser));
       setAdminUsers(prev => prev.map(u => u.id === user?.id ? { ...u, taskPackageRequested: false, taskPackageStatus: null, taskRequestId: null } : u));
       if (user?.id) {
-        api.updateUser(user.id, {
-          taskPackageRequested: false,
-          task_package_requested: 0,
-          taskPackageStatus: null,
-          task_package_status: null
-        }).catch(() => {});
+        api.cancelTaskPackageRequest(user.id).catch(() => {});
       }
       addNotification('Request Cancelled', 'Your task package request has been cancelled.');
       return true;

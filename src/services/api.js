@@ -60,7 +60,13 @@ export const api = {
     return handleLocalApi(`/users/${id}`, { method: 'PUT', body: JSON.stringify(updates) });
   },
 
-  assignTasksToUser: async (id, tasks, packageName = 'Random 25 Package', resetCompleted = true) => {
+  assignTasksToUser: async (id, tasks, packageName = 'Standard 25 Package', resetCompleted = true) => {
+    try {
+      const res = await supabaseService.assignTasksToUser(id, tasks, packageName, resetCompleted);
+      if (res && res.user) return res.user;
+    } catch (err) {
+      console.warn('Supabase assignTasksToUser fallback:', err);
+    }
     try {
       const payload = {
         tasks,
@@ -68,29 +74,15 @@ export const api = {
         quota: tasks?.length || 25,
         resetCompleted,
         assignedTasks: tasks,
-        assigned_tasks: tasks,
         assignedPackage: packageName,
-        assigned_package: packageName,
         taskPackageStatus: 'assigned',
-        task_package_status: 'assigned',
         taskPackageRequested: false,
-        task_package_requested: 0,
         dailyQuota: tasks?.length || 25,
-        daily_quota: tasks?.length || 25,
         pendingTasks: tasks?.length || 25,
-        pending_tasks: tasks?.length || 25,
-        dailyCompleted: resetCompleted ? 0 : undefined,
-        daily_completed: resetCompleted ? 0 : undefined
+        dailyCompleted: resetCompleted ? 0 : undefined
       };
       try {
         await handleLocalApi(`/users/${id}/assign-tasks`, { method: 'POST', body: JSON.stringify(payload) });
-      } catch (err) {}
-      try {
-        fetch(`/api/users/${id}/assign-tasks`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        }).catch(() => {});
       } catch (err) {}
       const userRes = await api.updateUser(id, payload);
       return userRes?.user || { id, ...payload };
@@ -98,6 +90,24 @@ export const api = {
       console.warn('assignTasksToUser error:', e);
       return null;
     }
+  },
+
+  requestTaskPackage: async (userId, platform, reqId) => {
+    try {
+      return await supabaseService.requestTaskPackage(userId, platform, reqId);
+    } catch (e) {
+      console.warn('requestTaskPackage error:', e);
+    }
+    return false;
+  },
+
+  cancelTaskPackageRequest: async (userId) => {
+    try {
+      return await supabaseService.cancelTaskPackageRequest(userId);
+    } catch (e) {
+      console.warn('cancelTaskPackageRequest error:', e);
+    }
+    return false;
   },
 
   notifyUser: async (userId, title, message, type = 'info') => {

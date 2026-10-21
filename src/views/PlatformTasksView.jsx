@@ -18,6 +18,7 @@ import {
   MessageCircle
 } from 'lucide-react';
 import { openProductUrl, getProductImage } from '../utils/productUrl';
+import { INITIAL_TASKS } from '../data/mockData';
 
 export default function PlatformTasksView({ platform = 'eBay', onBack }) {
   const {
@@ -51,10 +52,14 @@ export default function PlatformTasksView({ platform = 'eBay', onBack }) {
       }
     } catch (e) {}
   }
+  if (assignedQueue.length === 0 && (user?.assignedPackage || Number(user?.pendingTasks || user?.pending_tasks || 0) > 0)) {
+    const pool = (tasks && tasks.length >= 25 ? tasks : INITIAL_TASKS);
+    assignedQueue = pool.slice(0, 25);
+  }
 
   // 2. Determine if user has an assigned package:
   // A user ONLY has tasks unlocked if Admin has explicitly assigned the package:
-  const isAssigned = (user?.taskPackageStatus === 'assigned' || !!user?.assignedPackage) && assignedQueue.length > 0;
+  const isAssigned = (user?.taskPackageStatus === 'assigned' || !!user?.assignedPackage || Number(user?.pendingTasks || user?.pending_tasks || 0) > 0) && assignedQueue.length > 0;
   const isPending = !isAssigned && !!(user?.taskPackageRequested || justRequested);
 
   const handleRequest = async () => {

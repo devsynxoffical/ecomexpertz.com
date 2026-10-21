@@ -54,6 +54,7 @@ import {
 
 import PlatformTasksView from './PlatformTasksView';
 import { api } from '../services/api';
+import { INITIAL_TASKS } from '../data/mockData';
 
 export default function DashboardView() {
   const { dashboardTab, activePlatform, setDashboardTab } = useApp();
@@ -139,8 +140,12 @@ function TabHome() {
       }
     } catch (e) {}
   }
+  if (assignedQueue.length === 0 && (user?.assignedPackage || Number(user?.pendingTasks || user?.pending_tasks || 0) > 0)) {
+    const pool = (tasks && tasks.length >= 25 ? tasks : INITIAL_TASKS);
+    assignedQueue = pool.slice(0, 25);
+  }
   const totalQuota = assignedQueue.length || 25;
-  const isAssigned = (user?.taskPackageStatus === 'assigned' || !!user?.assignedPackage) && assignedQueue.length > 0;
+  const isAssigned = (user?.taskPackageStatus === 'assigned' || !!user?.assignedPackage || Number(user?.pendingTasks || user?.pending_tasks || 0) > 0) && assignedQueue.length > 0;
   const isPendingRequest = !isAssigned && !!user?.taskPackageRequested;
 
   const handleLaunchTask = (task, platformName = 'eBay') => {

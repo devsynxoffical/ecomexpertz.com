@@ -88,6 +88,65 @@ export function normalizeUser(u) {
   };
 }
 
+export function applyTaskRecordsToUser(norm, taskRecords = []) {
+  if (!norm || !norm.id) return norm;
+  const userRecs = (taskRecords || []).filter(r => 
+    r.user_id === norm.id || 
+    r.userId === norm.id || 
+    String(r.user_id) === String(norm.id) || 
+    (norm.name && r.user_name && r.user_name.toLowerCase() === norm.name.toLowerCase())
+  );
+
+  if (userRecs.length > 0) {
+    const latestAssignment = userRecs.find(r => 
+      r.type && (r.type.includes('Assigned') || r.type.includes('Package Assigned')) &&
+      r.status !== 'Cancelled'
+    );
+    const latestRequest = userRecs.find(r => 
+      r.type && r.type.includes('Request') && r.status === 'Pending'
+    );
+
+    if (latestAssignment && (!latestRequest || new Date(latestAssignment.created_at || latestAssignment.date) >= new Date(latestRequest.created_at || latestRequest.date))) {
+      let parsed = null;
+      try {
+        parsed = typeof latestAssignment.note === 'string' ? JSON.parse(latestAssignment.note) : latestAssignment.note;
+      } catch (e) {}
+
+      if (parsed) {
+        norm.assignedPackage = parsed.assignedPackage || 'Standard 25 Package';
+        norm.taskPackageStatus = 'assigned';
+        norm.taskPackageRequested = false;
+        if (Array.isArray(parsed.tasks) && parsed.tasks.length > 0) {
+          norm.assignedTasks = parsed.tasks;
+          norm.assignedTaskIds = parsed.tasks.map(t => t.id);
+        } else if (Array.isArray(parsed.taskIds) && parsed.taskIds.length > 0) {
+          norm.assignedTasks = INITIAL_TASKS.filter(t => parsed.taskIds.includes(t.id));
+          norm.assignedTaskIds = parsed.taskIds;
+        }
+      }
+    } else if (latestRequest) {
+      let parsed = null;
+      try {
+        parsed = typeof latestRequest.note === 'string' ? JSON.parse(latestRequest.note) : latestRequest.note;
+      } catch (e) {}
+      norm.taskPackageRequested = true;
+      norm.taskPackageStatus = 'pending';
+      norm.taskRequestId = parsed?.requestId || latestRequest.code;
+      norm.taskPackagePlatform = parsed?.platform || 'eBay';
+    }
+  }
+
+  // Failsafe: If user has pending_tasks > 0 or assignedPackage is set, ensure assignedTasks has 25 items
+  if ((!norm.assignedTasks || norm.assignedTasks.length === 0) && (Number(norm.pending_tasks || norm.pendingTasks || 0) > 0 || norm.assignedPackage)) {
+    norm.assignedPackage = norm.assignedPackage || 'Standard 25 Package';
+    norm.taskPackageStatus = 'assigned';
+    norm.assignedTasks = INITIAL_TASKS.slice(0, 25);
+    norm.assignedTaskIds = norm.assignedTasks.map(t => t.id);
+  }
+
+  return norm;
+}
+
 export function normalizeTask(t) {
   if (!t) return null;
   const image = getProductImage(t);
@@ -371,7 +430,19 @@ export const supabaseService = {
     }
 
     if (!userRow) return null;
-    return normalizeUser(userRow);
+    const norm = normalizeUser(userRow);
+    let userTaskRecs = [];
+    try {
+      const { data: recs } = await supabase
+        .from('records')
+        .select('*')
+        .or(`user_id.eq.${norm.id},user_name.ilike.${norm.name}`)
+        .ilike('category', '%task%')
+        .order('created_at', { ascending: false })
+        .limit(10);
+      if (recs) userTaskRecs = recs;
+    } catch (e) {}
+    return applyTaskRecordsToUser(norm, userTaskRecs);
   },
 
   // 4. Get All Users
@@ -382,7 +453,22 @@ export const supabaseService = {
       .order('created_at', { ascending: false });
 
     if (error || !data || data.length === 0) return INITIAL_ADMIN_USERS.map(normalizeUser);
-    return data.map(normalizeUser);
+
+    let taskRecords = [];
+    try {
+      const { data: recs } = await supabase
+        .from('records')
+        .select('*')
+        .ilike('category', '%task%')
+        .order('created_at', { ascending: false })
+        .limit(200);
+      if (recs) taskRecords = recs;
+    } catch (e) {}
+
+    return data.map(u => {
+      const norm = normalizeUser(u);
+      return applyTaskRecordsToUser(norm, taskRecords);
+    });
   },
 
   // 4b. Get User Team / Direct Referrals
@@ -548,26 +634,66 @@ export const supabaseService = {
 
   // 7. Submit Task
   submitTask: async (taskId, userId) => {
-    const { data: task } = await supabase.from('tasks').select('*').eq('id', taskId).single();
-    const { data: user } = await supabase.from('users').select('*').eq('id', userId).single();
+    let task = null;
+    let user = null;
 
-    if (!task || !user) throw new Error('Task or User not found');
+    if (userId) {
+      const { data } = await supabase.from('users').select('*').eq('id', userId).maybeSingle();
+      user = data;
+    }
+    if (!user) {
+      let savedUser = null;
+      try {
+        savedUser = JSON.parse(localStorage.getItem('websynx_user') || '{}');
+      } catch (e) {}
+      if (savedUser && savedUser.name && savedUser.name !== 'Guest User') {
+        const { data } = await supabase.from('users').select('*').ilike('name', savedUser.name).maybeSingle();
+        user = data;
+      }
+      if (!user && savedUser && savedUser.email) {
+        const { data } = await supabase.from('users').select('*').eq('email', savedUser.email.trim().toLowerCase()).maybeSingle();
+        user = data;
+      }
+    }
 
-    const commission = parseFloat(task.yield_amount || task.yieldAmount || 0);
-    const newBal = parseFloat(((user.balance || 0) + commission).toFixed(2));
-    const newEarnings = parseFloat(((user.total_earnings || user.totalEarnings || 0) + commission).toFixed(2));
+    if (taskId) {
+      const { data } = await supabase.from('tasks').select('*').eq('id', taskId).maybeSingle();
+      task = data;
+    }
+    if (!task) {
+      task = INITIAL_TASKS.find(t => t.id === taskId);
+    }
+    if (!task) {
+      task = {
+        id: taskId,
+        platform: 'eBay',
+        title: 'Merchant Promotion Task',
+        price: 40,
+        yield_amount: 1.60
+      };
+    }
+    if (!user) throw new Error('User not found');
+
+    const commission = parseFloat(task.yield_amount || task.yieldAmount || (((Number(task.price) || 0) * 0.04).toFixed(2)));
+    const newBal = parseFloat(((Number(user.balance) || 0) + commission).toFixed(2));
+    const newEarnings = parseFloat(((Number(user.total_earnings || user.totalEarnings) || 0) + commission).toFixed(2));
+    const newCompleted = (Number(user.completed_tasks || user.completedTasks) || 0) + 1;
+    const newDaily = (Number(user.daily_completed || user.dailyCompleted) || 0) + 1;
+    const quota = Number(user.daily_quota || user.dailyQuota) || 25;
+    const newPending = Math.max(0, quota - newDaily);
 
     const { data: updatedUser } = await supabase
       .from('users')
       .update({
         balance: newBal,
         total_earnings: newEarnings,
-        completed_tasks: (user.completed_tasks || 0) + 1,
-        daily_completed: (user.daily_completed || 0) + 1
+        completed_tasks: newCompleted,
+        daily_completed: newDaily,
+        pending_tasks: newPending
       })
-      .eq('id', userId)
+      .eq('id', user.id)
       .select()
-      .single();
+      .maybeSingle();
 
     const recId = `rec_tsk_${Date.now()}`;
     const rec = {
@@ -579,20 +705,175 @@ export const supabaseService = {
       currency: 'USDT',
       date: new Date().toISOString().split('T')[0],
       status: 'Completed',
-      note: `Completed ${task.platform} promotion for ${task.title}`,
+      note: `Completed ${task.platform || 'Merchant'} promotion for ${task.title || 'Task'}`,
       user_id: user.id,
       user_name: user.name,
       network: 'TRC20'
     };
 
-    const { data: insertedRec } = await supabase.from('records').insert([rec]).select().single();
+    const { data: insertedRec } = await supabase.from('records').insert([rec]).select().maybeSingle();
 
     return {
       message: 'Task completed successfully',
       commissionEarned: commission,
-      user: normalizeUser(updatedUser),
+      user: normalizeUser(updatedUser || { ...user, balance: newBal, total_earnings: newEarnings, completed_tasks: newCompleted, daily_completed: newDaily, pending_tasks: newPending }),
       record: insertedRec || rec
     };
+  },
+
+  // 7b. Assign Tasks to User (Persistent in records + users tables)
+  assignTasksToUser: async (userId, tasks, packageName = 'Standard 25 Package', resetCompleted = true) => {
+    let user = null;
+    if (userId) {
+      const { data } = await supabase.from('users').select('*').eq('id', userId).maybeSingle();
+      user = data;
+    }
+    if (!user) {
+      const { data: allU } = await supabase.from('users').select('*');
+      user = (allU || []).find(u => u.id === userId || String(u.id) === String(userId));
+    }
+    if (!user) return null;
+
+    const count = tasks && tasks.length > 0 ? tasks.length : 25;
+    const finalTasks = (tasks && tasks.length > 0 ? tasks : INITIAL_TASKS).slice(0, count);
+
+    // 1. Update users table in Supabase
+    await supabase.from('users').update({
+      pending_tasks: count,
+      completed_tasks: resetCompleted ? 0 : (user.completed_tasks || 0),
+      daily_quota: count,
+      daily_completed: resetCompleted ? 0 : (user.daily_completed || 0),
+      status: 'Active'
+    }).eq('id', user.id);
+
+    // 2. Mark any pending task requests for this user as Completed
+    await supabase.from('records')
+      .update({ status: 'Completed' })
+      .eq('user_id', user.id)
+      .eq('category', 'Tasks')
+      .eq('status', 'Pending');
+
+    // 3. Insert persistent assignment record into Supabase records table
+    const pkgCode = `PKG-${Date.now().toString().slice(-6)}`;
+    const noteObj = {
+      assignedPackage: packageName,
+      taskPackageStatus: 'assigned',
+      taskPackageRequested: false,
+      dailyQuota: count,
+      pendingTasks: count,
+      completedTasks: resetCompleted ? 0 : (user.completed_tasks || 0),
+      taskIds: finalTasks.map(t => t.id),
+      tasks: finalTasks.map(t => ({
+        id: t.id,
+        platform: t.platform || 'eBay',
+        title: t.title,
+        price: Number(t.price) || 0,
+        yieldRate: t.yieldRate || `${t.commissionRate || 4.0}%`,
+        yieldAmount: Number(t.yieldAmount || (((Number(t.price) || 0) * 0.04).toFixed(2))),
+        requiredDeposit: Number(t.requiredDeposit || t.required_deposit || 0),
+        image: t.image || t.imageUrl || '',
+        imageUrl: t.image || t.imageUrl || '',
+        productUrl: t.productUrl || t.product_url || '',
+        category: t.category || 'General',
+        badge: t.badge || 'VIP Level 1'
+      })),
+      assignedAt: new Date().toISOString()
+    };
+
+    const newRec = {
+      id: `rec_pkg_${Date.now()}`,
+      code: pkgCode,
+      type: 'Task Package Assigned',
+      category: 'Tasks',
+      amount: 0.00,
+      currency: 'USDT',
+      date: new Date().toISOString().slice(0, 10),
+      status: 'Completed',
+      note: JSON.stringify(noteObj),
+      user_id: user.id,
+      user_name: user.name,
+      network: 'System'
+    };
+
+    await supabase.from('records').insert([newRec]);
+
+    return {
+      success: true,
+      user: {
+        ...normalizeUser(user),
+        assignedPackage: packageName,
+        taskPackageStatus: 'assigned',
+        taskPackageRequested: false,
+        pendingTasks: count,
+        completedTasks: resetCompleted ? 0 : (user.completed_tasks || 0),
+        dailyQuota: count,
+        dailyCompleted: resetCompleted ? 0 : (user.daily_completed || 0),
+        assignedTasks: finalTasks,
+        assignedTaskIds: finalTasks.map(t => t.id)
+      }
+    };
+  },
+
+  // 7c. Request Task Package
+  requestTaskPackage: async (userId, platform = 'eBay', reqId = null) => {
+    let user = null;
+    if (userId) {
+      const { data } = await supabase.from('users').select('*').eq('id', userId).maybeSingle();
+      user = data;
+    }
+    if (!user) {
+      let saved = null;
+      try {
+        saved = JSON.parse(localStorage.getItem('websynx_user') || '{}');
+      } catch (e) {}
+      if (saved && saved.name && saved.name !== 'Guest User') {
+        const { data } = await supabase.from('users').select('*').ilike('name', saved.name).maybeSingle();
+        user = data;
+      }
+    }
+    if (!user) return false;
+
+    const actualReqId = reqId || `${Math.floor(100 + Math.random() * 900)}-${Date.now().toString().slice(-4)}`;
+    const nowIso = new Date().toISOString();
+
+    const newRec = {
+      id: `rec_req_${Date.now()}`,
+      code: `REQ-${actualReqId}`,
+      type: `${platform} Task Package Request`,
+      category: 'Tasks',
+      amount: 0.00,
+      currency: 'USDT',
+      date: nowIso.slice(0, 10),
+      status: 'Pending',
+      note: JSON.stringify({
+        taskPackageRequested: true,
+        taskPackageStatus: 'pending',
+        platform,
+        requestId: actualReqId,
+        requestedAt: nowIso
+      }),
+      user_id: user.id,
+      user_name: user.name,
+      network: 'System'
+    };
+
+    await supabase.from('records').insert([newRec]);
+    await supabase.from('users').update({
+      pending_requests: (Number(user.pending_requests) || 0) + 1
+    }).eq('id', user.id);
+
+    return true;
+  },
+
+  // 7d. Cancel Task Package Request
+  cancelTaskPackageRequest: async (userId) => {
+    if (!userId) return false;
+    await supabase.from('records')
+      .update({ status: 'Cancelled' })
+      .eq('user_id', userId)
+      .eq('category', 'Tasks')
+      .eq('status', 'Pending');
+    return true;
   },
 
   // 8. Get Records
