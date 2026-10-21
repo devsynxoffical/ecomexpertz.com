@@ -507,14 +507,14 @@ export function AppProvider({ children }) {
       let newBalance = null;
       let newTotalDep = null;
 
-      if (u && u.id && !u.isGuest && (u.id === user?.id || String(u.id) === String(user?.id))) {
+      if (u && u.id && !u.isGuest && (u.id === user?.id || String(u.id) === String(user?.id) || (user?.name && u.name && u.name.toLowerCase() === user.name.toLowerCase()) || (user?.email && u.email && u.email.toLowerCase() === user.email.toLowerCase()))) {
         newBalance = parseFloat(u.balance || 0);
         newTotalDep = parseFloat(u.totalDeposit || u.total_deposit || 0);
         setUser(prev => {
           if (!prev) return prev;
           const prevBal = parseFloat(prev.balance || 0);
           const prevDep = parseFloat(prev.totalDeposit || prev.total_deposit || 0);
-          if (prevBal === newBalance && prevDep === newTotalDep && (prev.assignedTasks?.length || 0) === (u.assignedTasks?.length || 0)) {
+          if (prevBal === newBalance && prevDep === newTotalDep && (prev.assignedTasks?.length || 0) === (u.assignedTasks?.length || 0) && prev.id === u.id) {
             return prev;
           }
           const merged = {
@@ -532,25 +532,31 @@ export function AppProvider({ children }) {
           };
           try {
             localStorage.setItem('websynx_user', JSON.stringify(merged));
+            localStorage.setItem('websynx_current_user_id', merged.id);
           } catch (e) {}
           return merged;
         });
       } else {
         const db = getLocalDatabase();
-        const localU = (db.users || []).find(x => x.id === user?.id) || db.user;
+        const localU = (db.users || []).find(x => x.id === user?.id || (user?.name && x.name && x.name.toLowerCase() === user.name.toLowerCase())) || db.user;
         if (localU) {
           newBalance = parseFloat(localU.balance || 0);
-          newTotalDep = parseFloat(localU.totalDeposit || 0);
+          newTotalDep = parseFloat(localU.totalDeposit || localU.total_deposit || 0);
           setUser(prev => {
             if (!prev) return prev;
-            if (parseFloat(prev.balance || 0) === newBalance && parseFloat(prev.totalDeposit || 0) === newTotalDep) {
+            if (parseFloat(prev.balance || 0) === newBalance && parseFloat(prev.totalDeposit || prev.total_deposit || 0) === newTotalDep) {
               return prev;
             }
-            return {
+            const updated = {
               ...prev,
               balance: newBalance,
-              totalDeposit: newTotalDep
+              totalDeposit: newTotalDep,
+              total_deposit: newTotalDep
             };
+            try {
+              localStorage.setItem('websynx_user', JSON.stringify(updated));
+            } catch (e) {}
+            return updated;
           });
         }
       }
@@ -774,7 +780,10 @@ export function AppProvider({ children }) {
         setRecords(prev => deduplicateRecords((prev || []).map(r => (r && (r.id === record.id || r.code === record.code)) ? { ...r, ...record, status: 'Completed' } : r)));
         
         const targetUserId = record?.userId || record?.user_id || updatedUser?.id;
-        if (user && (user.id === targetUserId || String(user.id) === String(targetUserId))) {
+        const targetUserName = record?.userName || record?.user_name || updatedUser?.name;
+        const matchesUser = user && (user.id === targetUserId || String(user.id) === String(targetUserId) || (targetUserName && user.name && user.name.toLowerCase() === targetUserName.toLowerCase()));
+
+        if (matchesUser) {
           const recAmt = parseFloat(record?.amount || 0);
 
           if (updatedUser) {
@@ -787,6 +796,19 @@ export function AppProvider({ children }) {
             try {
               localStorage.setItem('websynx_user', JSON.stringify({ ...user, ...updatedUser }));
             } catch (e) {}
+          } else if (recAmt > 0) {
+            setUser(prev => {
+              const updated = {
+                ...prev,
+                balance: parseFloat(((prev?.balance || 0) + recAmt).toFixed(2)),
+                totalDeposit: parseFloat(((prev?.totalDeposit || prev?.total_deposit || 0) + recAmt).toFixed(2)),
+                pendingRequests: Math.max(0, (prev?.pendingRequests || 1) - 1)
+              };
+              try {
+                localStorage.setItem('websynx_user', JSON.stringify(updated));
+              } catch (e) {}
+              return updated;
+            });
           }
           if (refreshUserBalanceRef.current) {
             refreshUserBalanceRef.current(true);
@@ -988,7 +1010,7 @@ export function AppProvider({ children }) {
   const submitDeposit = async (amount, txHash, network = 'TRC20') => {
     const parsedAmt = parseFloat(amount) || 0;
     try {
-      const res = await api.createDeposit(parsedAmt, txHash, network, user?.id);
+      const res = await api.createDeposit(parsedAmt, txHash, network, user?.id, user?.name, user?.email);
       const safeRec = (res && typeof res === 'object') ? res : {
         id: `rec_dep_${Date.now()}`,
         code: `DEP-${Math.floor(1000000000 + Math.random() * 9000000000)}`,
@@ -1187,14 +1209,19 @@ export function AppProvider({ children }) {
           : r
       )));
 
+      const uTargetName = updatedRec.userName || updatedRec.user_name || existing?.userName || existing?.user_name;
       if (res?.user) {
-        if (user && (res.user.id === user.id || String(res.user.id) === String(user.id))) {
+        if (user && (res.user.id === user.id || String(res.user.id) === String(user.id) || (user.name && res.user.name && user.name.toLowerCase() === res.user.name.toLowerCase()))) {
           setUser(res.user);
+          try {
+            localStorage.setItem('websynx_user', JSON.stringify(res.user));
+            localStorage.setItem('websynx_current_user_id', res.user.id);
+          } catch (e) {}
         }
-        setAdminUsers(prev => prev.map(u => (u.id === res.user.id || String(u.id) === String(res.user.id)) ? res.user : u));
+        setAdminUsers(prev => prev.map(u => (u.id === res.user.id || String(u.id) === String(res.user.id) || (u.name && res.user.name && u.name.toLowerCase() === res.user.name.toLowerCase())) ? res.user : u));
       } else if (targetUserId && depositAmt > 0) {
         setAdminUsers(prev => prev.map(u => {
-          if (u.id === targetUserId || String(u.id) === String(targetUserId)) {
+          if (u.id === targetUserId || String(u.id) === String(targetUserId) || (uTargetName && u.name && u.name.toLowerCase() === uTargetName.toLowerCase())) {
             const newBal = parseFloat(((u.balance || 0) + depositAmt).toFixed(2));
             const newTot = parseFloat(((u.totalDeposit || u.total_deposit || 0) + depositAmt).toFixed(2));
             return {
@@ -1207,13 +1234,19 @@ export function AppProvider({ children }) {
           }
           return u;
         }));
-        if (user && (user.id === targetUserId || String(user.id) === String(targetUserId))) {
-          setUser(prev => ({
-            ...prev,
-            balance: parseFloat(((prev.balance || 0) + depositAmt).toFixed(2)),
-            totalDeposit: parseFloat(((prev.totalDeposit || prev.total_deposit || 0) + depositAmt).toFixed(2)),
-            pendingRequests: Math.max(0, (prev.pendingRequests || 1) - 1)
-          }));
+        if (user && (user.id === targetUserId || String(user.id) === String(targetUserId) || (uTargetName && user.name && user.name.toLowerCase() === uTargetName.toLowerCase()))) {
+          setUser(prev => {
+            const updated = {
+              ...prev,
+              balance: parseFloat(((prev?.balance || 0) + depositAmt).toFixed(2)),
+              totalDeposit: parseFloat(((prev?.totalDeposit || prev?.total_deposit || 0) + depositAmt).toFixed(2)),
+              pendingRequests: Math.max(0, (prev?.pendingRequests || 1) - 1)
+            };
+            try {
+              localStorage.setItem('websynx_user', JSON.stringify(updated));
+            } catch (e) {}
+            return updated;
+          });
         }
       }
 

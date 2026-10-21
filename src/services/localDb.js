@@ -584,19 +584,23 @@ export async function handleLocalApi(endpoint, options = {}) {
 
   // 9. /deposits
   if (endpoint === '/deposits' && method === 'POST') {
-    const { amount, txHash, network, userId, record: incomingRec, id, code } = body;
-    const user = db.users.find((u) => u.id === (userId || currentUserId)) || db.user;
+    const { amount, txHash, network, userId, userName, userEmail, record: incomingRec, id, code } = body;
+    let user = (db.users || []).find((u) => u.id === (userId || currentUserId));
+    if (!user && userName && userName !== 'User' && userName !== 'Member') {
+      user = (db.users || []).find((u) => u.name && u.name.toLowerCase() === userName.toLowerCase());
+    }
+    if (!user) user = db.user;
     const numAmount = parseFloat(amount || incomingRec?.amount || 0);
     const record = incomingRec ? {
       ...incomingRec,
       amount: numAmount,
-      userId: user.id,
-      userName: user.name
+      userId: user?.id || userId,
+      userName: user?.name || userName || 'Member'
     } : {
       id: id || `rec-${Date.now()}`,
       code: code || `DEP-${Math.floor(100000 + Math.random() * 900000)}`,
-      userId: user.id,
-      userName: user.name,
+      userId: user?.id || userId,
+      userName: user?.name || userName || 'Member',
       type: `${network || 'TRC20'} Deposit`,
       category: 'Deposit',
       amount: numAmount,
@@ -665,7 +669,13 @@ export async function handleLocalApi(endpoint, options = {}) {
     } else if (passedAmt > 0 && (!rec.amount || rec.amount <= 0)) {
       rec.amount = passedAmt;
     }
-    const user = (db.users || []).find((u) => u.id === (rec.userId || rec.user_id || passedUserId)) || db.user;
+    const targetUId = rec.userId || rec.user_id || passedUserId;
+    const targetUName = rec.userName || rec.user_name || body?.userName;
+    let user = (db.users || []).find((u) => u.id === targetUId);
+    if (!user && targetUName && targetUName !== 'User' && targetUName !== 'Member') {
+      user = (db.users || []).find((u) => u.name && u.name.toLowerCase() === targetUName.toLowerCase());
+    }
+    if (!user) user = db.user;
 
     // Guard against double approval / double credit
     if (rec.status === 'Completed') {

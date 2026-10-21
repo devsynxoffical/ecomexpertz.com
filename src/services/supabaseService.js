@@ -326,16 +326,52 @@ export const supabaseService = {
     if (isLoggedOut) return null;
 
     const currentUserId = localStorage.getItem('websynx_current_user_id');
-    if (!currentUserId) return null;
+    const savedUserRaw = localStorage.getItem('websynx_user');
+    let savedUser = null;
+    try {
+      if (savedUserRaw) savedUser = JSON.parse(savedUserRaw);
+    } catch (e) {}
 
-    const { data, error } = await supabase
-      .from('users')
-      .select('*')
-      .eq('id', currentUserId)
-      .maybeSingle();
+    let userRow = null;
+    if (currentUserId) {
+      const { data } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', currentUserId)
+        .maybeSingle();
+      userRow = data;
+    }
 
-    if (error || !data) return null;
-    return normalizeUser(data);
+    if (!userRow && savedUser && savedUser.name && savedUser.name !== 'Guest User') {
+      const { data: byName } = await supabase
+        .from('users')
+        .select('*')
+        .ilike('name', savedUser.name)
+        .maybeSingle();
+      userRow = byName;
+      if (userRow) {
+        localStorage.setItem('websynx_current_user_id', userRow.id);
+        const norm = normalizeUser(userRow);
+        localStorage.setItem('websynx_user', JSON.stringify({ ...savedUser, ...norm }));
+      }
+    }
+
+    if (!userRow && savedUser && savedUser.email) {
+      const { data: byEmail } = await supabase
+        .from('users')
+        .select('*')
+        .eq('email', savedUser.email.trim().toLowerCase())
+        .maybeSingle();
+      userRow = byEmail;
+      if (userRow) {
+        localStorage.setItem('websynx_current_user_id', userRow.id);
+        const norm = normalizeUser(userRow);
+        localStorage.setItem('websynx_user', JSON.stringify({ ...savedUser, ...norm }));
+      }
+    }
+
+    if (!userRow) return null;
+    return normalizeUser(userRow);
   },
 
   // 4. Get All Users
@@ -589,8 +625,21 @@ export const supabaseService = {
   },
 
   // 9. Create Deposit
-  createDeposit: async (amount, txHash, network, userId) => {
-    const { data: user } = await supabase.from('users').select('*').eq('id', userId).single();
+  createDeposit: async (amount, txHash, network, userId, userName = null, userEmail = null) => {
+    let user = null;
+    if (userId) {
+      const { data } = await supabase.from('users').select('*').eq('id', userId).maybeSingle();
+      user = data;
+    }
+    if (!user && userName && userName !== 'User' && userName !== 'Member') {
+      const { data } = await supabase.from('users').select('*').ilike('name', userName).maybeSingle();
+      user = data;
+    }
+    if (!user && userEmail) {
+      const { data } = await supabase.from('users').select('*').eq('email', userEmail.trim().toLowerCase()).maybeSingle();
+      user = data;
+    }
+
     const parsedAmt = parseFloat(amount);
 
     const rec = {
@@ -604,7 +653,7 @@ export const supabaseService = {
       status: 'Pending',
       note: 'Awaiting blockchain confirmation',
       user_id: user ? user.id : userId,
-      user_name: user ? user.name : 'User',
+      user_name: user ? user.name : (userName || 'Member'),
       network: network,
       tx_hash: txHash
     };
@@ -613,7 +662,7 @@ export const supabaseService = {
     if (error) throw error;
 
     if (user) {
-      await supabase.from('users').update({ pending_requests: (user.pending_requests || 0) + 1 }).eq('id', userId);
+      await supabase.from('users').update({ pending_requests: (user.pending_requests || 0) + 1 }).eq('id', user.id);
     }
     return data;
   },
@@ -666,14 +715,22 @@ export const supabaseService = {
     if (!rec) throw new Error('Record not found');
 
     const targetUserId = rec.user_id || rec.userId;
+    let targetUser = null;
+    if (targetUserId) {
+      const { data: uById } = await supabase.from('users').select('*').eq('id', targetUserId).maybeSingle();
+      targetUser = uById;
+    }
+    if (!targetUser && (rec.user_name || rec.userName)) {
+      const uName = rec.user_name || rec.userName;
+      if (uName && uName !== 'User' && uName !== 'Member') {
+        const { data: uByName } = await supabase.from('users').select('*').ilike('name', uName).maybeSingle();
+        targetUser = uByName;
+      }
+    }
 
     // PREVENT DOUBLE APPROVAL / DOUBLE CREDIT!
     if (rec.status === 'Completed') {
-      let existingUser = null;
-      if (targetUserId) {
-        const { data: user } = await supabase.from('users').select('*').eq('id', targetUserId).maybeSingle();
-        existingUser = user ? normalizeUser(user) : null;
-      }
+      const existingUser = targetUser ? normalizeUser(targetUser) : null;
       return { record: rec, user: existingUser, alreadyApproved: true };
     }
 
@@ -685,18 +742,16 @@ export const supabaseService = {
     }
 
     let updatedUser = null;
-    if (targetUserId) {
-      const { data: user } = await supabase.from('users').select('*').eq('id', targetUserId).maybeSingle();
-      if (user) {
-        const newBal = parseFloat(((user.balance || 0) + parseFloat(rec.amount)).toFixed(2));
-        const newTotDep = parseFloat(((user.total_deposit || 0) + parseFloat(rec.amount)).toFixed(2));
-        const res = await supabase.from('users').update({
-          balance: newBal,
-          total_deposit: newTotDep,
-          pending_requests: Math.max(0, (user.pending_requests || 1) - 1)
-        }).eq('id', user.id).select().single();
-        updatedUser = res.data ? normalizeUser(res.data) : null;
-      }
+    if (targetUser) {
+      const depositAmt = parseFloat(rec.amount || 0);
+      const newBal = parseFloat(((targetUser.balance || 0) + depositAmt).toFixed(2));
+      const newTotDep = parseFloat(((targetUser.total_deposit || 0) + depositAmt).toFixed(2));
+      const res = await supabase.from('users').update({
+        balance: newBal,
+        total_deposit: newTotDep,
+        pending_requests: Math.max(0, (targetUser.pending_requests || 1) - 1)
+      }).eq('id', targetUser.id).select().single();
+      updatedUser = res.data ? normalizeUser(res.data) : null;
     }
 
     return { record: { ...rec, status: 'Completed', note: 'Deposit verified and credited' }, user: updatedUser };

@@ -176,11 +176,11 @@ export const api = {
   },
 
   // Deposits
-  createDeposit: async (amount, txHash, network, userId) => {
+  createDeposit: async (amount, txHash, network, userId, userName = null, userEmail = null) => {
     let result = null;
     const numAmount = parseFloat(amount) || 0;
     try {
-      result = await supabaseService.createDeposit(numAmount, txHash, network, userId);
+      result = await supabaseService.createDeposit(numAmount, txHash, network, userId, userName, userEmail);
     } catch (err) {
       console.warn('Supabase createDeposit fallback:', err.message);
     }
@@ -192,6 +192,8 @@ export const api = {
           txHash,
           network,
           userId,
+          userName,
+          userEmail,
           record: result,
           id: result?.id,
           code: result?.code
