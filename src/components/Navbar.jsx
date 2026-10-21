@@ -61,55 +61,42 @@ export default function Navbar() {
 
   return (
     <header className="navbar-root">
-      {/* Top micro bar for quick portal switching & system status */}
-      <div className="navbar-top-announcement">
-        <div className="container announcement-inner">
-          <div className="announcement-left">
-            <span className="live-dot"></span>
-            <span className="announcement-text">
-              TRC20 Active • <strong>Ecomxstocks Engine</strong>
-            </span>
-          </div>
-          <div className="announcement-right">
-            {/* View Switcher Pills - visible ONLY when operator is explicitly on /admin route */}
-            {currentView === 'admin' ? (
-              <div className="portal-switcher">
-                <button
-                  className="portal-pill"
-                  onClick={() => {
-                    window.history.pushState(null, '', '/');
-                    setCurrentView('dashboard');
-                    setDashboardTab('home');
-                  }}
-                  title="Switch to Client User View"
-                >
-                  <LayoutDashboard size={13} />
-                  <span>User App</span>
-                </button>
-                <button
-                  className="portal-pill admin active"
-                  onClick={() => {
-                    window.history.pushState(null, '', '/admin');
-                    setCurrentView('admin');
-                  }}
-                >
-                  <ShieldCheck size={13} />
-                  <span>Admin Panel</span>
-                  {(records || []).filter(r => r && r.status === 'Pending').length > 0 && (
-                    <span className="badge-count">
-                      {(records || []).filter(r => r && r.status === 'Pending').length}
-                    </span>
-                  )}
-                </button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-300 font-medium">Official Ecomxstocks Platform</span>
-              </div>
-            )}
+      {/* Top micro bar for quick portal switching - visible ONLY when operator is explicitly on /admin route */}
+      {currentView === 'admin' && (
+        <div className="navbar-top-announcement">
+          <div className="container announcement-inner" style={{ justifyContent: 'flex-end' }}>
+            <div className="portal-switcher">
+              <button
+                className="portal-pill"
+                onClick={() => {
+                  window.history.pushState(null, '', '/');
+                  setCurrentView('dashboard');
+                  setDashboardTab('home');
+                }}
+                title="Switch to Client User View"
+              >
+                <LayoutDashboard size={13} />
+                <span>User App</span>
+              </button>
+              <button
+                className="portal-pill admin active"
+                onClick={() => {
+                  window.history.pushState(null, '', '/admin');
+                  setCurrentView('admin');
+                }}
+              >
+                <ShieldCheck size={13} />
+                <span>Admin Panel</span>
+                {(records || []).filter(r => r && r.status === 'Pending').length > 0 && (
+                  <span className="badge-count">
+                    {(records || []).filter(r => r && r.status === 'Pending').length}
+                  </span>
+                )}
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Main Navigation Header matching screenshot */}
       <div className="navbar-main">
