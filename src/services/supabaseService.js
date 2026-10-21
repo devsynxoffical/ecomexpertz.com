@@ -204,14 +204,31 @@ export const supabaseService = {
       throw new Error('An account with this email address already exists. Please log in with your password.');
     }
 
-    // Check referrer - must exist in database
+    // Check referrer - must exist in database or initial platform users
     const { data: referrer } = await supabase
       .from('users')
       .select('id, name, referral_code, code')
       .or(`referral_code.eq.${cleanRefCode},code.eq.${cleanRefCode}`)
       .maybeSingle();
 
-    if (!referrer && cleanRefCode !== '888888') {
+    let resolvedReferrer = referrer;
+    if (!resolvedReferrer) {
+      const initMatch = INITIAL_ADMIN_USERS.find(u => 
+        (u.referralCode && u.referralCode.trim() === cleanRefCode) ||
+        (u.code && u.code.trim() === cleanRefCode) ||
+        (u.referral_code && u.referral_code.trim() === cleanRefCode)
+      );
+      if (initMatch) {
+        resolvedReferrer = {
+          id: initMatch.id,
+          name: initMatch.name,
+          referral_code: initMatch.referralCode || initMatch.code,
+          code: initMatch.code || initMatch.referralCode
+        };
+      }
+    }
+
+    if (!resolvedReferrer && cleanRefCode !== '888888') {
       throw new Error(`Invalid invitation code "${cleanRefCode}". Only verified invitation codes from registered members are accepted.`);
     }
 
@@ -228,8 +245,8 @@ export const supabaseService = {
       referral_code: generatedCode,
       invited_by_code: cleanRefCode,
       referred_by_code: cleanRefCode,
-      referred_by_name: referrer ? referrer.name : `Code #${cleanRefCode}`,
-      referred_by: referrer ? referrer.id : cleanRefCode,
+      referred_by_name: resolvedReferrer ? resolvedReferrer.name : (cleanRefCode === '888888' ? 'Official Platform' : `Code #${cleanRefCode}`),
+      referred_by: resolvedReferrer ? resolvedReferrer.id : cleanRefCode,
       avatar: cleanName.charAt(0).toUpperCase(),
       vip_level: 'eBay',
       vip_tier_id: 'tier_ebay',

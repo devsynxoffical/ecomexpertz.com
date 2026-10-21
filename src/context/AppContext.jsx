@@ -492,6 +492,7 @@ export function AppProvider({ children }) {
 
   // Modals state
   const [modalType, setModalType] = useState(null); // 'deposit' | 'withdraw' | 'task' | 'apk' | 'kyc' | 'auth' | 'referral' | 'team' | null
+  const [authMode, setAuthMode] = useState('login'); // 'login' | 'register'
   const [selectedTask, setSelectedTask] = useState(null);
 
   // Deposit refresh notification - kept null to eliminate manual pop up completely
@@ -652,13 +653,16 @@ export function AppProvider({ children }) {
     }
   }, [user?.id, user?.referralCode, user?.code]);
 
-  // Check URL query parameters for referral links (?ref=CODE or ?invite=CODE)
+  // Check URL query parameters for referral links (?ref=CODE or ?invite=CODE or ?code=CODE)
   useEffect(() => {
     try {
       const params = new URLSearchParams(window.location.search);
       const refParam = params.get('ref') || params.get('invite') || params.get('code');
       if (refParam) {
-        sessionStorage.setItem('websynx_ref_code', refParam);
+        const cleanRef = refParam.trim();
+        sessionStorage.setItem('websynx_ref_code', cleanRef);
+        localStorage.setItem('websynx_ref_code', cleanRef);
+        setAuthMode('register');
         const isLoggedOut = localStorage.getItem('websynx_logged_out') === 'true';
         const savedUser = localStorage.getItem('websynx_user');
         if (!savedUser || isLoggedOut) {
@@ -1995,7 +1999,25 @@ export function AppProvider({ children }) {
 
   // Admin authentication state (Login is mandatory to access Admin Panel)
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(() => {
-    return localStorage.getItem('websynx_admin_auth') === 'true';
+    const isSavedAdmin = typeof window !== 'undefined' && localStorage.getItem('websynx_admin_auth') === 'true';
+    if (!isSavedAdmin) return false;
+
+    // Preserve admin session only if explicitly on /admin URL or if stored user has admin role
+    if (typeof window !== 'undefined' && isUrlAdminRoute()) {
+      return true;
+    }
+
+    try {
+      const savedUserRaw = localStorage.getItem('websynx_user');
+      if (savedUserRaw) {
+        const u = JSON.parse(savedUserRaw);
+        if (u && (u.role === 'admin' || (u.email && u.email.toLowerCase().includes('admin')))) {
+          return true;
+        }
+      }
+    } catch (e) {}
+
+    return false;
   });
 
   // Account Creation / Registration
@@ -2005,9 +2027,19 @@ export function AppProvider({ children }) {
     localStorage.setItem('websynx_user', JSON.stringify(res.user));
     localStorage.setItem('websynx_current_user_id', res.user.id);
     localStorage.removeItem('websynx_logged_out');
+    // Ensure regular user does NOT inherit previous admin session in browser
+    setIsAdminAuthenticated(false);
+    localStorage.removeItem('websynx_admin_auth');
+    try {
+      sessionStorage.removeItem('websynx_ref_code');
+      localStorage.removeItem('websynx_ref_code');
+    } catch (e) {}
     setCurrentView('dashboard');
     setDashboardTab('home');
     addNotification('Account Created!', `Welcome to Ecomxstocks, ${res.user.name}!`);
+    try {
+      await refreshFromBackend();
+    } catch (e) {}
     return res.user;
   };
 
@@ -2018,6 +2050,18 @@ export function AppProvider({ children }) {
     localStorage.setItem('websynx_user', JSON.stringify(res.user));
     localStorage.setItem('websynx_current_user_id', res.user.id);
     localStorage.removeItem('websynx_logged_out');
+    
+    // Check if logging in user is actually an administrator
+    const isAdmin = res.user?.role === 'admin' || 
+                    (res.user?.email && res.user.email.toLowerCase().includes('admin'));
+    if (isAdmin) {
+      setIsAdminAuthenticated(true);
+      localStorage.setItem('websynx_admin_auth', 'true');
+    } else {
+      setIsAdminAuthenticated(false);
+      localStorage.removeItem('websynx_admin_auth');
+    }
+    
     setCurrentView('dashboard');
     setDashboardTab('home');
     addNotification('Logged In', `Welcome back, ${res.user.name}!`);
@@ -2029,8 +2073,11 @@ export function AppProvider({ children }) {
     localStorage.removeItem('websynx_user');
     localStorage.removeItem('websynx_current_user_id');
     localStorage.setItem('websynx_logged_out', 'true');
+    setIsAdminAuthenticated(false);
+    localStorage.removeItem('websynx_admin_auth');
     setUser(GUEST_USER);
     setCurrentView('storefront');
+    setAuthMode('login');
     setModalType('auth');
     addNotification('Logged Out', 'Signed out of active account.');
   };
@@ -2187,6 +2234,8 @@ export function AppProvider({ children }) {
         setLanguage,
         modalType,
         setModalType,
+        authMode,
+        setAuthMode,
         selectedTask,
         setSelectedTask,
         openTaskPreview,

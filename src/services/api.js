@@ -19,7 +19,15 @@ export const api = {
     try {
       return await supabaseService.register(name, email, password, referralCode);
     } catch (err) {
-      console.warn('Supabase register fallback:', err.message);
+      console.warn('Supabase register error:', err.message);
+      if (err.message && (
+        err.message.includes('already taken') ||
+        err.message.includes('already exists') ||
+        err.message.includes('Invalid invitation code') ||
+        err.message.includes('required')
+      )) {
+        throw err;
+      }
       return handleLocalApi('/auth/register', { method: 'POST', body: JSON.stringify({ name, email, password, referralCode }) });
     }
   },

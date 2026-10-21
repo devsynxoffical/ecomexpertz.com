@@ -51,7 +51,9 @@ export default function Modals() {
     completeTask,
     setDashboardTab,
     setCurrentView,
-    currentView
+    currentView,
+    authMode,
+    setAuthMode
   } = useApp();
 
   return (
@@ -65,7 +67,13 @@ export default function Modals() {
             {modalType === 'apk' && <ApkModal onClose={() => setModalType(null)} />}
             {modalType === 'kyc' && <KycModal onClose={() => setModalType(null)} />}
             {(modalType === 'auth' || modalType === 'seller') && (
-              <AuthModal onClose={() => setModalType(null)} />
+              <AuthModal 
+                initialRegister={authMode === 'register' || modalType === 'seller'} 
+                onClose={() => {
+                  setModalType(null);
+                  if (setAuthMode) setAuthMode('login');
+                }} 
+              />
             )}
             {(modalType === 'team' || modalType === 'referral' || modalType === 'invite') && (
               <ReferralTeamModal onClose={() => setModalType(null)} />
@@ -1152,13 +1160,39 @@ function KycModal({ onClose }) {
 
 // 6. AUTH / SIGN IN & ACCOUNT CREATION MODAL
 function AuthModal({ onClose, initialRegister = false }) {
-  const { user, registerAccount, loginAccount, switchUser, adminUsers, setCurrentView, setDashboardTab } = useApp();
-  const [isRegister, setIsRegister] = useState(Boolean(initialRegister));
+  const {
+    user,
+    registerAccount,
+    loginAccount,
+    switchUser,
+    adminUsers,
+    setCurrentView,
+    setDashboardTab,
+    authMode,
+    setAuthMode
+  } = useApp();
+
+  const getStoredInviteCode = () => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const urlRef = params.get('ref') || params.get('invite') || params.get('code');
+      if (urlRef) return urlRef.trim();
+      return (sessionStorage.getItem('websynx_ref_code') || localStorage.getItem('websynx_ref_code') || '').trim();
+    } catch (e) {
+      return '';
+    }
+  };
+
+  const storedInvite = getStoredInviteCode();
+
+  const [isRegister, setIsRegister] = useState(() => {
+    return Boolean(initialRegister || authMode === 'register' || storedInvite);
+  });
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [name, setName] = useState('');
-  const [inviteCode, setInviteCode] = useState('');
+  const [inviteCode, setInviteCode] = useState(storedInvite);
   const [agreeTerms, setAgreeTerms] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -1192,17 +1226,6 @@ function AuthModal({ onClose, initialRegister = false }) {
       if (!cleanInvite) {
         setError('Please enter a valid invitation / referral code. An invitation code is required to sign up.');
         return;
-      }
-      if (adminUsers && adminUsers.length > 0) {
-        const matchingReferrer = adminUsers.find(u => 
-          (u.referralCode && u.referralCode.trim().toLowerCase() === cleanInvite.toLowerCase()) ||
-          (u.code && u.code.trim().toLowerCase() === cleanInvite.toLowerCase()) ||
-          (u.referral_code && u.referral_code.trim().toLowerCase() === cleanInvite.toLowerCase())
-        );
-        if (!matchingReferrer && cleanInvite !== '888888') {
-          setError(`Invalid invitation code "${cleanInvite}". You must enter a correct invitation code from an active registered member to sign up.`);
-          return;
-        }
       }
       if (!agreeTerms) {
         setError('You must agree to the Ecomxstocks Terms of Service');
@@ -1269,7 +1292,12 @@ function AuthModal({ onClose, initialRegister = false }) {
         <button
           type="button"
           className={`auth-segment-btn ${!isRegister ? 'active' : ''}`}
-          onClick={() => { setIsRegister(false); setError(''); setSuccessMsg(''); }}
+          onClick={() => {
+            setIsRegister(false);
+            if (setAuthMode) setAuthMode('login');
+            setError('');
+            setSuccessMsg('');
+          }}
         >
           <Key size={15} />
           <span>Sign In (Login)</span>
@@ -1277,7 +1305,16 @@ function AuthModal({ onClose, initialRegister = false }) {
         <button
           type="button"
           className={`auth-segment-btn ${isRegister ? 'active' : ''}`}
-          onClick={() => { setIsRegister(true); setError(''); setSuccessMsg(''); }}
+          onClick={() => {
+            setIsRegister(true);
+            if (setAuthMode) setAuthMode('register');
+            setError('');
+            setSuccessMsg('');
+            if (!inviteCode) {
+              const code = getStoredInviteCode();
+              if (code) setInviteCode(code);
+            }
+          }}
         >
           <Sparkles size={15} />
           <span>Register Account</span>
@@ -1389,12 +1426,25 @@ function AuthModal({ onClose, initialRegister = false }) {
                 <input
                   type="text"
                   value={inviteCode}
-                  onChange={(e) => setInviteCode(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setInviteCode(val);
+                    if (val && val.trim()) {
+                      sessionStorage.setItem('websynx_ref_code', val.trim());
+                      localStorage.setItem('websynx_ref_code', val.trim());
+                    }
+                  }}
                   className="text-input-field with-icon"
-                  placeholder="Enter invitation / referral code"
+                  placeholder="Enter invitation / referral code (e.g. 505282)"
                   required
                 />
               </div>
+              {inviteCode && inviteCode.trim() && (
+                <div className="flex items-center gap-1.5 mt-1.5 text-xs text-emerald-600 font-medium">
+                  <CheckCircle size={13} />
+                  <span>Invitation code active: <strong>{inviteCode.trim()}</strong></span>
+                </div>
+              )}
             </div>
 
             <div className="auth-terms-card mt-3">

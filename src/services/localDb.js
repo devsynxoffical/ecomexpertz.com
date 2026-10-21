@@ -294,7 +294,18 @@ export async function handleLocalApi(endpoint, options = {}) {
     }
 
     const cleanRefCode = referralCode.trim();
-    const referrerUser = (db.users || []).find(u => (u.referralCode === cleanRefCode || u.code === cleanRefCode || u.referral_code === cleanRefCode));
+    let referrerUser = (db.users || []).find(u => (u.referralCode === cleanRefCode || u.code === cleanRefCode || u.referral_code === cleanRefCode));
+    if (!referrerUser) {
+      const initMatch = INITIAL_ADMIN_USERS.find(u => 
+        (u.referralCode && u.referralCode.trim() === cleanRefCode) ||
+        (u.code && u.code.trim() === cleanRefCode) ||
+        (u.referral_code && u.referral_code.trim() === cleanRefCode)
+      );
+      if (initMatch) {
+        referrerUser = initMatch;
+      }
+    }
+
     if (!referrerUser && cleanRefCode !== '888888') {
       throw new Error(`Invalid invitation code "${cleanRefCode}". Only verified invitation codes from registered members are accepted.`);
     }
@@ -309,7 +320,7 @@ export async function handleLocalApi(endpoint, options = {}) {
       referralCode: generatedUserCode,
       invitedByCode: cleanRefCode,
       referredByCode: cleanRefCode,
-      referredByName: referrerUser ? referrerUser.name : `Code #${cleanRefCode}`,
+      referredByName: referrerUser ? referrerUser.name : (cleanRefCode === '888888' ? 'Official Platform' : `Code #${cleanRefCode}`),
       referredBy: referrerUser ? referrerUser.id : cleanRefCode,
       avatar: name.trim().charAt(0).toUpperCase(),
       vipLevel: 'eBay',

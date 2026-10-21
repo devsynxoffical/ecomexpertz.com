@@ -39,7 +39,8 @@ export default function Navbar() {
     setDashboardTab,
     logoutAccount,
     isAdminAuthenticated,
-    adminLogout
+    adminLogout,
+    setAuthMode
   } = useApp();
 
   const [showNotifications, setShowNotifications] = useState(false);
@@ -276,7 +277,7 @@ export default function Navbar() {
             </div>
 
             {/* User Account Controls: Admin Profile vs User Profile vs Login/Register */}
-            {isAdminAuthenticated ? (
+            {currentView === 'admin' && isAdminAuthenticated ? (
               <div className="dropdown-container">
                 <button
                   className="user-profile-nav-pill admin-badge-pill"
@@ -438,10 +439,24 @@ export default function Navbar() {
                       <span>Deposit USDT</span>
                     </div>
                     <div className="dropdown-divider"></div>
+                    {(isAdminAuthenticated || user?.role === 'admin' || (user?.email && user.email.toLowerCase().includes('admin'))) && (
+                      <div
+                        className="dropdown-item"
+                        onClick={() => {
+                          window.history.pushState(null, '', '/admin');
+                          setCurrentView('admin');
+                          setShowUserMenu(false);
+                        }}
+                      >
+                        <ShieldCheck size={16} color="#2563eb" />
+                        <span>Admin Console</span>
+                      </div>
+                    )}
                     <div
                       className="dropdown-item"
                       onClick={() => {
                         setShowUserMenu(false);
+                        setAuthMode && setAuthMode('login');
                         setModalType('auth');
                       }}
                     >
@@ -467,14 +482,33 @@ export default function Navbar() {
                 <span>Admin Gateway</span>
               </div>
             ) : (
-              <button
-                className="action-pill-auth"
-                onClick={() => setModalType('auth')}
-                title="Sign in or Create New Account"
-              >
-                <User size={14} />
-                <span>Login / Register</span>
-              </button>
+              <div className="flex items-center gap-2">
+                {isAdminAuthenticated && (
+                  <button
+                    className="portal-pill admin"
+                    onClick={() => {
+                      window.history.pushState(null, '', '/admin');
+                      setCurrentView('admin');
+                    }}
+                    title="Open Admin Console"
+                    style={{ padding: '6px 12px', fontSize: '12px' }}
+                  >
+                    <ShieldCheck size={13} />
+                    <span>Admin Panel</span>
+                  </button>
+                )}
+                <button
+                  className="action-pill-auth"
+                  onClick={() => {
+                    setAuthMode && setAuthMode('login');
+                    setModalType('auth');
+                  }}
+                  title="Sign in or Create New Account"
+                >
+                  <User size={14} />
+                  <span>Login / Register</span>
+                </button>
+              </div>
             )}
           </div>
         </div>
