@@ -519,6 +519,12 @@ export function AppProvider({ children }) {
           const merged = {
             ...prev,
             ...u,
+            assignedTasks: (Array.isArray(u.assignedTasks) && u.assignedTasks.length > 0)
+              ? u.assignedTasks
+              : (Array.isArray(prev.assignedTasks) && prev.assignedTasks.length > 0 ? prev.assignedTasks : []),
+            taskPackageRequested: u.taskPackageRequested ?? prev?.taskPackageRequested ?? false,
+            taskPackageStatus: u.taskPackageStatus ?? prev?.taskPackageStatus ?? null,
+            assignedPackage: u.assignedPackage ?? prev?.assignedPackage ?? null,
             balance: newBalance,
             totalDeposit: newTotalDep,
             total_deposit: newTotalDep
@@ -1521,6 +1527,15 @@ export function AppProvider({ children }) {
       localStorage.setItem('websynx_user', JSON.stringify(updatedUser));
       setAdminUsers(prev => prev.map(u => u.id === user?.id ? { ...u, ...updatedUser } : u));
 
+      if (user?.id) {
+        api.updateUser(user.id, {
+          taskPackageRequested: true,
+          task_package_requested: 1,
+          taskPackageStatus: 'pending',
+          task_package_status: 'pending'
+        }).catch(() => {});
+      }
+
       // Append ledger record for transparency
       const reqCode = `PKG-${Date.now().toString().slice(-6)}`;
       const newRecord = {
@@ -1564,6 +1579,14 @@ export function AppProvider({ children }) {
       setUser(updatedUser);
       localStorage.setItem('websynx_user', JSON.stringify(updatedUser));
       setAdminUsers(prev => prev.map(u => u.id === user?.id ? { ...u, taskPackageRequested: false, taskPackageStatus: null, taskRequestId: null } : u));
+      if (user?.id) {
+        api.updateUser(user.id, {
+          taskPackageRequested: false,
+          task_package_requested: 0,
+          taskPackageStatus: null,
+          task_package_status: null
+        }).catch(() => {});
+      }
       addNotification('Request Cancelled', 'Your task package request has been cancelled.');
       return true;
     } catch (e) {

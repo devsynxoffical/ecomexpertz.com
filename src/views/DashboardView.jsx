@@ -130,30 +130,21 @@ function TabHome() {
 
   const completedCount = Number(user?.dailyCompleted ?? user?.completedTasks ?? 0);
   let assignedQueue = Array.isArray(user?.assignedTasks) && user.assignedTasks.length > 0 ? user.assignedTasks : [];
-  if (assignedQueue.length === 0) {
+  if (assignedQueue.length === 0 && user?.id) {
     try {
-      const cached = localStorage.getItem(`websynx_user_assigned_tasks_${user?.id}`);
+      const cached = localStorage.getItem(`websynx_user_assigned_tasks_${user.id}`);
       if (cached) {
         const parsed = JSON.parse(cached);
         if (Array.isArray(parsed) && parsed.length > 0) assignedQueue = parsed;
       }
     } catch (e) {}
   }
-  if (assignedQueue.length === 0) {
-    const allTasks = tasks && tasks.length > 0 ? tasks : [];
-    assignedQueue = allTasks.slice(0, 25);
-  }
   const totalQuota = assignedQueue.length || 25;
-  const hasQuotaOrPending = (Number(user?.pendingTasks || 0) > 0) ||
-                            (Number(user?.dailyQuota || 0) > 0) ||
-                            (Number(user?.dailyCompleted || user?.completedTasks || 0) > 0) ||
-                            !!user?.assignedPackage ||
-                            user?.taskPackageStatus === 'assigned';
-  const isAssigned = hasQuotaOrPending && assignedQueue.length > 0;
+  const isAssigned = (user?.taskPackageStatus === 'assigned' || !!user?.assignedPackage) && assignedQueue.length > 0;
   const isPendingRequest = !isAssigned && !!user?.taskPackageRequested;
 
   const handleLaunchTask = (task, platformName = 'eBay') => {
-    if (assignedQueue.length > 0 && assignedQueue[completedCount]) {
+    if (isAssigned && assignedQueue.length > 0 && assignedQueue[completedCount]) {
       setSelectedTask(assignedQueue[completedCount]);
       setModalType('task');
     } else {
@@ -537,7 +528,7 @@ function TabHome() {
           </div>
           <div className="counter-info">
             <strong className="counter-val">
-              {user?.pendingTasks !== undefined ? user.pendingTasks : Math.max(0, 25 - (Number(user?.dailyCompleted ?? user?.completedTasks ?? 0)))}
+              {isAssigned ? (user?.pendingTasks !== undefined ? user.pendingTasks : Math.max(0, 25 - (Number(user?.dailyCompleted ?? user?.completedTasks ?? 0)))) : 0}
             </strong>
             <span className="counter-name">Pending</span>
           </div>

@@ -48,7 +48,7 @@ function formatUserResponse($user) {
     $user['dailyCompleted'] = (int)($user['daily_completed'] ?? ($user['dailyCompleted'] ?? 0));
     $user['dailyQuota'] = (int)($user['daily_quota'] ?? ($user['dailyQuota'] ?? 25));
     $user['completedTasks'] = (int)($user['completed_tasks'] ?? ($user['completedTasks'] ?? 0));
-    $user['pendingTasks'] = (int)($user['pending_tasks'] ?? ($user['pendingTasks'] ?? 25));
+    $user['pendingTasks'] = isset($user['pending_tasks']) ? (int)$user['pending_tasks'] : (isset($user['pendingTasks']) ? (int)$user['pendingTasks'] : 0);
     return $user;
 }
 
@@ -134,7 +134,7 @@ if ($endpoint === 'auth' && $action === 'register' && $method === 'POST') {
         ) VALUES (
             ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
             ?, 'eBay', 'tier_ebay', 0.00, 0.00, 0.00, 0.00, 0,
-            0, 0, 25, 0, 25, 0, 0.00,
+            0, 0, 0, 0, 25, 0, 0.00,
             0.00, 100, 100, 0, 'Verified', ?,
             'TRC20', 'Active', 'user'
         )

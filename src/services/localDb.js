@@ -321,7 +321,7 @@ export async function handleLocalApi(endpoint, options = {}) {
       pendingRequests: 0,
       teamMembersCount: 0,
       referrals: 0,
-      pendingTasks: 25,
+      pendingTasks: 0,
       completedTasks: 0,
       dailyQuota: 25,
       dailyCompleted: 0,
