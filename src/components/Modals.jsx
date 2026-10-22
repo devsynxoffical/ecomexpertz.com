@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useApp } from '../context/AppContext';
 import confetti from 'canvas-confetti';
 import {
@@ -56,33 +57,44 @@ export default function Modals() {
     setAuthMode
   } = useApp();
 
-  return (
-    <>
-      {modalType && (
-        <div className="modal-overlay animate-fade-in" onClick={() => setModalType(null)}>
-          <div className="modal-container" onClick={(e) => e.stopPropagation()}>
-            {modalType === 'deposit' && <DepositModal onClose={() => setModalType(null)} />}
-            {modalType === 'withdraw' && <WithdrawModal onClose={() => setModalType(null)} />}
-            {modalType === 'task' && <TaskExecutionModal task={selectedTask} onClose={() => setModalType(null)} />}
-            {modalType === 'apk' && <ApkModal onClose={() => setModalType(null)} />}
-            {modalType === 'kyc' && <KycModal onClose={() => setModalType(null)} />}
-            {(modalType === 'auth' || modalType === 'seller') && (
-              <AuthModal 
-                initialRegister={authMode === 'register' || modalType === 'seller'} 
-                onClose={() => {
-                  setModalType(null);
-                  if (setAuthMode) setAuthMode('login');
-                }} 
-              />
-            )}
-            {(modalType === 'team' || modalType === 'referral' || modalType === 'invite') && (
-              <ReferralTeamModal onClose={() => setModalType(null)} />
-            )}
-          </div>
-        </div>
-      )}
-    </>
+  // Prevent background scrolling while modal is open
+  useEffect(() => {
+    if (modalType) {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [modalType]);
+
+  if (!modalType) return null;
+
+  const modalMarkup = (
+    <div className="modal-overlay animate-fade-in" onClick={() => setModalType(null)}>
+      <div className="modal-container" onClick={(e) => e.stopPropagation()}>
+        {modalType === 'deposit' && <DepositModal onClose={() => setModalType(null)} />}
+        {modalType === 'withdraw' && <WithdrawModal onClose={() => setModalType(null)} />}
+        {modalType === 'task' && <TaskExecutionModal task={selectedTask} onClose={() => setModalType(null)} />}
+        {modalType === 'apk' && <ApkModal onClose={() => setModalType(null)} />}
+        {modalType === 'kyc' && <KycModal onClose={() => setModalType(null)} />}
+        {(modalType === 'auth' || modalType === 'seller') && (
+          <AuthModal 
+            initialRegister={authMode === 'register' || modalType === 'seller'} 
+            onClose={() => {
+              setModalType(null);
+              if (setAuthMode) setAuthMode('login');
+            }} 
+          />
+        )}
+        {(modalType === 'team' || modalType === 'referral' || modalType === 'invite') && (
+          <ReferralTeamModal onClose={() => setModalType(null)} />
+        )}
+      </div>
+    </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(modalMarkup, document.body) : modalMarkup;
 }
 
 // 1. USDT CRYPTO DEPOSIT MODAL

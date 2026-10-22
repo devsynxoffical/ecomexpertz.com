@@ -6705,9 +6705,10 @@ html.dark .tier-progress-banner {
   -webkit-backdrop-filter: blur(8px);
   z-index: 100000 !important;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: 16px;
+  justify-content: flex-start;
+  padding: 24px 16px;
   overflow-y: auto !important;
   -webkit-overflow-scrolling: touch !important;
   overscroll-behavior: contain;
@@ -7621,28 +7622,61 @@ html.dark .apk-banner {
 
   /* Mobile Modals Scrollability & Responsiveness */
   .modal-overlay {
-    padding: 10px 10px calc(14px + env(safe-area-inset-bottom, 0px)) 10px !important;
-    align-items: flex-end !important;
-  }
-  .modal-container {
-    max-height: calc(100dvh - 20px) !important;
-    max-height: calc(100vh - 20px) !important;
+    position: fixed !important;
+    inset: 0 !important;
     width: 100% !important;
-    margin: 0 auto !important;
-  }
-  .modal-box {
-    padding: 18px 16px calc(24px + env(safe-area-inset-bottom, 0px)) 16px !important;
-    border-radius: 20px 20px 14px 14px !important;
-    max-height: calc(100dvh - 20px) !important;
-    max-height: calc(100vh - 20px) !important;
-    width: 100% !important;
+    height: 100% !important;
+    height: 100dvh !important;
+    z-index: 100000 !important;
+    background: rgba(0, 0, 0, 0.78) !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    padding: 14px 10px calc(48px + env(safe-area-inset-bottom, 24px)) 10px !important;
     overflow-y: auto !important;
     -webkit-overflow-scrolling: touch !important;
+    overscroll-behavior: contain !important;
+    box-sizing: border-box !important;
+    touch-action: pan-y !important;
+  }
+  .modal-container {
+    width: 100% !important;
+    max-width: 500px !important;
+    margin: 0 auto !important;
+    max-height: none !important;
+    height: auto !important;
+    flex-shrink: 0 !important;
+    display: block !important;
+    position: relative !important;
+    box-sizing: border-box !important;
+  }
+  .modal-box {
+    width: 100% !important;
+    max-height: none !important;
+    height: auto !important;
+    overflow: visible !important;
+    -webkit-overflow-scrolling: touch !important;
+    padding: 18px 16px 28px 16px !important;
+    border-radius: 18px !important;
+    box-sizing: border-box !important;
+    margin-bottom: 24px !important;
+  }
+  .modal-box form {
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+    flex: none !important;
+    padding-right: 0 !important;
   }
   .modal-header {
-    top: -18px !important;
+    position: sticky !important;
+    top: -14px !important;
+    background: var(--bg-surface) !important;
+    z-index: 25 !important;
     margin-top: -4px !important;
     padding-top: 4px !important;
+    border-bottom: 1px solid var(--border-subtle) !important;
   }
 }
 
