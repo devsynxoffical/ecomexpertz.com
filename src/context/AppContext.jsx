@@ -772,17 +772,23 @@ export function AppProvider({ children }) {
       console.log('📡 Live Real-Time Event Received:', event.type, event.payload);
 
       if (event.type === 'deposit_created') {
-        const { record, user: updatedUser } = event.payload;
-        setRecords(prev => deduplicateRecords([record, ...prev.filter(r => r.id !== record.id && r.code !== record.code)]));
-        if (updatedUser && updatedUser.id === user.id) {
-          setUser(updatedUser);
+        const { record, user: updatedUser } = event.payload || {};
+        if (record) {
+          setRecords(prev => deduplicateRecords([record, ...(prev || []).filter(r => r && r.id !== record.id && r.code !== record.code)]));
         }
-        addNotification('New Deposit Registered', `Deposit of ${record.amount} USDT registered.`);
+        if (updatedUser && user && (updatedUser.id === user.id || String(updatedUser.id) === String(user.id))) {
+          setUser(prev => ({ ...prev, ...updatedUser }));
+        }
+        if (record) {
+          addNotification('New Deposit Registered', `Deposit of ${record.amount} USDT registered.`);
+        }
       }
 
       if (event.type === 'deposit_approved') {
-        const { record, user: updatedUser, activity } = event.payload;
-        setRecords(prev => deduplicateRecords((prev || []).map(r => (r && (r.id === record.id || r.code === record.code)) ? { ...r, ...record, status: 'Completed' } : r)));
+        const { record, user: updatedUser, activity } = event.payload || {};
+        if (record) {
+          setRecords(prev => deduplicateRecords((prev || []).map(r => (r && (r.id === record.id || r.code === record.code)) ? { ...r, ...record, status: 'Completed' } : r)));
+        }
         
         const targetUserId = record?.userId || record?.user_id || updatedUser?.id;
         const targetUserName = record?.userName || record?.user_name || updatedUser?.name;
@@ -821,7 +827,7 @@ export function AppProvider({ children }) {
           addNotification('Deposit Approved!', `${record?.amount || recAmt} USDT credited to your wallet balance.`, 'success');
         }
         if (updatedUser) {
-          setAdminUsers(prev => (prev || []).map(u => (u.id === updatedUser.id || String(u.id) === String(updatedUser.id)) ? updatedUser : u));
+          setAdminUsers(prev => (prev || []).map(u => (u && (u.id === updatedUser.id || String(u.id) === String(updatedUser.id))) ? { ...u, ...updatedUser } : u));
         }
         if (activity) {
           setActivityStream(prev => [activity, ...(prev || []).slice(0, 14)]);
@@ -829,57 +835,78 @@ export function AppProvider({ children }) {
       }
 
       if (event.type === 'deposit_rejected') {
-        const { record, user: updatedUser } = event.payload;
-        setRecords(prev => deduplicateRecords(prev.map(r => (r.id === record.id || r.code === record.code || String(r.id) === String(record.id)) ? { ...r, ...record, status: 'Rejected' } : r)));
-        if (updatedUser && user && updatedUser.id === user.id) {
-          setUser(updatedUser);
+        const { record, user: updatedUser } = event.payload || {};
+        if (record) {
+          setRecords(prev => deduplicateRecords((prev || []).map(r => (r && (r.id === record.id || r.code === record.code || String(r.id) === String(record.id))) ? { ...r, ...record, status: 'Rejected' } : r)));
+        }
+        if (updatedUser && user && (updatedUser.id === user.id || String(updatedUser.id) === String(user.id))) {
+          setUser(prev => ({ ...prev, ...updatedUser }));
           addNotification('Deposit Update', `Deposit request was rejected.`);
         }
         if (updatedUser) {
-          setAdminUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
+          setAdminUsers(prev => (prev || []).map(u => (u && (u.id === updatedUser.id || String(u.id) === String(updatedUser.id))) ? { ...u, ...updatedUser } : u));
         }
       }
 
       if (event.type === 'withdrawal_created') {
-        const { record, user: updatedUser } = event.payload;
-        setRecords(prev => [record, ...prev.filter(r => r.id !== record.id)]);
-        if (updatedUser && updatedUser.id === user.id) {
-          setUser(updatedUser);
+        const { record, user: updatedUser } = event.payload || {};
+        if (record) {
+          setRecords(prev => [record, ...(prev || []).filter(r => r && r.id !== record.id)]);
+        }
+        if (updatedUser && user && (updatedUser.id === user.id || String(updatedUser.id) === String(user.id))) {
+          setUser(prev => ({ ...prev, ...updatedUser }));
         }
       }
 
       if (event.type === 'withdrawal_approved') {
-        const { record, user: updatedUser, activity } = event.payload;
-        setRecords(prev => prev.map(r => r.id === record.id ? record : r));
-        if (updatedUser && updatedUser.id === user.id) {
-          setUser(updatedUser);
-          addNotification('Withdrawal Dispatched!', `${Math.abs(record.amount)} USDT dispatched on TRON network.`);
+        const { record, user: updatedUser, activity } = event.payload || {};
+        if (record) {
+          setRecords(prev => (prev || []).map(r => (r && r.id === record.id) ? record : r));
         }
-        setAdminUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
+        if (updatedUser && user && (updatedUser.id === user.id || String(updatedUser.id) === String(user.id))) {
+          setUser(prev => ({ ...prev, ...updatedUser }));
+          if (record?.amount) {
+            addNotification('Withdrawal Dispatched!', `${Math.abs(record.amount)} USDT dispatched on TRON network.`);
+          }
+        }
+        if (updatedUser) {
+          setAdminUsers(prev => (prev || []).map(u => (u && (u.id === updatedUser.id || String(u.id) === String(updatedUser.id))) ? { ...u, ...updatedUser } : u));
+        }
         if (activity) {
-          setActivityStream(prev => [activity, ...prev.slice(0, 14)]);
+          setActivityStream(prev => [activity, ...(prev || []).slice(0, 14)]);
         }
       }
 
       if (event.type === 'withdrawal_rejected') {
-        const { record, user: updatedUser } = event.payload;
-        setRecords(prev => prev.map(r => r.id === record.id ? record : r));
-        if (updatedUser && updatedUser.id === user.id) {
-          setUser(updatedUser);
+        const { record, user: updatedUser } = event.payload || {};
+        if (record) {
+          setRecords(prev => (prev || []).map(r => (r && r.id === record.id) ? record : r));
+        }
+        if (updatedUser && user && (updatedUser.id === user.id || String(updatedUser.id) === String(user.id))) {
+          setUser(prev => ({ ...prev, ...updatedUser }));
           addNotification('Withdrawal Refunded', `Withdrawal rejected and funds refunded.`);
+        }
+        if (updatedUser) {
+          setAdminUsers(prev => (prev || []).map(u => (u && (u.id === updatedUser.id || String(u.id) === String(updatedUser.id))) ? { ...u, ...updatedUser } : u));
         }
       }
 
       if (event.type === 'task_completed') {
-        const { record, user: updatedUser, task, activity } = event.payload;
-        setRecords(prev => [record, ...prev.filter(r => r.id !== record.id)]);
-        if (updatedUser && updatedUser.id === user.id) {
-          setUser(updatedUser);
+        const { record, user: updatedUser, task: eventTask, activity } = event.payload || {};
+        if (record) {
+          setRecords(prev => [record, ...(prev || []).filter(r => r && r.id !== record.id)]);
         }
-        setAdminUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
-        setTasks(prev => prev.map(t => t.id === task.id ? task : t));
+        if (updatedUser && user && (updatedUser.id === user.id || String(updatedUser.id) === String(user.id))) {
+          setUser(prev => ({ ...prev, ...updatedUser }));
+        }
+        if (updatedUser && updatedUser.id) {
+          setAdminUsers(prev => (prev || []).map(u => (u && (u.id === updatedUser.id || String(u.id) === String(updatedUser.id))) ? { ...u, ...updatedUser } : u));
+        }
+        if (eventTask && eventTask.id) {
+          setTasks(prev => (prev || []).map(t => (t && (t.id === eventTask.id || String(t.id) === String(eventTask.id))) ? eventTask : t));
+        }
         if (activity) {
-          setActivityStream(prev => [activity, ...prev.slice(0, 14)]);
+          setActivityStream(prev => [activity, ...(prev || []).slice(0, 14)]);
         }
       }
 

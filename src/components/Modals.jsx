@@ -619,15 +619,15 @@ function TaskExecutionModal({ task, onClose }) {
     setStep('ready');
   };
 
-  // Countdown timer to auto-advance to next task on success
+  // Auto-close modal on success after showing completion, returning to previous task screen
   React.useEffect(() => {
-    if (step === 'success' && hasNextTask) {
-      setCountdown(3);
+    if (step === 'success') {
+      setCountdown(2);
       const timer = setInterval(() => {
         setCountdown(prev => {
           if (prev <= 1) {
             clearInterval(timer);
-            handleGoToNextTask(nextTask);
+            onClose();
             return 0;
           }
           return prev - 1;
@@ -635,7 +635,7 @@ function TaskExecutionModal({ task, onClose }) {
       }, 1000);
       return () => clearInterval(timer);
     }
-  }, [step, currentTask?.id, hasNextTask]);
+  }, [step, onClose]);
 
   const handleSubmitTask = () => {
     if (isDepositRestricted) return;
@@ -959,49 +959,22 @@ function TaskExecutionModal({ task, onClose }) {
             </div>
           </div>
 
-          {/* NEXT TASK PREVIEW CARD */}
-          {hasNextTask && (
-            <div className="next-task-preview-box mt-4 p-3 border rounded-xl bg-slate-50 text-left">
-              <div className="flex items-center justify-between text-xs text-slate-500 mb-1.5">
-                <span className="font-semibold text-primary-brand">Next Task #{nextTaskNumber} in Queue:</span>
-                <span>Auto-opening in {countdown}s</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <img
-                  src={getProductImage(nextTask)}
-                  alt={nextTask.title}
-                  className="w-12 h-12 rounded-lg object-cover bg-slate-200"
-                  onError={(e) => {
-                    e.currentTarget.onerror = null;
-                    e.currentTarget.src = getProductImage(nextTask);
-                  }}
-                />
-                <div className="flex-1 min-w-0">
-                  <h6 className="text-sm font-semibold truncate text-slate-800">{nextTask.title}</h6>
-                  <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
-                    <span>Order: ${Number(nextTask.price || 0).toFixed(2)}</span>
-                    <span className="text-emerald-600 font-semibold">+{nextTask.yieldRate || '4.0%'} yield</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+          {/* Return notice */}
+          <div className="mt-4 p-3 border rounded-xl bg-slate-50 dark:bg-slate-900/50 text-center">
+            <span className="text-xs text-slate-500 font-medium">
+              Task completed successfully! Returning to tasks in {countdown}s...
+            </span>
+          </div>
 
           <div className="modal-btn-row mt-4">
-            {hasNextTask ? (
-              <button
-                type="button"
-                className="btn-primary w-full"
-                onClick={() => handleGoToNextTask(nextTask)}
-              >
-                <span>Open Next Task (#{nextTaskNumber})</span>
-                <ArrowRight size={16} />
-              </button>
-            ) : (
-              <button type="button" className="btn-primary w-full" onClick={onClose}>
-                All Tasks Completed! Close
-              </button>
-            )}
+            <button
+              type="button"
+              className="btn-primary w-full"
+              onClick={onClose}
+            >
+              <span>Back to Tasks</span>
+              <ArrowRight size={16} />
+            </button>
           </div>
 
           <div className="flex items-center justify-between gap-2 mt-3">
