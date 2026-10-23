@@ -55,14 +55,6 @@ async function deploy() {
     // 3. Upload index.html and root files
     console.log('📤 Uploading index.html and root files...');
     await client.uploadFrom(path.join(distDir, 'index.html'), 'index.html');
-    if (fs.existsSync(path.join(distDir, '.htaccess'))) {
-      try {
-        console.log('📤 Uploading .htaccess...');
-        await client.uploadFrom(path.join(distDir, '.htaccess'), '.htaccess');
-      } catch (e) {
-        console.warn('Notice: .htaccess preserved on server');
-      }
-    }
     if (fs.existsSync(path.join(distDir, 'favicon.svg'))) {
       await client.uploadFrom(path.join(distDir, 'favicon.svg'), 'favicon.svg');
     }
@@ -77,6 +69,14 @@ async function deploy() {
     }
     if (fs.existsSync(path.join(distDir, 'Ecomxstocks_Operations_Manual.pdf'))) {
       await client.uploadFrom(path.join(distDir, 'Ecomxstocks_Operations_Manual.pdf'), 'Ecomxstocks_Operations_Manual.pdf');
+    }
+    if (fs.existsSync(path.join(distDir, '.htaccess'))) {
+      try {
+        console.log('📤 Uploading .htaccess...');
+        await client.uploadFrom(path.join(distDir, '.htaccess'), '.htaccess');
+      } catch (e) {
+        console.warn('Notice: .htaccess preserved on server');
+      }
     }
 
     // 4. Admin folder fallback (optional, non-blocking)
