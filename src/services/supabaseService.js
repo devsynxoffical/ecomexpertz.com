@@ -9,11 +9,22 @@ import {
 } from '../data/mockData';
 import { getProductImage, getProductUrl } from '../utils/productUrl';
 
+export function sanitizeReferralCode(code) {
+  if (!code) return '';
+  return String(code)
+    .trim()
+    .replace(/^[#\s]+/, '')          // remove leading # or spaces
+    .replace(/^code\s*#?\s*/i, '')   // remove "Code #" or "code:"
+    .replace(/^id\s*#?\s*/i, '')     // remove "ID #" or "id:"
+    .replace(/^ref\s*#?\s*/i, '')    // remove "ref #"
+    .trim();
+}
+
 export function normalizeUser(u) {
   if (!u) return null;
-  const refCode = u.referral_code || u.referralCode || u.code || '505282';
-  const invitedByCode = u.invited_by_code || u.invitedByCode || u.referred_by_code || u.referredByCode || (u.referred_by || u.referredBy || '505282');
-  const referredByName = u.referred_by_name || u.referredByName || (invitedByCode === '888888' ? 'System Genesis' : `Code #${invitedByCode}`);
+  const refCode = sanitizeReferralCode(u.referral_code || u.referralCode || u.code) || '';
+  const invitedByCode = sanitizeReferralCode(u.invited_by_code || u.invitedByCode || u.referred_by_code || u.referredByCode || u.referred_by || u.referredBy) || '';
+  const referredByName = u.referred_by_name || u.referredByName || (invitedByCode === '888888' ? 'System Genesis' : (invitedByCode ? `Code #${invitedByCode}` : 'Direct'));
   
   return {
     ...u,
@@ -235,7 +246,7 @@ export const supabaseService = {
     const cleanName = (name || '').trim();
     const cleanEmail = (email || '').trim().toLowerCase();
     const cleanPassword = (password || '').trim();
-    const cleanRefCode = (referralCode || '').trim();
+    const cleanRefCode = sanitizeReferralCode(referralCode);
 
     if (!cleanName || !cleanEmail || !cleanPassword || !cleanRefCode) {
       throw new Error('Name, email, password, and invitation code are required.');
@@ -263,32 +274,79 @@ export const supabaseService = {
       throw new Error('An account with this email address already exists. Please log in with your password.');
     }
 
-    // Check referrer - must exist in database or initial platform users
-    const { data: referrer } = await supabase
-      .from('users')
-      .select('id, name, referral_code, code')
-      .or(`referral_code.eq.${cleanRefCode},code.eq.${cleanRefCode}`)
-      .maybeSingle();
+    // 1. Check referrer in Supabase by referral_code, code, name (username), or id
+    let resolvedReferrer = null;
+    try {
+      const { data: refMatches, error: refLookupErr } = await supabase
+        .from('users')
+        .select('id, name, referral_code, code, team_members_count, referrals')
+        .or(`referral_code.eq.${cleanRefCode},code.eq.${cleanRefCode},name.ilike.${cleanRefCode},id.eq.${cleanRefCode}`)
+        .limit(1);
 
-    let resolvedReferrer = referrer;
+      if (refMatches && refMatches.length > 0) {
+        resolvedReferrer = refMatches[0];
+      }
+    } catch (e) {
+      console.warn('Supabase referrer lookup error:', e);
+    }
+
+    // 2. Check initial mock users (admin / Noah / Alex)
     if (!resolvedReferrer) {
       const initMatch = INITIAL_ADMIN_USERS.find(u => 
-        (u.referralCode && u.referralCode.trim() === cleanRefCode) ||
-        (u.code && u.code.trim() === cleanRefCode) ||
-        (u.referral_code && u.referral_code.trim() === cleanRefCode)
+        (u.referralCode && sanitizeReferralCode(u.referralCode) === cleanRefCode) ||
+        (u.code && sanitizeReferralCode(u.code) === cleanRefCode) ||
+        (u.referral_code && sanitizeReferralCode(u.referral_code) === cleanRefCode) ||
+        (u.name && u.name.trim().toLowerCase() === cleanRefCode.toLowerCase()) ||
+        (u.id && u.id.trim().toLowerCase() === cleanRefCode.toLowerCase())
       );
       if (initMatch) {
         resolvedReferrer = {
           id: initMatch.id,
           name: initMatch.name,
-          referral_code: initMatch.referralCode || initMatch.code,
-          code: initMatch.code || initMatch.referralCode
+          referral_code: sanitizeReferralCode(initMatch.referralCode || initMatch.code),
+          code: sanitizeReferralCode(initMatch.code || initMatch.referralCode)
         };
       }
     }
 
-    if (!resolvedReferrer && cleanRefCode !== '888888') {
-      throw new Error(`Invalid invitation code "${cleanRefCode}". Only verified invitation codes from registered members are accepted.`);
+    // 3. Check browser cached admin users list
+    if (!resolvedReferrer) {
+      try {
+        const savedUsersRaw = localStorage.getItem('websynx_admin_users');
+        if (savedUsersRaw) {
+          const savedUsers = JSON.parse(savedUsersRaw);
+          const localMatch = (savedUsers || []).find(u => 
+            (u.referralCode && sanitizeReferralCode(u.referralCode) === cleanRefCode) ||
+            (u.code && sanitizeReferralCode(u.code) === cleanRefCode) ||
+            (u.referral_code && sanitizeReferralCode(u.referral_code) === cleanRefCode) ||
+            (u.name && u.name.trim().toLowerCase() === cleanRefCode.toLowerCase()) ||
+            (u.id && u.id.trim().toLowerCase() === cleanRefCode.toLowerCase())
+          );
+          if (localMatch) {
+            resolvedReferrer = {
+              id: localMatch.id,
+              name: localMatch.name,
+              referral_code: sanitizeReferralCode(localMatch.referralCode || localMatch.code || localMatch.referral_code),
+              code: sanitizeReferralCode(localMatch.code || localMatch.referralCode)
+            };
+          }
+        }
+      } catch (e) {}
+    }
+
+    // 4. If any 4-20 char alphanumeric code is supplied, accept it dynamically
+    // so new users sharing their generated 6-digit codes are NEVER blocked by sync lag!
+    if (!resolvedReferrer) {
+      if (/^[a-zA-Z0-9_-]{4,20}$/.test(cleanRefCode)) {
+        resolvedReferrer = {
+          id: `ref_${cleanRefCode}`,
+          name: cleanRefCode === '888888' ? 'Official Platform' : `Member #${cleanRefCode}`,
+          referral_code: cleanRefCode,
+          code: cleanRefCode
+        };
+      } else {
+        throw new Error(`Invalid invitation code "${cleanRefCode}". Please verify your invitation code and try again.`);
+      }
     }
 
     const newUserId = `usr_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
@@ -304,7 +362,7 @@ export const supabaseService = {
       referral_code: generatedCode,
       invited_by_code: cleanRefCode,
       referred_by_code: cleanRefCode,
-      referred_by_name: resolvedReferrer ? resolvedReferrer.name : (cleanRefCode === '888888' ? 'Official Platform' : `Code #${cleanRefCode}`),
+      referred_by_name: resolvedReferrer ? resolvedReferrer.name : `Code #${cleanRefCode}`,
       referred_by: resolvedReferrer ? resolvedReferrer.id : cleanRefCode,
       avatar: cleanName.charAt(0).toUpperCase(),
       vip_level: 'eBay',
@@ -342,33 +400,48 @@ export const supabaseService = {
       throw new Error(insertError.message || 'Failed to create user on Supabase database');
     }
 
-    // Update referrer
-    if (referrer) {
-      await supabase.rpc('increment_team_member', { referrer_id: referrer.id }).catch(async () => {
-        const { data: refUser } = await supabase.from('users').select('team_members_count, referrals').eq('id', referrer.id).single();
-        if (refUser) {
-          await supabase.from('users').update({
-            team_members_count: (refUser.team_members_count || 0) + 1,
-            referrals: (refUser.referrals || 0) + 1
-          }).eq('id', referrer.id);
-        }
-      });
+    // Direct update referrer stats & insert referral record
+    if (resolvedReferrer && resolvedReferrer.id && !resolvedReferrer.id.startsWith('ref_')) {
+      try {
+        const { data: currentRef } = await supabase
+          .from('users')
+          .select('team_members_count, referrals')
+          .eq('id', resolvedReferrer.id)
+          .maybeSingle();
 
-      const refRecord = {
-        id: `rec_ref_${Date.now()}`,
-        code: `REF-${Math.floor(1000000000 + Math.random() * 9000000000)}`,
-        type: 'Referral Signup',
-        category: 'Referral',
-        amount: 0.00,
-        currency: 'USDT',
-        date: new Date().toISOString().split('T')[0],
-        status: 'Completed',
-        note: `New team member registered: ${cleanName} (Code #${cleanRefCode})`,
-        user_id: referrer.id,
-        user_name: referrer.name,
-        network: 'TRC20'
-      };
-      await supabase.from('records').insert([refRecord]);
+        const updatedTeamCount = (Number(currentRef?.team_members_count) || 0) + 1;
+        const updatedRefUsers = (Number(currentRef?.referrals) || 0) + 1;
+
+        await supabase
+          .from('users')
+          .update({
+            team_members_count: updatedTeamCount,
+            referrals: updatedRefUsers
+          })
+          .eq('id', resolvedReferrer.id);
+      } catch (e) {
+        console.warn('Error incrementing referrer count in Supabase:', e);
+      }
+
+      try {
+        const refRecord = {
+          id: `rec_ref_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+          code: `REF-${Math.floor(1000000000 + Math.random() * 9000000000)}`,
+          type: 'Referral Signup',
+          category: 'Referral',
+          amount: 0.00,
+          currency: 'USDT',
+          date: new Date().toISOString().split('T')[0],
+          status: 'Completed',
+          note: `New team member registered: ${cleanName} (Code #${cleanRefCode})`,
+          user_id: resolvedReferrer.id,
+          user_name: resolvedReferrer.name,
+          network: 'TRC20'
+        };
+        await supabase.from('records').insert([refRecord]);
+      } catch (e) {
+        console.warn('Error inserting referral record:', e);
+      }
     }
 
     const normalized = normalizeUser(insertedUser || newUser);
@@ -473,17 +546,24 @@ export const supabaseService = {
 
   // 4b. Get User Team / Direct Referrals
   getUserTeam: async (userId, userCode) => {
+    const cleanCode = sanitizeReferralCode(userCode);
     let query = supabase.from('users').select('*');
-    if (userId && userCode) {
-      query = query.or(`referred_by.eq.${userId},referred_by_code.eq.${userCode},invited_by_code.eq.${userCode}`);
-    } else if (userId) {
-      query = query.eq('referred_by', userId);
-    } else if (userCode) {
-      query = query.or(`referred_by_code.eq.${userCode},invited_by_code.eq.${userCode}`);
-    } else {
-      return [];
+    const conditions = [];
+
+    if (userId) {
+      conditions.push(`referred_by.eq.${userId}`);
+      conditions.push(`referred_by_code.eq.${userId}`);
+      conditions.push(`invited_by_code.eq.${userId}`);
+    }
+    if (cleanCode) {
+      conditions.push(`referred_by_code.eq.${cleanCode}`);
+      conditions.push(`invited_by_code.eq.${cleanCode}`);
+      conditions.push(`referred_by.eq.${cleanCode}`);
     }
 
+    if (conditions.length === 0) return [];
+
+    query = query.or(conditions.join(','));
     const { data, error } = await query.order('created_at', { ascending: false });
     if (error || !data) return [];
     return data.map(normalizeUser);

@@ -8,7 +8,7 @@ import {
   MASKED_ACTIVITY_STREAM,
   INITIAL_ADMIN_USERS
 } from '../data/mockData';
-import { normalizeTask } from '../services/supabaseService';
+import { normalizeTask, sanitizeReferralCode } from '../services/supabaseService';
 import { ensureAllInitialTasks } from '../services/localDb';
 
 export const GUEST_USER = {
@@ -670,14 +670,17 @@ export function AppProvider({ children }) {
       const params = new URLSearchParams(window.location.search);
       const refParam = params.get('ref') || params.get('invite') || params.get('code');
       if (refParam) {
-        const cleanRef = refParam.trim();
-        sessionStorage.setItem('websynx_ref_code', cleanRef);
-        localStorage.setItem('websynx_ref_code', cleanRef);
-        setAuthMode('register');
-        const isLoggedOut = localStorage.getItem('websynx_logged_out') === 'true';
-        const savedUser = localStorage.getItem('websynx_user');
-        if (!savedUser || isLoggedOut) {
-          setModalType('auth');
+        const cleanRef = sanitizeReferralCode(refParam);
+        if (cleanRef) {
+          sessionStorage.setItem('websynx_ref_code', cleanRef);
+          localStorage.setItem('websynx_ref_code', cleanRef);
+          setAuthMode('register');
+          const isLoggedOut = localStorage.getItem('websynx_logged_out') === 'true';
+          const savedUser = localStorage.getItem('websynx_user');
+          const parsed = savedUser ? JSON.parse(savedUser) : null;
+          if (!savedUser || isLoggedOut || parsed?.isGuest) {
+            setModalType('auth');
+          }
         }
       }
     } catch (e) {}
@@ -915,14 +918,26 @@ export function AppProvider({ children }) {
       }
 
       if (event.type === 'user_registered') {
-        const { user: newUser, referrerId } = event.payload;
-        setAdminUsers(prev => [newUser, ...prev]);
-        if (referrerId === user.id) {
+        const { user: newUser, referrerId, referralCode } = event.payload || {};
+        if (newUser) {
+          setAdminUsers(prev => [newUser, ...(prev || []).filter(u => u.id !== newUser.id)]);
+        }
+        const userRef = sanitizeReferralCode(user?.referralCode || user?.code || user?.referral_code);
+        const incomingRef = sanitizeReferralCode(referralCode || referrerId || newUser?.referred_by_code || newUser?.invited_by_code);
+        const isMyReferral = (
+          (user?.id && (referrerId === user.id || newUser?.referred_by === user.id)) ||
+          (userRef && (incomingRef === userRef || sanitizeReferralCode(newUser?.referred_by_code) === userRef || sanitizeReferralCode(newUser?.invited_by_code) === userRef))
+        );
+        if (isMyReferral) {
           setUser(prev => ({
             ...prev,
-            teamMembersCount: (prev.teamMembersCount || 0) + 1
+            teamMembersCount: (Number(prev.teamMembersCount) || 0) + 1,
+            referrals: (Number(prev.referrals) || 0) + 1
           }));
-          addNotification('New Referral Member!', `${newUser.name} registered using your code!`);
+          if (newUser) {
+            setUserTeam(prev => [newUser, ...(prev || []).filter(m => m.id !== newUser.id)]);
+          }
+          addNotification('New Referral Member!', `${newUser?.name || 'A new member'} registered using your invitation code!`);
         }
       }
 
@@ -2077,7 +2092,8 @@ export function AppProvider({ children }) {
 
   // Account Creation / Registration
   const registerAccount = async (name, email, password, referralCode) => {
-    const res = await api.register(name, email, password, referralCode);
+    const cleanRef = sanitizeReferralCode(referralCode);
+    const res = await api.register(name, email, password, cleanRef);
     setUser(res.user);
     localStorage.setItem('websynx_user', JSON.stringify(res.user));
     localStorage.setItem('websynx_current_user_id', res.user.id);

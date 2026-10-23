@@ -57,6 +57,7 @@ import {
   Play
 } from 'lucide-react';
 import { getProductUrl, openProductUrl } from '../utils/productUrl';
+import { sanitizeReferralCode } from '../services/supabaseService';
 import AdminSupportPanel, { useSupportChats, SupportSettingsForm } from '../components/AdminSupportPanel';
 import {
   EbayLogo,
@@ -442,11 +443,12 @@ export default function AdminView() {
       return;
     }
     try {
+      const cleanRef = sanitizeReferralCode(newUserData.referralCode) || '888888';
       const created = await registerAccount(
         cleanName,
         newUserData.email,
         newUserData.password,
-        newUserData.referralCode
+        cleanRef
       );
       if (
         parseFloat(newUserData.startingBalance) > 0 ||
@@ -467,7 +469,7 @@ export default function AdminView() {
         vipLevel: 'eBay',
         startingBalance: '0.00',
         walletAddress: '',
-        referralCode: '505282'
+        referralCode: '888888'
       });
       addNotification('User Provisioned', `New user ${created.name} successfully registered.`);
     } catch (err) {
@@ -478,6 +480,8 @@ export default function AdminView() {
   const handleSaveUser = async (e) => {
     e.preventDefault();
     if (!editingUser) return;
+    const cleanRef = sanitizeReferralCode(editReferralCode) || editingUser.referralCode || editingUser.code;
+    const cleanInvitedBy = sanitizeReferralCode(editInvitedByCode) || editingUser.invitedByCode || editingUser.referredByCode;
     const updates = {
       name: editName.trim() || editingUser.name,
       email: editEmail.trim() || editingUser.email,
@@ -491,12 +495,12 @@ export default function AdminView() {
       kyc: editKyc,
       kycStatus: editKyc,
       kyc_status: editKyc,
-      referralCode: editReferralCode,
-      code: editReferralCode,
-      referral_code: editReferralCode,
-      invitedByCode: editInvitedByCode,
-      referredByCode: editInvitedByCode,
-      invited_by_code: editInvitedByCode,
+      referralCode: cleanRef,
+      code: cleanRef,
+      referral_code: cleanRef,
+      invitedByCode: cleanInvitedBy,
+      referredByCode: cleanInvitedBy,
+      invited_by_code: cleanInvitedBy,
       pendingTasks: parseInt(editPendingTasks, 10) || 0,
       pending_tasks: parseInt(editPendingTasks, 10) || 0,
       completedTasks: parseInt(editCompletedTasks, 10) || 0,

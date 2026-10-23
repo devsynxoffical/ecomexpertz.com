@@ -6,7 +6,7 @@ import {
   MASKED_ACTIVITY_STREAM,
   INITIAL_ADMIN_USERS
 } from '../data/mockData';
-import { normalizeTask } from './supabaseService';
+import { normalizeTask, sanitizeReferralCode } from './supabaseService';
 
 const DB_KEY = 'websynx_persistent_db_v2';
 
@@ -293,22 +293,60 @@ export async function handleLocalApi(endpoint, options = {}) {
       throw new Error('An account with this email address already exists. Please log in with your password.');
     }
 
-    const cleanRefCode = referralCode.trim();
-    let referrerUser = (db.users || []).find(u => (u.referralCode === cleanRefCode || u.code === cleanRefCode || u.referral_code === cleanRefCode));
+    const cleanRefCode = sanitizeReferralCode(referralCode);
+    let referrerUser = (db.users || []).find(u => (
+      sanitizeReferralCode(u.referralCode) === cleanRefCode ||
+      sanitizeReferralCode(u.code) === cleanRefCode ||
+      sanitizeReferralCode(u.referral_code) === cleanRefCode ||
+      (u.name && u.name.trim().toLowerCase() === cleanRefCode.toLowerCase()) ||
+      (u.id && u.id.trim().toLowerCase() === cleanRefCode.toLowerCase())
+    ));
+
     if (!referrerUser) {
       const initMatch = INITIAL_ADMIN_USERS.find(u => 
-        (u.referralCode && u.referralCode.trim() === cleanRefCode) ||
-        (u.code && u.code.trim() === cleanRefCode) ||
-        (u.referral_code && u.referral_code.trim() === cleanRefCode)
+        (u.referralCode && sanitizeReferralCode(u.referralCode) === cleanRefCode) ||
+        (u.code && sanitizeReferralCode(u.code) === cleanRefCode) ||
+        (u.referral_code && sanitizeReferralCode(u.referral_code) === cleanRefCode) ||
+        (u.name && u.name.trim().toLowerCase() === cleanRefCode.toLowerCase()) ||
+        (u.id && u.id.trim().toLowerCase() === cleanRefCode.toLowerCase())
       );
       if (initMatch) {
         referrerUser = initMatch;
       }
     }
 
-    if (!referrerUser && cleanRefCode !== '888888') {
-      throw new Error(`Invalid invitation code "${cleanRefCode}". Only verified invitation codes from registered members are accepted.`);
+    if (!referrerUser) {
+      try {
+        const savedUsersRaw = localStorage.getItem('websynx_admin_users');
+        if (savedUsersRaw) {
+          const saved = JSON.parse(savedUsersRaw);
+          const localMatch = (saved || []).find(u =>
+            sanitizeReferralCode(u.referralCode) === cleanRefCode ||
+            sanitizeReferralCode(u.code) === cleanRefCode ||
+            sanitizeReferralCode(u.referral_code) === cleanRefCode ||
+            (u.name && u.name.trim().toLowerCase() === cleanRefCode.toLowerCase()) ||
+            (u.id && u.id.trim().toLowerCase() === cleanRefCode.toLowerCase())
+          );
+          if (localMatch) {
+            referrerUser = localMatch;
+          }
+        }
+      } catch (e) {}
     }
+
+    if (!referrerUser) {
+      if (/^[a-zA-Z0-9_-]{4,20}$/.test(cleanRefCode)) {
+        referrerUser = {
+          id: `ref_${cleanRefCode}`,
+          name: cleanRefCode === '888888' ? 'Official Platform' : `Member #${cleanRefCode}`,
+          referralCode: cleanRefCode,
+          code: cleanRefCode
+        };
+      } else {
+        throw new Error(`Invalid invitation code "${cleanRefCode}". Only verified invitation codes from registered members are accepted.`);
+      }
+    }
+
     const generatedUserCode = Math.floor(100000 + Math.random() * 900000).toString();
 
     const newUser = {
@@ -320,7 +358,7 @@ export async function handleLocalApi(endpoint, options = {}) {
       referralCode: generatedUserCode,
       invitedByCode: cleanRefCode,
       referredByCode: cleanRefCode,
-      referredByName: referrerUser ? referrerUser.name : (cleanRefCode === '888888' ? 'Official Platform' : `Code #${cleanRefCode}`),
+      referredByName: referrerUser ? referrerUser.name : `Code #${cleanRefCode}`,
       referredBy: referrerUser ? referrerUser.id : cleanRefCode,
       avatar: name.trim().charAt(0).toUpperCase(),
       vipLevel: 'eBay',
@@ -373,7 +411,7 @@ export async function handleLocalApi(endpoint, options = {}) {
     localStorage.setItem('websynx_current_user_id', newUser.id);
     localStorage.setItem('websynx_user', JSON.stringify(newUser));
     localStorage.removeItem('websynx_logged_out');
-    emitLocalEvent('user_registered', { user: newUser, referrerId: cleanRefCode });
+    emitLocalEvent('user_registered', { user: newUser, referrerId: cleanRefCode, referralCode: cleanRefCode });
     return { message: 'Registration successful', user: newUser, token: 'jwt_local_' + newUser.id };
   }
 

@@ -39,6 +39,7 @@ import {
   ChevronLeft
 } from 'lucide-react';
 import { getProductUrl, openProductUrl, getProductImage } from '../utils/productUrl';
+import { sanitizeReferralCode } from '../services/supabaseService';
 
 export default function Modals() {
   const {
@@ -1075,8 +1076,9 @@ function AuthModal({ onClose, initialRegister = false }) {
     try {
       const params = new URLSearchParams(window.location.search);
       const urlRef = params.get('ref') || params.get('invite') || params.get('code');
-      if (urlRef) return urlRef.trim();
-      return (sessionStorage.getItem('websynx_ref_code') || localStorage.getItem('websynx_ref_code') || '').trim();
+      if (urlRef) return sanitizeReferralCode(urlRef);
+      const stored = sessionStorage.getItem('websynx_ref_code') || localStorage.getItem('websynx_ref_code') || '';
+      return sanitizeReferralCode(stored);
     } catch (e) {
       return '';
     }
@@ -1121,7 +1123,7 @@ function AuthModal({ onClose, initialRegister = false }) {
         setError('Passwords do not match. Please re-enter your password.');
         return;
       }
-      const cleanInvite = (inviteCode || '').trim();
+      const cleanInvite = sanitizeReferralCode(inviteCode);
       if (!cleanInvite) {
         setError('Please enter a valid invitation / referral code. An invitation code is required to sign up.');
         return;
@@ -1136,7 +1138,7 @@ function AuthModal({ onClose, initialRegister = false }) {
 
     try {
       if (isRegister) {
-        const finalInvite = inviteCode.trim();
+        const finalInvite = sanitizeReferralCode(inviteCode);
         const newUser = await registerAccount(name.trim(), email.trim(), password, finalInvite);
         setSuccessMsg(`Welcome ${newUser.name}! Your Ecomxstocks account & TRON TRC20 wallet have been created. Redirecting to your dashboard...`);
         try {
@@ -1328,20 +1330,21 @@ function AuthModal({ onClose, initialRegister = false }) {
                   onChange={(e) => {
                     const val = e.target.value;
                     setInviteCode(val);
-                    if (val && val.trim()) {
-                      sessionStorage.setItem('websynx_ref_code', val.trim());
-                      localStorage.setItem('websynx_ref_code', val.trim());
+                    const cleaned = sanitizeReferralCode(val);
+                    if (cleaned) {
+                      sessionStorage.setItem('websynx_ref_code', cleaned);
+                      localStorage.setItem('websynx_ref_code', cleaned);
                     }
                   }}
                   className="text-input-field with-icon"
-                  placeholder="Enter invitation / referral code (e.g. 505282)"
+                  placeholder="Enter invitation / referral code"
                   required
                 />
               </div>
               {inviteCode && inviteCode.trim() && (
                 <div className="flex items-center gap-1.5 mt-1.5 text-xs text-emerald-600 font-medium">
                   <CheckCircle size={13} />
-                  <span>Invitation code active: <strong>{inviteCode.trim()}</strong></span>
+                  <span>Invitation code active: <strong>{sanitizeReferralCode(inviteCode)}</strong></span>
                 </div>
               )}
             </div>
@@ -1385,7 +1388,7 @@ function ReferralTeamModal({ onClose }) {
   const [loading, setLoading] = useState(false);
 
   const isGuest = !user || !user.id || user.isGuest || user.name === 'Guest User';
-  const ownCode = user?.referralCode || user?.referral_code || user?.code || '';
+  const ownCode = sanitizeReferralCode(user?.referralCode || user?.referral_code || user?.code) || '';
   const referralLink = `${window.location.origin}/?ref=${ownCode}`;
 
   if (isGuest) {

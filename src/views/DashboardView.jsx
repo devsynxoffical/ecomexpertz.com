@@ -40,6 +40,7 @@ import {
   X
 } from 'lucide-react';
 import { openProductUrl, getProductUrl, getProductImage } from '../utils/productUrl';
+import { sanitizeReferralCode } from '../services/supabaseService';
 import {
   EbayLogo,
   WalmartLogo,
@@ -1799,7 +1800,7 @@ function TabMine() {
   const [activeSubMenu, setActiveSubMenu] = useState(null); // 'profile' | 'team' | 'wallet' | 'settings' | null
 
   const isGuest = !user || !user.id || user.isGuest || user.name === 'Guest User';
-  const ownRefCode = isGuest ? '' : (user?.referralCode || user?.code || '');
+  const ownRefCode = isGuest ? '' : sanitizeReferralCode(user?.referralCode || user?.referral_code || user?.code);
   const referralLink = `${window.location.origin}/?ref=${ownRefCode}`;
 
   const handleCopyCode = () => {
