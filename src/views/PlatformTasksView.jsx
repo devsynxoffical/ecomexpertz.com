@@ -110,7 +110,7 @@ export default function PlatformTasksView({ platform = 'eBay', onBack }) {
         </div>
 
         <div className="platform-header-balance-section">
-          <span className="platform-balance-caption">Account Balance</span>
+          <span className="platform-balance-caption">Account Balance :</span>
           <div className="platform-balance-value">
             {(Number(user?.balance) || 0).toFixed(2)} USDT
           </div>
@@ -395,181 +395,126 @@ export default function PlatformTasksView({ platform = 'eBay', onBack }) {
 
                     {currentActiveTask && (() => {
                       const displayTitle = (currentActiveTask.title || 'Product Campaign Task').replace(/^Step\s*\d+\s*:\s*/i, '');
-                      return (
-                        <div className="active-unlocked-task-hero" style={{
-                          background: 'linear-gradient(135deg, #f5f3ff 0%, #eef2ff 100%)',
-                          border: '2px solid #a855f7',
-                          borderRadius: '20px',
-                          padding: '18px 20px',
-                          boxShadow: '0 10px 25px -5px rgba(168, 85, 247, 0.15)',
-                          overflow: 'hidden'
-                        }}>
-                          <div style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            flexWrap: 'wrap',
-                            gap: '8px',
-                            marginBottom: '14px'
-                          }}>
-                            <span style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '6px',
-                              padding: '5px 12px',
-                              borderRadius: '999px',
-                              background: 'linear-gradient(135deg, #7c3aed 0%, #6366f1 100%)',
-                              color: '#ffffff',
-                              fontSize: '12px',
-                              fontWeight: '700',
-                              boxShadow: '0 4px 12px rgba(124, 58, 237, 0.3)'
-                            }}>
-                              <Zap size={13} /> Active Unlocked Task • Step #{completedCount + 1}
-                            </span>
-                            <span style={{ fontSize: '12px', fontWeight: '700', color: '#6b21a8' }}>
-                              {completedCount} Completed • {totalQuota - completedCount} Remaining
-                            </span>
-                          </div>
+                      const vipRate = currentActiveTask.commissionRate || 4.0;
+                      const activeCommission = (((Number(currentActiveTask.price) || 0) * vipRate) / 100).toFixed(2);
 
-                          <div style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '16px',
-                            flexWrap: 'wrap'
-                          }}>
-                            {/* Fixed thumbnail container - prevents image blowout */}
-                            <div style={{
-                              width: '80px',
-                              height: '80px',
-                              minWidth: '80px',
-                              maxWidth: '80px',
-                              minHeight: '80px',
-                              maxHeight: '80px',
-                              borderRadius: '16px',
-                              overflow: 'hidden',
-                              border: '1px solid #e9d5ff',
-                              boxShadow: '0 4px 10px rgba(0,0,0,0.06)',
-                              flexShrink: 0,
-                              background: '#f8fafc'
-                            }}>
-                              <img
-                                src={getProductImage(currentActiveTask)}
-                                alt={displayTitle}
-                                style={{
-                                  width: '100%',
-                                  height: '100%',
-                                  objectFit: 'cover',
-                                  display: 'block'
-                                }}
-                                onError={(e) => {
-                                  e.currentTarget.onerror = null;
-                                  e.currentTarget.src = getProductImage(currentActiveTask);
-                                }}
-                              />
+                      return (
+                        <div className="mallstocks-order-card animate-fade-in" style={{ marginTop: '6px' }}>
+                          {/* 6-Metric Grid matching Screenshot 2 */}
+                          <div className="mallstocks-stats-grid">
+                            {/* Row 1 */}
+                            <div className="mallstocks-stat-box">
+                              <div className="mallstocks-stat-val">{completedCount}</div>
+                              <div className="mallstocks-stat-label">Today's Time</div>
+                            </div>
+                            <div className="mallstocks-stat-box">
+                              <div className="mallstocks-stat-val">
+                                {(Number(user?.totalEarnings ?? user?.total_earnings ?? 0)).toFixed(2)} USDT
+                              </div>
+                              <div className="mallstocks-stat-label">Total commission</div>
                             </div>
 
-                            <div style={{ flex: '1 1 200px', minWidth: '0' }}>
-                              <h5 style={{
-                                fontSize: '15px',
-                                fontWeight: '700',
-                                color: '#1e1b4b',
-                                margin: '0 0 6px 0',
-                                lineHeight: '1.35',
-                                wordBreak: 'break-word'
-                              }}>
-                                {displayTitle}
-                              </h5>
-                              <div style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '10px',
-                                flexWrap: 'wrap',
-                                marginBottom: '8px'
-                              }}>
-                                <span style={{ fontSize: '13px', fontWeight: '700', color: '#0f172a' }}>
-                                  Order: ${(Number(currentActiveTask.price) || 0).toFixed(2)} USDT
-                                </span>
-                                <span style={{
-                                  fontSize: '12px',
-                                  fontWeight: '700',
-                                  color: '#059669',
-                                  background: '#ecfdf5',
-                                  padding: '2px 8px',
-                                  borderRadius: '6px'
-                                }}>
-                                  +{currentActiveTask.yieldRate || `${(currentActiveTask.commissionRate || 4.0).toFixed(1)}%`} Commission
+                            {/* Row 2 */}
+                            <div className="mallstocks-stat-box">
+                              <div className={`mallstocks-stat-val ${shortfall > 0 ? 'text-amber-500 font-bold' : ''}`}>
+                                {shortfall > 0 ? `${shortfall.toFixed(2)} USDT` : '0 USDT'}
+                              </div>
+                              <div className="mallstocks-stat-label">Cash gap between task</div>
+                            </div>
+                            <div className="mallstocks-stat-box">
+                              <div className="mallstocks-stat-val">
+                                {(Number(user?.yesterdayEarnings || 0)).toFixed(2)} USDT
+                              </div>
+                              <div className="mallstocks-stat-label">Yesterday's buy commission</div>
+                            </div>
+
+                            {/* Row 3 */}
+                            <div className="mallstocks-stat-box">
+                              <div className="mallstocks-stat-val">
+                                {(Number(user?.teamCommission || user?.teamEarnings || 0)).toFixed(2)} USDT
+                              </div>
+                              <div className="mallstocks-stat-label">Yesterday's team commission</div>
+                            </div>
+                            <div className="mallstocks-stat-box">
+                              <div className="mallstocks-stat-val text-emerald-500 font-bold">
+                                +{activeCommission} USDT
+                              </div>
+                              <div className="mallstocks-stat-label">Order Commission</div>
+                            </div>
+                          </div>
+
+                          {/* Elevated Product Info Section */}
+                          <div className="mallstocks-product-section">
+                            <div className="mallstocks-product-mini">
+                              <div className="mallstocks-thumb-wrap">
+                                <img
+                                  src={getProductImage(currentActiveTask)}
+                                  alt={displayTitle}
+                                  className="mallstocks-thumb"
+                                  onError={(e) => {
+                                    e.currentTarget.onerror = null;
+                                    e.currentTarget.src = getProductImage(currentActiveTask);
+                                  }}
+                                />
+                                <span className={`mallstocks-platform-tag ${(displayPlatform || 'ebay').toLowerCase().replace(/\s+/g, '')}`}>
+                                  {displayPlatform}
                                 </span>
                               </div>
-
-                              {/* Required Deposit Warning if balance insufficient */}
-                              {isRestricted ? (
-                                <div style={{
-                                  background: '#fef3c7',
-                                  border: '1px solid #fde68a',
-                                  borderRadius: '8px',
-                                  padding: '6px 10px',
-                                  fontSize: '12px',
-                                  color: '#92400e',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '6px'
-                                }}>
-                                  <Lock size={12} />
-                                  <span>Deposit Required: <strong>${minRequired.toFixed(2)} USDT</strong> (Shortfall: +${shortfall.toFixed(2)})</span>
+                              <div className="mallstocks-product-details">
+                                <div className="mallstocks-task-step-tag">
+                                  Task #{completedCount + 1} of {totalQuota}
                                 </div>
-                              ) : (
-                                <div style={{
-                                  fontSize: '12px',
-                                  color: '#16a34a',
-                                  fontWeight: '600',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '4px'
-                                }}>
-                                  <CheckCircle2 size={13} />
-                                  <span>Balance Verified • Ready to submit review</span>
+                                <h4 className="mallstocks-product-title" title={displayTitle}>
+                                  {displayTitle}
+                                </h4>
+                                <div className="mallstocks-pricing-chips">
+                                  <span className="price-chip">Order: ${(Number(currentActiveTask.price) || 0).toFixed(2)} USDT</span>
+                                  <span className="profit-chip">+{vipRate}% (+${activeCommission} USDT)</span>
                                 </div>
-                              )}
+                              </div>
                             </div>
 
-                            <div style={{ flexShrink: 0 }}>
-                              <button
-                                type="button"
-                                className="btn-primary"
-                                onClick={() => {
-                                  setSelectedTask(currentActiveTask);
-                                  setModalType('task');
-                                }}
-                                style={{
-                                  padding: '12px 22px',
-                                  fontSize: '14px',
-                                  fontWeight: '700',
-                                  borderRadius: '14px',
-                                  background: isRestricted
-                                    ? 'linear-gradient(135deg, #d97706 0%, #b45309 100%)'
-                                    : 'linear-gradient(135deg, #7c3aed 0%, #6366f1 100%)',
-                                  color: '#ffffff',
-                                  boxShadow: '0 6px 16px rgba(124, 58, 237, 0.3)',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '6px',
-                                  whiteSpace: 'nowrap'
-                                }}
-                              >
-                                {isRestricted ? (
-                                  <>
-                                    <Lock size={14} />
-                                    <span>Unlock Task (+${shortfall.toFixed(0)})</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <Zap size={14} />
-                                    <span>Start Task #{completedCount + 1} →</span>
-                                  </>
-                                )}
-                              </button>
-                            </div>
+                            <button
+                              type="button"
+                              className="mallstocks-external-link-btn"
+                              onClick={(e) => openProductUrl(currentActiveTask, e)}
+                            >
+                              <ExternalLink size={13} />
+                              <span>Open Live Listing on {displayPlatform} (New Tab)</span>
+                            </button>
                           </div>
+
+                          {/* Shortfall Alert if Restricted */}
+                          {isRestricted && (
+                            <div className="mallstocks-shortfall-alert mb-4">
+                              <Lock size={15} className="text-amber-600 flex-shrink-0" />
+                              <span>
+                                Deposit Required: <strong>${minRequired.toFixed(2)} USDT</strong> (Shortfall: +${shortfall.toFixed(2)} USDT)
+                              </span>
+                            </div>
+                          )}
+
+                          {/* Action Button: Grab The Order Immediately */}
+                          <button
+                            type="button"
+                            className={`mallstocks-grab-btn ${isRestricted ? 'restricted' : ''}`}
+                            onClick={() => {
+                              setSelectedTask(currentActiveTask);
+                              setModalType('task');
+                            }}
+                          >
+                            {isRestricted ? (
+                              <>
+                                <Lock size={18} />
+                                <span>Unlock Order (Deposit +${shortfall.toFixed(0)} USDT)</span>
+                              </>
+                            ) : (
+                              <>
+                                <Zap size={18} />
+                                <span>Grab The Order Immediately</span>
+                              </>
+                            )}
+                          </button>
                         </div>
                       );
                     })()}

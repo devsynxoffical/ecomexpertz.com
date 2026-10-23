@@ -35,7 +35,8 @@ import {
   ExternalLink,
   ShoppingBag,
   Send,
-  CheckCircle
+  CheckCircle,
+  ChevronLeft
 } from 'lucide-react';
 import { getProductUrl, openProductUrl, getProductImage } from '../utils/productUrl';
 
@@ -539,19 +540,7 @@ function TaskExecutionModal({ task, onClose }) {
   const isDepositRestricted = currentTask && minRequiredBalance > 0 && userBalance < minRequiredBalance;
   const shortfall = Math.max(0, minRequiredBalance - userBalance);
 
-  const [step, setStep] = useState(isDepositRestricted ? 'ready' : 'match'); // 'match' -> 'ready' -> 'processing' -> 'success'
-
-  // Auto transition from radar matching to ready if not restricted
-  React.useEffect(() => {
-    if (isDepositRestricted) {
-      setStep('ready');
-    } else if (step === 'match') {
-      const timer = setTimeout(() => {
-        setStep('ready');
-      }, 1000);
-      return () => clearTimeout(timer);
-    }
-  }, [step, isDepositRestricted, currentTask?.id]);
+  const [step, setStep] = useState('ready'); // 'ready' -> 'processing' -> 'success'
 
   // Current tier info
   const userVip = (user?.vipLevel || '').toLowerCase();
@@ -598,9 +587,7 @@ function TaskExecutionModal({ task, onClose }) {
   const isAlreadyDone = currentTaskIndex >= 0 && currentTaskIndex < completedCount;
   const nextTaskIndex = currentTaskIndex >= 0 && currentTaskIndex < queue.length - 1 ? currentTaskIndex + 1 : 0;
   const nextTask = queue[nextTaskIndex] || null;
-  const hasNextTask = nextTask && String(nextTask.id) !== String(currentTask?.id);
   const currentTaskNumber = currentTaskIndex >= 0 ? currentTaskIndex + 1 : (currentTask?.learningStep || 1);
-  const nextTaskNumber = currentTaskIndex >= 0 ? (currentTaskIndex + 2 <= queue.length ? currentTaskIndex + 2 : 1) : 2;
 
   const handleGoToNextTask = (targetTask = nextTask) => {
     if (!targetTask) {
@@ -611,11 +598,6 @@ function TaskExecutionModal({ task, onClose }) {
     if (setSelectedTask) setSelectedTask(targetTask);
     setProgress(0);
     setEarnedCommission(0);
-
-    const targetExplicit = Number(targetTask.requiredDeposit || targetTask.required_deposit || 0);
-    const targetMin = targetExplicit > 0 ? targetExplicit : 0;
-    const updatedBal = Number(user?.balance || 0);
-
     setStep('ready');
   };
 
@@ -677,328 +659,260 @@ function TaskExecutionModal({ task, onClose }) {
   if (!currentTask) return null;
 
   return (
-    <div className="modal-box task-modal">
-      <div className="modal-header">
-        <div className="header-with-icon">
-          <div className="icon-pill-blue">
-            <Zap size={18} />
-          </div>
-          <div>
-            <h3>Task Engine • #{currentTaskNumber}</h3>
-            <span className="sub-text">{currentTask.platform} Campaign • Item {currentTaskNumber} of {queue.length || 25}</span>
+    <div className="modal-box task-modal mallstocks-order-modal">
+      {/* 1. Purple Header Banner matching Screenshot 2 */}
+      <div className="mallstocks-modal-header">
+        <div className="mallstocks-header-nav">
+          <button
+            type="button"
+            className="mallstocks-back-btn"
+            onClick={onClose}
+            aria-label="Back"
+          >
+            <ChevronLeft size={22} strokeWidth={2.4} />
+          </button>
+          <h3 className="mallstocks-header-title">{currentTask.platform || 'Ali Express'}</h3>
+          <button
+            type="button"
+            className="mallstocks-close-btn"
+            onClick={onClose}
+            aria-label="Close"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="mallstocks-balance-wrap">
+          <span className="mallstocks-balance-caption">Account Balance :</span>
+          <div className="mallstocks-balance-amount">
+            {(Number(user?.balance) || 0).toFixed(2)} USDT
           </div>
         </div>
-        <button className="close-btn" onClick={onClose}><X size={18} /></button>
       </div>
 
-      {/* LEARNING / PROGRESSIVE STEP BANNER */}
-      {currentTask.isLearning && (
-        <div className="learning-task-top-strip mt-2">
-          <div className="learning-strip-icon">🎓</div>
-          <div className="learning-strip-text">
-            <strong>Beginner Learning Campaign (Step #{currentTask.learningStep || currentTaskNumber} of 25)</strong>
-            <span>Order Value: ${taskPrice.toFixed(2)} USDT</span>
-          </div>
-        </div>
-      )}
-
-      {step === 'match' && !isDepositRestricted && (
-        <div className="task-step-matching py-8 text-center">
-          <div className="radar-spinner-wrap">
-            <div className="radar-circle"></div>
-            <div className="radar-circle delay-1"></div>
-            <div className="radar-center-icon">
-              <TrendingUp size={28} color="#2563eb" />
+      {/* 2. Elevated Content Container */}
+      <div className="mallstocks-modal-body">
+        {step === 'processing' ? (
+          <div className="mallstocks-order-card processing-card text-center py-8">
+            <div className="processing-indicator mb-4">
+              <RefreshCw size={40} className="spin-icon text-purple-600" />
+            </div>
+            <h4 className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-1">
+              Grabbing Order from {currentTask.platform} Merchant...
+            </h4>
+            <p className="text-xs text-slate-500 max-w-xs mx-auto mb-4">
+              Synchronizing merchant rank, recording verified review, and releasing commission to balance.
+            </p>
+            <div className="mallstocks-progress-track">
+              <div className="progress-bar-bg">
+                <div className="progress-bar-fill-purple" style={{ width: `${progress}%` }} />
+              </div>
+              <span className="text-xs text-slate-500 font-semibold mt-2 block">{progress}% Synchronized</span>
             </div>
           </div>
-          <h4 className="mt-4">Matching Campaign Order #{currentTaskNumber}...</h4>
-          <p className="modal-desc">
-            Allocating verified website product review from <strong>{currentTask.platform}</strong> merchant network.
-          </p>
-        </div>
-      )}
-
-      {step === 'ready' && (
-        <div className="task-step-ready mt-3">
-          {/* 1. ALREADY COMPLETED STATE */}
-          {isAlreadyDone ? (
-            <div className="deposit-restriction-card animate-fade-in text-center p-6">
-              <div className="lock-icon-hero" style={{ background: '#ecfdf5', color: '#10b981', margin: '0 auto 12px auto' }}>
-                <CheckCircle2 size={36} />
+        ) : step === 'success' ? (
+          <div className="mallstocks-order-card success-card text-center py-6 animate-fade-in">
+            <div className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-500 flex items-center justify-center mx-auto mb-3 shadow-sm">
+              <CheckCircle2 size={36} />
+            </div>
+            <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100 mb-1">
+              Order Grabbed Successfully!
+            </h3>
+            <div className="text-2xl font-black text-emerald-600 my-2">
+              +${(typeof earnedCommission === 'number' ? earnedCommission : parseFloat(earnedCommission || calculatedCommission || 0)).toFixed(2)} USDT
+            </div>
+            <p className="text-xs text-slate-500 max-w-xs mx-auto mb-3">
+              Commission has been credited directly to your account balance.
+            </p>
+            <div className="p-2.5 rounded-xl bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 text-xs font-semibold">
+              Returning to task console in {countdown}s...
+            </div>
+          </div>
+        ) : isAlreadyDone ? (
+          <div className="mallstocks-order-card text-center py-6 animate-fade-in">
+            <div className="w-14 h-14 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto mb-3">
+              <CheckCircle2 size={32} />
+            </div>
+            <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">
+              Task #{currentTaskNumber} Already Completed
+            </h3>
+            <p className="text-xs text-slate-500 mt-1 mb-4">
+              You have already submitted this task and your commission has been credited.
+            </p>
+            <button
+              type="button"
+              className="mallstocks-grab-btn"
+              onClick={() => {
+                const activeTask = queue[completedCount];
+                if (activeTask) handleGoToNextTask(activeTask);
+                else onClose();
+              }}
+            >
+              <span>Go to Active Task #{completedCount + 1}</span>
+            </button>
+          </div>
+        ) : isLockedSequential ? (
+          <div className="mallstocks-order-card text-center py-6 animate-fade-in">
+            <div className="w-14 h-14 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center mx-auto mb-3">
+              <Lock size={30} />
+            </div>
+            <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">
+              Task #{currentTaskNumber} is Locked
+            </h3>
+            <p className="text-xs text-slate-500 mt-1 mb-4">
+              Tasks unlock strictly 1 by 1. Please complete <strong>Task #{completedCount + 1}</strong> first.
+            </p>
+            <button
+              type="button"
+              className="mallstocks-grab-btn"
+              onClick={() => {
+                const activeTask = queue[completedCount];
+                if (activeTask) handleGoToNextTask(activeTask);
+                else onClose();
+              }}
+            >
+              <span>Switch to Active Task #{completedCount + 1}</span>
+            </button>
+          </div>
+        ) : (
+          /* MAIN 6-STAT ORDER CARD MATCHING SCREENSHOT 2 (ELEVATED & BETTER) */
+          <div className="mallstocks-order-card animate-fade-in">
+            {/* 6 Metric Grid (2 columns x 3 rows) */}
+            <div className="mallstocks-stats-grid">
+              {/* Row 1 */}
+              <div className="mallstocks-stat-box">
+                <div className="mallstocks-stat-val">{completedCount}</div>
+                <div className="mallstocks-stat-label">Today's Time</div>
               </div>
-              <h3 className="mt-2 font-bold text-emerald-700" style={{ fontSize: '1.2rem' }}>
-                Task #{currentTaskNumber} Already Completed
-              </h3>
-              <p className="modal-desc mt-2" style={{ color: '#64748b', fontSize: '0.92rem' }}>
-                You have already submitted this task and your commission has been credited to your balance.
-              </p>
-              <div className="restriction-actions-grid mt-4">
-                <button
-                  type="button"
-                  className="btn-primary w-full"
-                  onClick={() => {
-                    const activeTask = queue[completedCount];
-                    if (activeTask) {
-                      handleGoToNextTask(activeTask);
-                    } else {
-                      onClose();
-                    }
-                  }}
-                >
-                  <Zap size={15} />
-                  <span>Go to Task #{completedCount + 1} (Active Step)</span>
-                </button>
+              <div className="mallstocks-stat-box">
+                <div className="mallstocks-stat-val">
+                  {(Number(user?.totalEarnings ?? user?.total_earnings ?? 0)).toFixed(2)} USDT
+                </div>
+                <div className="mallstocks-stat-label">Total commission</div>
+              </div>
+
+              {/* Row 2 */}
+              <div className="mallstocks-stat-box">
+                <div className={`mallstocks-stat-val ${shortfall > 0 ? 'text-amber-500' : ''}`}>
+                  {shortfall > 0 ? `${shortfall.toFixed(2)} USDT` : '0 USDT'}
+                </div>
+                <div className="mallstocks-stat-label">Cash gap between task</div>
+              </div>
+              <div className="mallstocks-stat-box">
+                <div className="mallstocks-stat-val">
+                  {(Number(user?.yesterdayEarnings || 0)).toFixed(2)} USDT
+                </div>
+                <div className="mallstocks-stat-label">Yesterday's buy commission</div>
+              </div>
+
+              {/* Row 3 */}
+              <div className="mallstocks-stat-box">
+                <div className="mallstocks-stat-val">
+                  {(Number(user?.teamCommission || user?.teamEarnings || 0)).toFixed(2)} USDT
+                </div>
+                <div className="mallstocks-stat-label">Yesterday's team commission</div>
+              </div>
+              <div className="mallstocks-stat-box">
+                <div className="mallstocks-stat-val text-emerald-500 font-bold">
+                  +{calculatedCommission.toFixed(2)} USDT
+                </div>
+                <div className="mallstocks-stat-label">Order Commission</div>
               </div>
             </div>
-          ) : isLockedSequential ? (
-            /* 2. LOCKED SEQUENTIAL BARRIER: Shown when user tries to access a task ahead of their completed sequence */
-            <div className="deposit-restriction-card animate-fade-in text-center p-6">
-              <div className="lock-icon-hero" style={{ background: '#f1f5f9', color: '#64748b', margin: '0 auto 12px auto' }}>
-                <Lock size={36} />
-              </div>
-              <h3 className="mt-2 font-bold text-slate-800 dark:text-slate-100" style={{ fontSize: '1.2rem' }}>
-                Task #{currentTaskNumber} is Locked
-              </h3>
-              <p className="modal-desc mt-2" style={{ color: '#64748b', fontSize: '0.92rem' }}>
-                Tasks unlock strictly 1 by 1. Please complete <strong>Task #{completedCount + 1}</strong> first to unlock this task sequentially.
-              </p>
-              <div className="restriction-actions-grid mt-4">
-                <button
-                  type="button"
-                  className="btn-primary w-full"
-                  onClick={() => {
-                    const activeTask = queue[completedCount];
-                    if (activeTask) {
-                      handleGoToNextTask(activeTask);
-                    } else {
-                      onClose();
-                    }
-                  }}
-                >
-                  <Zap size={15} />
-                  <span>Switch to Task #{completedCount + 1} (Active Step)</span>
-                </button>
-              </div>
-            </div>
-          ) : isDepositRestricted ? (
-            <div className="deposit-restriction-card animate-fade-in">
-              <div className="lock-icon-hero">
-                <Lock size={36} color="#d97706" />
-              </div>
-              <h3 className="mt-2 text-amber-warning font-bold">Deposit Required to Unlock Task</h3>
-              <p className="modal-desc mt-1">
-                Your available balance is <strong>${userBalance.toFixed(2)} USDT</strong>.
-                This task requires a minimum balance of <strong>${minRequiredBalance.toFixed(2)} USDT</strong>.
-                Please deposit the required funds to unlock and complete this campaign task.
-              </p>
 
-              <div className="restriction-breakdown-box mt-3">
-                <div className="breakdown-row">
-                  <span>Required Account Balance:</span>
-                  <strong>${minRequiredBalance.toFixed(2)} USDT</strong>
-                </div>
-                <div className="breakdown-row">
-                  <span>Your Current Balance:</span>
-                  <span className="text-red-danger font-bold">${userBalance.toFixed(2)} USDT</span>
-                </div>
-                <div className="breakdown-divider"></div>
-                <div className="breakdown-row total">
-                  <span>Required Deposit to Unlock:</span>
-                  <strong className="text-primary-brand">+${shortfall.toFixed(2)} USDT</strong>
-                </div>
-              </div>
-
-              <div className="restriction-actions-grid mt-4">
-                <button
-                  type="button"
-                  className="btn-primary w-full"
-                  onClick={() => {
-                    onClose();
-                    setModalType('deposit');
-                  }}
-                >
-                  <Wallet size={15} />
-                  <span>Deposit USDT to Unlock Task (+${shortfall.toFixed(2)})</span>
-                </button>
-              </div>
-
-              {/* Direct Store Link Action */}
-              <div className="task-external-action-bar mt-2">
-                <button
-                  type="button"
-                  className="btn-visit-store-link"
-                  onClick={(e) => openProductUrl(currentTask, e)}
-                >
-                  <ExternalLink size={14} />
-                  <span>Open Live Listing on {currentTask.platform} (New Tab)</span>
-                </button>
-              </div>
-
-              <div className="note-sub-text mt-3 text-center">
-                <span>Deposit via TRC20, ERC20 or BEP20 to automatically unlock this campaign task.</span>
-              </div>
-            </div>
-          ) : (
-            <>
-              <div className="task-preview-card" onClick={(e) => openProductUrl(currentTask, e)} style={{ cursor: 'pointer' }} title={`Click to view live listing on ${currentTask.platform}`}>
-                <div className="task-img-wrap">
+            {/* Elevated Product Info Showcase ("Better than plain mallstocks") */}
+            <div className="mallstocks-product-section">
+              <div className="mallstocks-product-mini">
+                <div className="mallstocks-thumb-wrap">
                   <img
                     src={getProductImage(currentTask)}
                     alt={currentTask.title}
-                    className="task-img"
+                    className="mallstocks-thumb"
                     onError={(e) => {
                       e.currentTarget.onerror = null;
                       e.currentTarget.src = getProductImage(currentTask);
                     }}
                   />
-                  <span className={`platform-badge-pill ${(currentTask?.platform || 'ebay').toLowerCase()}`}>
-                    {currentTask?.platform || 'eBay'}
+                  <span className={`mallstocks-platform-tag ${(currentTask.platform || 'ebay').toLowerCase().replace(/\s+/g, '')}`}>
+                    {currentTask.platform || 'eBay'}
                   </span>
-                  <div className="task-img-hover-overlay">
-                    <ExternalLink size={16} />
-                    <span>View Product ↗</span>
-                  </div>
                 </div>
-                <div className="task-info">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <span className="task-tag-chip">{currentTask.category || 'Promotional Campaign'}</span>
-                      <span className="badge-learning">Task #{currentTaskNumber}</span>
-                    </div>
-                    <span className="live-link-pill">
-                      <span>Live Item</span>
-                      <ExternalLink size={11} />
-                    </span>
+                <div className="mallstocks-product-details">
+                  <div className="mallstocks-task-step-tag">
+                    Task #{currentTaskNumber} of {queue.length || 25}
                   </div>
-                  <h4 className="task-title-clamp">{currentTask.title}</h4>
-                  <div className="task-specs-row">
-                    <div>
-                      <span className="spec-label">Listing Value</span>
-                      <strong className="spec-val">${parseFloat(currentTask.price).toFixed(2)}</strong>
-                    </div>
-                    <div>
-                      <span className="spec-label">Commission Rate</span>
-                      <strong className="spec-rate">{commissionRate}%</strong>
-                    </div>
-                    <div>
-                      <span className="spec-label">Net Profit</span>
-                      <strong className="spec-profit">+${calculatedCommission.toFixed(2)} USDT</strong>
-                    </div>
+                  <h4 className="mallstocks-product-title" title={currentTask.title}>
+                    {currentTask.title}
+                  </h4>
+                  <div className="mallstocks-pricing-chips">
+                    <span className="price-chip">Order: ${(Number(currentTask.price) || 0).toFixed(2)} USDT</span>
+                    <span className="profit-chip">+{commissionRate}% (+${calculatedCommission.toFixed(2)} USDT)</span>
                   </div>
                 </div>
               </div>
 
-              {/* Direct Store Link Action */}
-              <div className="task-external-action-bar mt-2">
-                <button
-                  type="button"
-                  className="btn-visit-store-link"
-                  onClick={(e) => openProductUrl(currentTask, e)}
-                >
-                  <ExternalLink size={14} />
-                  <span>Open Live Listing on {currentTask.platform} (New Tab)</span>
-                </button>
-              </div>
-
-              <div className="daily-quota-banner mt-3">
-                <div className="quota-text">
-                  <span>Daily Tasks: <strong>{user.dailyCompleted || 0} / {user.dailyQuota || 25}</strong></span>
-                  <span className="quota-percent">{Math.round(((user.dailyCompleted || 0) / (user.dailyQuota || 25)) * 100)}% Complete</span>
-                </div>
-                <div className="quota-bar">
-                  <div
-                    className="quota-fill"
-                    style={{ width: `${Math.min(100, ((user.dailyCompleted || 0) / (user.dailyQuota || 25)) * 100)}%` }}
-                  ></div>
-                </div>
-              </div>
-
-              <div className="order-disclaimer mt-3">
-                <Shield size={14} />
-                <span>Promoting this website listing boosts merchant search visibility. Commission will be instantly released to your wallet.</span>
-              </div>
-
-              <button className="btn-primary w-full mt-4" onClick={handleSubmitTask}>
-                <span>Submit Rating & Claim +${calculatedCommission.toFixed(2)} USDT</span>
-                <ArrowRight size={16} />
+              <button
+                type="button"
+                className="mallstocks-external-link-btn"
+                onClick={(e) => openProductUrl(currentTask, e)}
+              >
+                <ExternalLink size={13} />
+                <span>Open Live Listing on {currentTask.platform} (New Tab)</span>
               </button>
-            </>
-          )}
-        </div>
-      )}
-
-      {step === 'processing' && (
-        <div className="task-step-processing py-8 text-center">
-          <div className="processing-indicator">
-            <RefreshCw size={36} className="spin-icon" color="#2563eb" />
-          </div>
-          <h4 className="mt-4">Synchronizing with {currentTask.platform} API...</h4>
-          <p className="modal-desc">
-            Processing promotional score, updating merchant search rank, and crediting commission.
-          </p>
-          <div className="progress-bar-wrap mt-4">
-            <div className="progress-bar-fill" style={{ width: `${progress}%` }}></div>
-          </div>
-          <span className="progress-label">{progress}% completed</span>
-        </div>
-      )}
-
-      {step === 'success' && (
-        <div className="task-step-success py-4 text-center animate-fade-in">
-          <div className="success-badge-large">
-            <Star size={42} fill="#ffb703" color="#ffb703" />
-          </div>
-          <h3 className="mt-3">Task #{currentTaskNumber} Completed!</h3>
-          <p className="modal-desc">Your commission has been credited directly to your available balance.</p>
-
-          <div className="profit-highlight-card mt-3">
-            <span className="highlight-label">Commission Earned</span>
-            <div className="profit-amount">+${(typeof earnedCommission === 'number' ? earnedCommission : parseFloat(earnedCommission || calculatedCommission || 0)).toFixed(2)} <span className="highlight-unit">USDT</span></div>
-            <div className="tier-info-sub">
-              <span>New Available Balance: <strong>${(Number(user?.balance) || 0).toFixed(2)} USDT</strong></span>
             </div>
-          </div>
 
-          {/* Return notice */}
-          <div className="mt-4 p-3 border rounded-xl bg-slate-50 dark:bg-slate-900/50 text-center">
-            <span className="text-xs text-slate-500 font-medium">
-              Task completed successfully! Returning to tasks in {countdown}s...
-            </span>
-          </div>
+            {/* Daily Task Progress Bar */}
+            <div className="mallstocks-progress-track mb-4">
+              <div className="progress-info-row">
+                <span>Daily Tasks: <strong>{completedCount} / {queue.length || 25}</strong></span>
+                <span className="progress-pct font-bold">
+                  {Math.round((completedCount / (queue.length || 25)) * 100)}% Complete
+                </span>
+              </div>
+              <div className="progress-bar-bg">
+                <div
+                  className="progress-bar-fill-purple"
+                  style={{ width: `${Math.min(100, (completedCount / (queue.length || 25)) * 100)}%` }}
+                />
+              </div>
+            </div>
 
-          <div className="modal-btn-row mt-4">
-            <button
-              type="button"
-              className="btn-primary w-full"
-              onClick={onClose}
-            >
-              <span>Back to Tasks</span>
-              <ArrowRight size={16} />
-            </button>
-          </div>
+            {/* Shortfall Alert if Deposit Restricted */}
+            {isDepositRestricted && (
+              <div className="mallstocks-shortfall-alert mb-4">
+                <Lock size={15} className="text-amber-600 flex-shrink-0" />
+                <span>
+                  Requires <strong>${minRequiredBalance.toFixed(2)} USDT</strong> balance. Deposit <strong>+${shortfall.toFixed(2)} USDT</strong> to unlock.
+                </span>
+              </div>
+            )}
 
-          <div className="flex items-center justify-between gap-2 mt-3">
-            <button
-              type="button"
-              className="btn-outline text-xs py-2 w-full"
-              onClick={() => {
-                onClose();
-                setCurrentView('dashboard');
-                setDashboardTab('records');
-              }}
-            >
-              View in Records
-            </button>
-            <button
-              type="button"
-              className="btn-outline text-xs py-2 w-full"
-              onClick={onClose}
-            >
-              Exit to Dashboard
-            </button>
+            {/* Large Full-Width Pill Action Button matching Screenshot 2 */}
+            {isDepositRestricted ? (
+              <button
+                type="button"
+                className="mallstocks-grab-btn restricted"
+                onClick={() => {
+                  onClose();
+                  setModalType('deposit');
+                }}
+              >
+                <Lock size={18} />
+                <span>Deposit +${shortfall.toFixed(2)} USDT to Unlock Order</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="mallstocks-grab-btn"
+                onClick={handleSubmitTask}
+              >
+                <Zap size={18} />
+                <span>Grab The Order Immediately</span>
+              </button>
+            )}
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
