@@ -122,6 +122,21 @@ function getLocalDatabase() {
         }
       }
 
+      // Ensure VIP tiers have complete min and max balance settings
+      if (!parsed.vipTiers || !Array.isArray(parsed.vipTiers) || parsed.vipTiers.length < 3) {
+        parsed.vipTiers = INITIAL_VIP_TIERS;
+        changed = true;
+      } else {
+        parsed.vipTiers = parsed.vipTiers.map(t => {
+          const init = INITIAL_VIP_TIERS.find(it => it.id === t.id || it.name.toLowerCase() === (t.name || '').toLowerCase());
+          if (init && (t.maxBalance === undefined || t.max_balance === undefined)) {
+            changed = true;
+            return { ...init, ...t, maxBalance: t.maxBalance ?? init.maxBalance };
+          }
+          return t;
+        });
+      }
+
       if (changed) {
         saveLocalDatabase(parsed);
       }

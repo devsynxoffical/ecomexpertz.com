@@ -379,6 +379,9 @@ export const api = {
   },
 
   updateVipTier: async (id, updates) => {
+    try {
+      await supabaseService.updateVipTier(id, updates);
+    } catch (e) {}
     return handleLocalApi(`/vip-tiers/${id}`, { method: 'PUT', body: JSON.stringify(updates) });
   },
 

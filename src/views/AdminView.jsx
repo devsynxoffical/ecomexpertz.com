@@ -4572,10 +4572,46 @@ export default function AdminView() {
           <div className="admin-tiers animate-fade-in">
             <div className="admin-page-header">
               <div className="admin-page-title-wrap">
-                <h1 className="admin-page-title">VIP Tier Rules & Yield Matrices</h1>
+                <h1 className="admin-page-title">VIP Tier Rules & Progressive Yield Settings</h1>
                 <p className="admin-page-subtitle">
-                  Adjust required minimum qualification balances, daily task allocation quotas, and commission formulas per VIP tier.
+                  Configure qualification deposit ranges (Min & Max Balance), progressive locking rules, daily task allocation quotas, and commission rates.
                 </p>
+              </div>
+            </div>
+
+            {/* PROGRESSIVE TIER EXPLAINER BANNER */}
+            <div style={{
+              background: 'linear-gradient(135deg, #eff6ff 0%, #e0e7ff 100%)',
+              border: '1px solid #c7d2fe',
+              borderRadius: '16px',
+              padding: '16px 20px',
+              marginBottom: '24px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '14px'
+            }}>
+              <div style={{
+                width: '42px',
+                height: '42px',
+                borderRadius: '12px',
+                background: '#4f46e5',
+                color: '#fff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0
+              }}>
+                <Sparkles size={20} />
+              </div>
+              <div>
+                <strong style={{ fontSize: '13px', color: '#1e1b4b', display: 'block', marginBottom: '3px' }}>
+                  Automatic Progressive Tier Locking Rules (Active System)
+                </strong>
+                <span style={{ fontSize: '12px', color: '#4338ca', lineHeight: 1.5 }}>
+                  • <strong>eBay:</strong> 0 - 499 USDT (4% Yield) • As soon as deposit crosses 499 USDT, eBay locks and Walmart opens.<br />
+                  • <strong>Walmart:</strong> 500 - 899 USDT (8% Yield) • Once deposit crosses 899 USDT, Walmart locks and Temu opens.<br />
+                  • <strong>Temu:</strong> 900+ USDT (12% Yield) • Maximum VIP tier for large balances.
+                </span>
               </div>
             </div>
 
@@ -4592,6 +4628,7 @@ export default function AdminView() {
                           'Multi-Sig Vault Protection'
                         ]);
                 const tierMinBal = tier.minBalance ?? tier.min_balance ?? 0;
+                const tierMaxBal = tier.maxBalance ?? tier.max_balance ?? (tier.id === 'tier_temu' ? 99999 : (tier.id === 'tier_walmart' ? 899 : 499));
                 const tierCommRate = tier.commissionRate ?? tier.commission_rate ?? 4;
                 const tierDailyTasks = tier.dailyTasks ?? tier.daily_tasks ?? 25;
 
@@ -4616,6 +4653,20 @@ export default function AdminView() {
                           className="admin-form-input text-xs tabular-nums"
                           onChange={(e) => adminUpdateTier && adminUpdateTier(tier.id, { minBalance: parseFloat(e.target.value) || 0 })}
                         />
+                      </div>
+
+                      <div className="admin-form-group">
+                        <label className="admin-form-label text-xs font-semibold text-slate-700">Max Balance to Qualify (USDT)</label>
+                        <input
+                          type="number"
+                          defaultValue={tierMaxBal}
+                          className="admin-form-input text-xs tabular-nums"
+                          placeholder={tier.id === 'tier_temu' ? 'Unlimited (99999)' : 'e.g. 499'}
+                          onChange={(e) => adminUpdateTier && adminUpdateTier(tier.id, { maxBalance: parseFloat(e.target.value) || 0 })}
+                        />
+                        <span className="text-[10px] text-slate-400 mt-0.5">
+                          When deposit crosses this ({tierMaxBal} USDT), {tier.name} locks and next tier unlocks.
+                        </span>
                       </div>
 
                       <div className="admin-form-group">

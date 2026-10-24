@@ -30,7 +30,13 @@ export default function PlatformTasksView({ platform = 'eBay', onBack }) {
     tasks,
     setSelectedTask,
     addNotification,
-    supportSettings
+    supportSettings,
+    vipTiers,
+    userActiveTier,
+    openPlatformTasks,
+    getTierProgressAndStatus,
+    getUserActiveTier,
+    getEffectiveDepositOrBalance
   } = useApp();
 
   const [requestLoading, setRequestLoading] = useState(false);
@@ -38,6 +44,12 @@ export default function PlatformTasksView({ platform = 'eBay', onBack }) {
   const [showPendingModal, setShowPendingModal] = useState(false);
 
   const displayPlatform = platform || 'eBay';
+
+  const tiersList = Array.isArray(vipTiers) && vipTiers.length > 0 ? vipTiers : [];
+  const targetTier = tiersList.find(t => (t.platform || t.name || '').toLowerCase() === displayPlatform.toLowerCase());
+  const effectiveAmt = getEffectiveDepositOrBalance ? getEffectiveDepositOrBalance(user) : Math.max(Number(user?.totalDeposit || 0), Number(user?.balance || 0));
+  const activeTier = userActiveTier || (getUserActiveTier ? getUserActiveTier(tiersList, user) : { name: 'eBay' });
+  const tierStatus = targetTier && getTierProgressAndStatus ? getTierProgressAndStatus(targetTier, tiersList, user) : null;
 
   // 1. Resolve assigned tasks queue strictly from user object or user-specific cache assigned by admin
   let assignedQueue = [];
@@ -119,6 +131,91 @@ export default function PlatformTasksView({ platform = 'eBay', onBack }) {
 
       {/* 2. MAIN SHEET */}
       <div className="platform-tasks-sheet">
+        {/* PROGRESSIVE TIER LOCK ALERT */}
+        {tierStatus?.isSurpassed && (
+          <div style={{
+            background: '#fff1f2',
+            border: '1px solid #fecdd3',
+            borderRadius: '16px',
+            padding: '14px 18px',
+            marginBottom: '16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '12px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <Lock size={20} className="text-rose-600 flex-shrink-0" />
+              <div>
+                <strong style={{ fontSize: '13px', color: '#9f1239', display: 'block' }}>
+                  {displayPlatform} Tier Locked (Surpassed)
+                </strong>
+                <span style={{ fontSize: '12px', color: '#be123c' }}>
+                  Your deposit/balance (${effectiveAmt.toFixed(2)}) has unlocked <strong>{activeTier.name}</strong>. Please switch to {activeTier.name}!
+                </span>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => openPlatformTasks && openPlatformTasks(activeTier.name)}
+              style={{
+                padding: '8px 16px',
+                fontSize: '12px',
+                background: '#e11d48',
+                color: '#fff',
+                borderRadius: '10px',
+                fontWeight: '700'
+              }}
+            >
+              Switch to {activeTier.name} →
+            </button>
+          </div>
+        )}
+
+        {tierStatus?.status === 'locked_below' && (
+          <div style={{
+            background: '#eff6ff',
+            border: '1px solid #bfdbfe',
+            borderRadius: '16px',
+            padding: '14px 18px',
+            marginBottom: '16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '12px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <Lock size={20} className="text-blue-600 flex-shrink-0" />
+              <div>
+                <strong style={{ fontSize: '13px', color: '#1e3a8a', display: 'block' }}>
+                  {displayPlatform} Tier Locked
+                </strong>
+                <span style={{ fontSize: '12px', color: '#1d4ed8' }}>
+                  Requires minimum deposit/balance of <strong>${targetTier?.minBalance || 500} USDT</strong> to unlock.
+                </span>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => setModalType('deposit')}
+              style={{
+                padding: '8px 16px',
+                fontSize: '12px',
+                background: '#0284c7',
+                color: '#fff',
+                borderRadius: '10px',
+                fontWeight: '700'
+              }}
+            >
+              Deposit to Unlock →
+            </button>
+          </div>
+        )}
+
         {!isAssigned ? (
           /* STATE A: NO TASKS ASSIGNED YET -> SHOW REQUEST TASK PACKAGE FLOW */
           isPending ? (

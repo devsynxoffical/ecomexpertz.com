@@ -80,6 +80,78 @@ export const deduplicateRecords = (recordsList) => {
   return result;
 };
 
+// ==========================================
+// VIP TIER PROGRESSION HELPERS (eBay 0-499 -> Walmart 500-899 -> Temu 900+)
+// ==========================================
+export const getEffectiveDepositOrBalance = (targetUser) => {
+  if (!targetUser) return 0;
+  const dep = Number(targetUser.totalDeposit ?? targetUser.total_deposit ?? 0);
+  const bal = Number(targetUser.balance ?? 0);
+  return Math.max(dep, bal);
+};
+
+export const getTierProgressAndStatus = (tier, tiers, targetUser) => {
+  const currentAmt = getEffectiveDepositOrBalance(targetUser);
+  const min = Number(tier?.minBalance ?? tier?.min_balance ?? 0);
+  const max = Number(
+    tier?.maxBalance ??
+    tier?.max_balance ??
+    (tier?.name?.toLowerCase() === 'temu' ? 999999 : (tier?.name?.toLowerCase() === 'walmart' ? 899 : 499))
+  );
+
+  if (currentAmt < min) {
+    return {
+      isUnlocked: false,
+      isSurpassed: false,
+      status: 'locked_below',
+      badgeText: 'Locked',
+      message: `Deposit required: minimum $${min} USDT to unlock`,
+      gap: Math.max(0, min - currentAmt)
+    };
+  }
+
+  if (currentAmt > max) {
+    return {
+      isUnlocked: false,
+      isSurpassed: true,
+      status: 'locked_surpassed',
+      badgeText: 'Locked (Tier Surpassed)',
+      message: `Tier locked: Deposit/balance ($${currentAmt.toFixed(2)}) has crossed $${max} USDT`,
+      gap: 0
+    };
+  }
+
+  return {
+    isUnlocked: true,
+    isSurpassed: false,
+    status: 'active',
+    badgeText: 'Active',
+    message: 'Active tier ready for tasks',
+    gap: 0
+  };
+};
+
+export const getUserActiveTier = (tiers, targetUser) => {
+  const currentAmt = getEffectiveDepositOrBalance(targetUser);
+  const list = Array.isArray(tiers) && tiers.length > 0 ? tiers : INITIAL_VIP_TIERS;
+
+  const sorted = [...list].sort((a, b) => {
+    const minA = Number(a.minBalance ?? a.min_balance ?? 0);
+    const minB = Number(b.minBalance ?? b.min_balance ?? 0);
+    return minA - minB;
+  });
+
+  for (let i = 0; i < sorted.length; i++) {
+    const t = sorted[i];
+    const min = Number(t.minBalance ?? t.min_balance ?? 0);
+    const max = Number(t.maxBalance ?? t.max_balance ?? (i === sorted.length - 1 ? Infinity : 999999));
+    if (currentAmt >= min && (i === sorted.length - 1 || currentAmt <= max)) {
+      return t;
+    }
+  }
+  return sorted[0];
+};
+
 const AppContext = createContext();
 
 export function AppProvider({ children }) {
@@ -120,8 +192,24 @@ export function AppProvider({ children }) {
   }, [tasks]);
 
   const [vipTiers, setVipTiers] = useState(() => {
-    const saved = localStorage.getItem('websynx_vip_tiers') || localStorage.getItem('seox_vip_tiers');
-    return saved ? JSON.parse(saved) : INITIAL_VIP_TIERS;
+    try {
+      const saved = localStorage.getItem('websynx_vip_tiers') || localStorage.getItem('seox_vip_tiers');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length >= 3) {
+          return parsed.map(t => {
+            const init = INITIAL_VIP_TIERS.find(it => it.id === t.id || it.name.toLowerCase() === (t.name || '').toLowerCase());
+            return {
+              ...init,
+              ...t,
+              minBalance: Number(t.minBalance ?? t.min_balance ?? init?.minBalance ?? 0),
+              maxBalance: t.maxBalance !== undefined ? Number(t.maxBalance) : (t.max_balance !== undefined ? Number(t.max_balance) : (init?.maxBalance ?? 99999))
+            };
+          });
+        }
+      }
+    } catch (e) {}
+    return INITIAL_VIP_TIERS;
   });
 
   const [adminUsers, setAdminUsers] = useState(() => {
@@ -469,16 +557,73 @@ export function AppProvider({ children }) {
     }
   }, [isLoggedIn, currentView]);
 
+  // Compute active tier dynamically based on progressive deposit/balance thresholds
+  const userActiveTier = useMemo(() => {
+    return getUserActiveTier(vipTiers, user);
+  }, [vipTiers, user?.balance, user?.totalDeposit, user?.total_deposit]);
+
+  // Auto-sync user's vipLevel to their qualifying deposit/balance tier
+  useEffect(() => {
+    if (!user || user.isGuest) return;
+    const activeTier = getUserActiveTier(vipTiers, user);
+    if (activeTier && activeTier.name && user.vipLevel !== activeTier.name) {
+      setUser(prev => {
+        if (!prev) return prev;
+        const updated = {
+          ...prev,
+          vipLevel: activeTier.name,
+          vipTier: activeTier.name,
+          vip_level: activeTier.name,
+          vipTierId: activeTier.id,
+          vip_tier_id: activeTier.id
+        };
+        try {
+          localStorage.setItem('websynx_user', JSON.stringify(updated));
+        } catch (e) {}
+        return updated;
+      });
+    }
+  }, [user?.balance, user?.totalDeposit, user?.total_deposit, vipTiers]);
+
   const [dashboardTab, setDashboardTab] = useState('home'); // 'home' | 'menu' | 'records' | 'support' | 'mine' | 'platform-tasks'
   const [activePlatform, setActivePlatform] = useState('eBay');
   const [darkMode, setDarkMode] = useState(false);
   const [language, setLanguage] = useState('en');
 
   const openPlatformTasks = useCallback((platform = 'eBay') => {
+    const list = Array.isArray(vipTiers) && vipTiers.length > 0 ? vipTiers : INITIAL_VIP_TIERS;
+    const targetTier = list.find(
+      t => (t.platform || t.name || '').toLowerCase() === (platform || '').toLowerCase()
+    );
+
+    if (targetTier && user && !user.isGuest) {
+      const tierStatus = getTierProgressAndStatus(targetTier, list, user);
+      if (tierStatus.isSurpassed) {
+        const activeTier = getUserActiveTier(list, user);
+        addNotification(
+          `${targetTier.name} Tier Locked`,
+          `Your deposit/balance has surpassed ${targetTier.name} ($${targetTier.maxBalance || 499}). You have unlocked ${activeTier.name}! Redirecting to ${activeTier.name}...`
+        );
+        setActivePlatform(activeTier.name || 'Walmart');
+        setDashboardTab('platform-tasks');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
+      if (tierStatus.status === 'locked_below') {
+        const min = Number(targetTier.minBalance ?? targetTier.min_balance ?? 0);
+        addNotification(
+          `${targetTier.name} Tier Locked`,
+          `${targetTier.name} requires a minimum deposit of $${min} USDT. Deposit now to unlock!`
+        );
+        setModalType('deposit');
+        return;
+      }
+    }
+
     setActivePlatform(platform);
     setDashboardTab('platform-tasks');
     window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, []);
+  }, [vipTiers, user, addNotification]);
 
   const [recordsSubTab, setRecordsSubTab] = useState('Transactions');
   const [recordsStatusFilter, setRecordsStatusFilter] = useState('All');
@@ -1569,9 +1714,27 @@ export function AppProvider({ children }) {
   const adminUpdateTier = async (tierId, updates) => {
     try {
       const res = await api.updateVipTier(tierId, updates);
-      setVipTiers(prev => prev.map(t => t.id === tierId ? res.tier : t));
+      const updated = res?.tier || res;
+      setVipTiers(prev => {
+        const next = prev.map(t => (t.id === tierId || t.name === tierId) ? { ...t, ...updates, ...(updated || {}) } : t);
+        try {
+          localStorage.setItem('websynx_vip_tiers', JSON.stringify(next));
+        } catch (e) {}
+        return next;
+      });
+      addNotification('VIP Tier Updated', `Settings for ${tierId} updated successfully.`);
+      return updated;
     } catch (err) {
       console.error('adminUpdateTier failed:', err);
+      // Fallback local update
+      setVipTiers(prev => {
+        const next = prev.map(t => (t.id === tierId || t.name === tierId) ? { ...t, ...updates } : t);
+        try {
+          localStorage.setItem('websynx_vip_tiers', JSON.stringify(next));
+        } catch (e) {}
+        return next;
+      });
+      addNotification('VIP Tier Updated', `Settings for ${tierId} updated locally.`);
     }
   };
 
@@ -2368,7 +2531,11 @@ export function AppProvider({ children }) {
         depositRefreshNotice,
         setDepositRefreshNotice,
         refreshUserBalance,
-        isRefreshingBalance
+        isRefreshingBalance,
+        userActiveTier,
+        getEffectiveDepositOrBalance,
+        getTierProgressAndStatus,
+        getUserActiveTier
       }}
     >
       {children}

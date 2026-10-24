@@ -1262,11 +1262,57 @@ function ScrollingActivityStream() {
 // 2. TAB: MENU / VIP TIERS (Matching Screenshot 3)
 // ==========================================
 function TabMenu() {
-  const { user, vipTiers, tasks, setSelectedTask, setModalType, openPlatformTasks } = useApp();
+  const {
+    user,
+    vipTiers,
+    tasks,
+    setSelectedTask,
+    setModalType,
+    openPlatformTasks,
+    addNotification,
+    userActiveTier,
+    getTierProgressAndStatus,
+    getUserActiveTier,
+    getEffectiveDepositOrBalance
+  } = useApp();
 
-  // Determine current tier progress
-  const targetWalmart = 500;
-  const progressPercent = Math.min(100, Math.round(((Number(user?.balance) || 0) / targetWalmart) * 100));
+  const tiersList = Array.isArray(vipTiers) && vipTiers.length > 0 ? vipTiers : INITIAL_VIP_TIERS;
+  const effectiveAmt = getEffectiveDepositOrBalance ? getEffectiveDepositOrBalance(user) : Math.max(Number(user?.totalDeposit || 0), Number(user?.balance || 0));
+  const activeTier = userActiveTier || (getUserActiveTier ? getUserActiveTier(tiersList, user) : tiersList[0]);
+
+  // Extract the 3 tiers
+  const ebayTier = tiersList.find(t => (t.name || t.platform || '').toLowerCase() === 'ebay') || tiersList[0] || { minBalance: 0, maxBalance: 499, commissionRate: 4 };
+  const walmartTier = tiersList.find(t => (t.name || t.platform || '').toLowerCase() === 'walmart') || tiersList[1] || { minBalance: 500, maxBalance: 899, commissionRate: 8 };
+  const temuTier = tiersList.find(t => (t.name || t.platform || '').toLowerCase() === 'temu') || tiersList[2] || { minBalance: 900, maxBalance: 99999, commissionRate: 12 };
+
+  // Calculate status for each tier
+  const ebayStatus = getTierProgressAndStatus ? getTierProgressAndStatus(ebayTier, tiersList, user) : { isUnlocked: effectiveAmt <= (ebayTier.maxBalance || 499), isSurpassed: effectiveAmt > (ebayTier.maxBalance || 499) };
+  const walmartStatus = getTierProgressAndStatus ? getTierProgressAndStatus(walmartTier, tiersList, user) : { isUnlocked: effectiveAmt >= (walmartTier.minBalance || 500) && effectiveAmt <= (walmartTier.maxBalance || 899), isSurpassed: effectiveAmt > (walmartTier.maxBalance || 899), status: effectiveAmt < (walmartTier.minBalance || 500) ? 'locked_below' : 'active' };
+  const temuStatus = getTierProgressAndStatus ? getTierProgressAndStatus(temuTier, tiersList, user) : { isUnlocked: effectiveAmt >= (temuTier.minBalance || 900), isSurpassed: false, status: effectiveAmt < (temuTier.minBalance || 900) ? 'locked_below' : 'active' };
+
+  // Dynamic progress to next tier
+  let nextTierTarget = Number(walmartTier.minBalance || 500);
+  let nextTierName = 'Walmart';
+  let progressPercent = 0;
+  let progressCaption = '';
+
+  if (activeTier.name === 'eBay') {
+    nextTierTarget = Number(walmartTier.minBalance || 500);
+    nextTierName = 'Walmart';
+    progressPercent = Math.min(100, Math.round((effectiveAmt / nextTierTarget) * 100));
+    progressCaption = `$${Math.max(0, nextTierTarget - effectiveAmt).toFixed(0)} more deposit to unlock Walmart`;
+  } else if (activeTier.name === 'Walmart') {
+    nextTierTarget = Number(temuTier.minBalance || 900);
+    nextTierName = 'Temu';
+    const walmartMin = Number(walmartTier.minBalance || 500);
+    progressPercent = Math.min(100, Math.round(((effectiveAmt - walmartMin) / (nextTierTarget - walmartMin)) * 100));
+    progressCaption = `$${Math.max(0, nextTierTarget - effectiveAmt).toFixed(0)} more deposit to unlock Temu (12%)`;
+  } else {
+    nextTierTarget = Number(temuTier.minBalance || 900);
+    nextTierName = 'Max VIP';
+    progressPercent = 100;
+    progressCaption = 'Maximum VIP Tier reached • Highest 12% yield unlocked';
+  }
 
   const handleStartTasks = (platform) => {
     if (openPlatformTasks) {
@@ -1280,89 +1326,142 @@ function TabMenu() {
     }
   };
 
+  const handleLockedTierClick = (tier, status) => {
+    if (status.isSurpassed) {
+      addNotification(
+        `${tier.name} Locked`,
+        `Your deposit/balance ($${effectiveAmt.toFixed(2)}) has surpassed ${tier.name}. You are currently on ${activeTier.name}! Switching you now...`
+      );
+      handleStartTasks(activeTier.name);
+    } else {
+      addNotification(
+        `${tier.name} Locked`,
+        `${tier.name} requires minimum $${tier.minBalance} USDT. Deposit now to unlock!`
+      );
+      setModalType('deposit');
+    }
+  };
+
   return (
     <div className="container tab-menu-container">
       <div className="menu-top-title">
-        <h2>Menu</h2>
+        <h2>VIP Tiers & Options</h2>
       </div>
 
-      {/* TOP TIER PROGRESS BANNER matching Screenshot 3 */}
-      <div className="tier-progress-banner mt-3 cursor-pointer" onClick={() => handleStartTasks('eBay')}>
+      {/* TOP TIER PROGRESS BANNER */}
+      <div className="tier-progress-banner mt-3 cursor-pointer" onClick={() => handleStartTasks(activeTier.name)}>
         <div className="tier-banner-left">
-          <div className="tier-icon-circle ebay-bg">
-            <span className="ebay-text">ebay</span>
+          <div className={`tier-icon-circle ${activeTier.name.toLowerCase()}-bg`}>
+            <span className="ebay-text">{activeTier.name.toLowerCase()}</span>
           </div>
           <div className="tier-banner-info">
             <div className="tier-name-row">
-              <strong>eBay</strong>
-              <span className="tier-current-tag">Current Tier</span>
+              <strong>{activeTier.name}</strong>
+              <span className="tier-current-tag">Current Active Tier</span>
             </div>
             <span className="tier-sub-balance">
-              Balance: <strong>${(Number(user?.balance) || 0).toFixed(2)}</strong> - ${Math.max(0, targetWalmart - (Number(user?.balance) || 0)).toFixed(0)} more to unlock Walmart
+              Qualifying Funds: <strong>${effectiveAmt.toFixed(2)}</strong> • {progressCaption}
             </span>
           </div>
         </div>
         <div className="tier-banner-right">
-          <span className="tier-progress-num">${(Number(user?.balance) || 0).toFixed(0)} / ${targetWalmart}</span>
+          <span className="tier-progress-num">
+            {activeTier.name === 'Temu' ? 'VIP MAX' : `$${effectiveAmt.toFixed(0)} / $${nextTierTarget}`}
+          </span>
           <div className="tier-mini-bar">
-            <div className="tier-mini-fill" style={{ width: `${progressPercent}%` }}></div>
+            <div className="tier-mini-fill" style={{ width: `${Math.max(5, Math.min(100, progressPercent))}%` }}></div>
           </div>
         </div>
       </div>
 
-      {/* 3 VIP TIERS CARDS matching Screenshot 3 */}
+      {/* 3 VIP TIERS CARDS */}
       <div className="tier-cards-grid mt-6">
-        {/* Tier 1: eBay (Red) */}
-        <div className="vip-tier-card ebay-card">
+        {/* Tier 1: eBay (0 - 499) */}
+        <div className={`vip-tier-card ebay-card ${ebayStatus.isUnlocked ? 'active-tier' : 'surpassed-locked'}`}>
           <div className="vip-card-header">
-            <div className="vip-active-chip">
-              <Zap size={13} />
-              <span>active</span>
-            </div>
-            <div className="vip-commission-badge">4%</div>
+            {ebayStatus.isUnlocked ? (
+              <div className="vip-active-chip">
+                <Zap size={13} />
+                <span>Active</span>
+              </div>
+            ) : (
+              <div className="vip-locked-chip" style={{ background: 'rgba(0,0,0,0.4)' }}>
+                <Lock size={13} />
+                <span>Locked (Surpassed)</span>
+              </div>
+            )}
+            <div className="vip-commission-badge">{ebayTier.commissionRate || 4}%</div>
           </div>
 
           <div className="vip-platform-name">
             <span className="platform-logo-big ebay">ebay</span>
             <h3>eBay</h3>
-            <span className="vip-price-range">$0 - $499</span>
+            <span className="vip-price-range">${ebayTier.minBalance ?? 0} - ${ebayTier.maxBalance ?? 499}</span>
           </div>
 
           <div className="vip-card-desc">
-            <p>Review eBay product listings and earn entry-level commissions. Great for getting started.</p>
+            <p>
+              {ebayStatus.isSurpassed
+                ? 'Your deposit has crossed $499! eBay is now locked and Walmart is your active earning platform.'
+                : 'Review eBay product listings and earn entry-level commissions. Great for getting started.'}
+            </p>
           </div>
 
-          <button
-            className="vip-action-btn active-btn"
-            onClick={() => handleStartTasks('eBay')}
-          >
-            <Zap size={16} />
-            <span>Start Tasks</span>
-            <ChevronRight size={16} />
-          </button>
+          {ebayStatus.isUnlocked ? (
+            <button
+              className="vip-action-btn active-btn"
+              onClick={() => handleStartTasks('eBay')}
+            >
+              <Zap size={16} />
+              <span>Start Tasks</span>
+              <ChevronRight size={16} />
+            </button>
+          ) : (
+            <button
+              className="vip-action-btn locked-btn"
+              onClick={() => handleLockedTierClick(ebayTier, ebayStatus)}
+              title="Deposit has crossed $499. eBay is locked. Click to switch to Walmart."
+            >
+              <Lock size={16} />
+              <span>Locked (Proceed to Walmart)</span>
+            </button>
+          )}
         </div>
 
-        {/* Tier 2: Walmart (Blue) */}
-        <div className={`vip-tier-card walmart-card ${user.balance >= 500 ? 'unlocked' : 'locked'}`}>
+        {/* Tier 2: Walmart (500 - 899) */}
+        <div className={`vip-tier-card walmart-card ${walmartStatus.isUnlocked ? 'active-tier unlocked' : 'locked'}`}>
           <div className="vip-card-header">
-            <div className="vip-locked-chip">
-              <Lock size={13} />
-              <span>{user.balance >= 500 ? 'Unlocked' : 'Locked'}</span>
-            </div>
-            <div className="vip-commission-badge">8%</div>
+            {walmartStatus.isUnlocked ? (
+              <div className="vip-active-chip">
+                <Zap size={13} />
+                <span>Active</span>
+              </div>
+            ) : (
+              <div className="vip-locked-chip">
+                <Lock size={13} />
+                <span>{walmartStatus.isSurpassed ? 'Locked (Surpassed)' : 'Locked'}</span>
+              </div>
+            )}
+            <div className="vip-commission-badge">{walmartTier.commissionRate || 8}%</div>
           </div>
 
           <div className="vip-platform-name">
             <span className="platform-logo-big walmart">W</span>
             <h3>Walmart</h3>
-            <span className="vip-price-range">$500 - $899</span>
+            <span className="vip-price-range">${walmartTier.minBalance ?? 500} - ${walmartTier.maxBalance ?? 899}</span>
           </div>
 
           <div className="vip-card-desc">
-            <p>Rate wholesale listings on Walmart. Higher commissions for members with larger balances.</p>
+            <p>
+              {walmartStatus.isUnlocked
+                ? 'High-commission wholesale listings on Walmart. Automatically unlocked when deposit crosses $499!'
+                : walmartStatus.isSurpassed
+                ? 'Your deposit has crossed $899! Walmart is locked and Temu (12%) is now unlocked.'
+                : `Rate wholesale listings on Walmart. Unlocks automatically as soon as deposit reaches $${walmartTier.minBalance || 500}.`}
+            </p>
           </div>
 
-          {user.balance >= 500 ? (
+          {walmartStatus.isUnlocked ? (
             <button
               className="vip-action-btn active-btn"
               onClick={() => handleStartTasks('Walmart')}
@@ -1372,34 +1471,52 @@ function TabMenu() {
               <ChevronRight size={16} />
             </button>
           ) : (
-            <button className="vip-action-btn locked-btn" disabled>
+            <button
+              className="vip-action-btn locked-btn"
+              onClick={() => handleLockedTierClick(walmartTier, walmartStatus)}
+            >
               <Lock size={16} />
-              <span>Locked</span>
+              <span>
+                {walmartStatus.isSurpassed
+                  ? 'Locked (Proceed to Temu)'
+                  : `Locked (Deposit $${walmartTier.minBalance || 500} to Unlock)`}
+              </span>
             </button>
           )}
         </div>
 
-        {/* Tier 3: Temu (Orange) */}
-        <div className={`vip-tier-card temu-card ${user.balance >= 900 ? 'unlocked' : 'locked'}`}>
+        {/* Tier 3: Temu (900+) */}
+        <div className={`vip-tier-card temu-card ${temuStatus.isUnlocked ? 'active-tier unlocked' : 'locked'}`}>
           <div className="vip-card-header">
-            <div className="vip-locked-chip">
-              <Lock size={13} />
-              <span>{user.balance >= 900 ? 'Unlocked' : 'Locked'}</span>
-            </div>
-            <div className="vip-commission-badge">12%</div>
+            {temuStatus.isUnlocked ? (
+              <div className="vip-active-chip">
+                <Zap size={13} />
+                <span>Active</span>
+              </div>
+            ) : (
+              <div className="vip-locked-chip">
+                <Lock size={13} />
+                <span>Locked</span>
+              </div>
+            )}
+            <div className="vip-commission-badge">{temuTier.commissionRate || 12}%</div>
           </div>
 
           <div className="vip-platform-name">
             <span className="platform-logo-big temu">TEMU</span>
             <h3>Temu</h3>
-            <span className="vip-price-range">$900+</span>
+            <span className="vip-price-range">${temuTier.minBalance ?? 900}+</span>
           </div>
 
           <div className="vip-card-desc">
-            <p>Premium review tasks with the highest earning potential. Exclusive to top-tier members.</p>
+            <p>
+              {temuStatus.isUnlocked
+                ? 'VIP Exclusive tasks with maximum 12% commission yield. Unlocked with $900+ deposit!'
+                : `Premium review tasks with highest earning potential. Unlocks when deposit reaches $${temuTier.minBalance || 900}.`}
+            </p>
           </div>
 
-          {user.balance >= 900 ? (
+          {temuStatus.isUnlocked ? (
             <button
               className="vip-action-btn active-btn"
               onClick={() => handleStartTasks('Temu')}
@@ -1409,9 +1526,12 @@ function TabMenu() {
               <ChevronRight size={16} />
             </button>
           ) : (
-            <button className="vip-action-btn locked-btn" disabled>
+            <button
+              className="vip-action-btn locked-btn"
+              onClick={() => handleLockedTierClick(temuTier, temuStatus)}
+            >
               <Lock size={16} />
-              <span>Locked</span>
+              <span>Locked (Deposit ${temuTier.minBalance || 900} to Unlock)</span>
             </button>
           )}
         </div>

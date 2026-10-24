@@ -1237,13 +1237,41 @@ export const supabaseService = {
 
   // 13. VIP Tiers
   getVipTiers: async () => {
-    const { data, error } = await supabase
-      .from('vip_tiers')
-      .select('*')
-      .order('min_balance', { ascending: true });
+    try {
+      const { data, error } = await supabase
+        .from('vip_tiers')
+        .select('*')
+        .order('min_balance', { ascending: true });
 
-    if (error || !data || data.length === 0) return INITIAL_VIP_TIERS;
-    return data;
+      if (error || !data || data.length === 0) return INITIAL_VIP_TIERS;
+      return data.map(t => ({
+        ...t,
+        minBalance: Number(t.min_balance ?? t.minBalance ?? 0),
+        maxBalance: t.max_balance !== undefined ? Number(t.max_balance) : (t.maxBalance !== undefined ? Number(t.maxBalance) : (t.name === 'eBay' ? 499 : t.name === 'Walmart' ? 899 : 99999)),
+        commissionRate: Number(t.commission_rate ?? t.commissionRate ?? 4),
+        dailyTasks: Number(t.daily_tasks ?? t.dailyTasks ?? 25)
+      }));
+    } catch (e) {
+      return INITIAL_VIP_TIERS;
+    }
+  },
+
+  updateVipTier: async (id, updates) => {
+    try {
+      const payload = {};
+      if (updates.minBalance !== undefined) payload.min_balance = updates.minBalance;
+      if (updates.maxBalance !== undefined) payload.max_balance = updates.maxBalance;
+      if (updates.commissionRate !== undefined) payload.commission_rate = updates.commissionRate;
+      if (updates.dailyTasks !== undefined) payload.daily_tasks = updates.dailyTasks;
+      if (updates.name !== undefined) payload.name = updates.name;
+      const { data, error } = await supabase
+        .from('vip_tiers')
+        .update(payload)
+        .eq('id', id)
+        .select();
+      if (!error && data && data.length > 0) return data[0];
+    } catch (e) {}
+    return null;
   },
 
   // 14. Activity
