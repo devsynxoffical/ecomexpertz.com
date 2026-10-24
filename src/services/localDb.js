@@ -274,6 +274,11 @@ export async function handleLocalApi(endpoint, options = {}) {
       throw new Error('Incorrect password. Please verify your password and try again.');
     }
 
+    const st = (found.status || '').toLowerCase();
+    if (st === 'blocked' || st === 'suspended' || st === 'banned') {
+      throw new Error(`This account has been ${found.status.toLowerCase()} by administration. Access is denied. Please contact customer support.`);
+    }
+
     localStorage.setItem('websynx_current_user_id', found.id);
     localStorage.setItem('websynx_user', JSON.stringify(found));
     localStorage.removeItem('websynx_logged_out');
@@ -305,6 +310,10 @@ export async function handleLocalApi(endpoint, options = {}) {
     const cleanEmail = email.trim().toLowerCase();
     const existingUser = (db.users || []).find((u) => (u.email || '').trim().toLowerCase() === cleanEmail);
     if (existingUser) {
+      const st = (existingUser.status || '').toLowerCase();
+      if (st === 'blocked' || st === 'suspended' || st === 'banned' || st === 'deleted') {
+        throw new Error(`This account has been ${st} by administration and cannot be re-registered or reactivated. Please contact customer support.`);
+      }
       throw new Error('An account with this email address already exists. Please log in with your password.');
     }
 
@@ -526,6 +535,22 @@ export async function handleLocalApi(endpoint, options = {}) {
     saveLocalDatabase(db);
     emitLocalEvent('user_updated', { user: updated });
     return { message: 'User updated', user: updated };
+  }
+
+  // 5b. DELETE /users/:id
+  if (endpoint.startsWith('/users/') && method === 'DELETE') {
+    const id = endpoint.replace('/users/', '');
+    db.users = (db.users || []).filter((u) => u.id !== id && String(u.id) !== String(id));
+    db.records = (db.records || []).filter((r) => r.userId !== id && r.user_id !== id && String(r.userId) !== String(id));
+    if (db.user && (db.user.id === id || String(db.user.id) === String(id))) {
+      db.user = null;
+      localStorage.removeItem('websynx_user');
+      localStorage.removeItem('websynx_current_user_id');
+      localStorage.setItem('websynx_logged_out', 'true');
+    }
+    saveLocalDatabase(db);
+    emitLocalEvent('user_deleted', { userId: id });
+    return { message: 'User permanently deleted', id };
   }
 
   // 6. /tasks
@@ -936,6 +961,29 @@ export async function handleLocalApi(endpoint, options = {}) {
       saveLocalDatabase(db);
       emitLocalEvent('support_settings_updated', { settings: db.supportSettings });
       return db.supportSettings;
+    }
+  }
+
+  // 17b. /settings/gateway
+  if (endpoint === '/settings/gateway' || endpoint === '/settings/deposit-accounts') {
+    if (method === 'GET') {
+      return db.systemDepositAccounts || {
+        trc20Address: 'TNoaH87yqPKmZ7r6Tx98JkL10qV2xR8v1q',
+        erc20Address: '0x71C94156b53982e0C63810a972c72b04B46bF022',
+        bep20Address: '0x71C94156b53982e0C63810a972c72b04B46bF022',
+        bankName: 'Standard Chartered Global Clearing',
+        bankAccount: 'GB82WEST12345678901234',
+        bankHolder: 'Ecomxstocks Global Escrow Vault Ltd',
+        bankSwift: 'SCBLGB2L',
+        depositInstructions: 'Please include your Account ID as transfer memo.'
+      };
+    }
+    if (method === 'PUT') {
+      db.systemDepositAccounts = { ...(db.systemDepositAccounts || {}), ...body };
+      saveLocalDatabase(db);
+      localStorage.setItem('websynx_system_deposit_accounts', JSON.stringify(db.systemDepositAccounts));
+      emitLocalEvent('gateway_settings_updated', { settings: db.systemDepositAccounts });
+      return db.systemDepositAccounts;
     }
   }
 

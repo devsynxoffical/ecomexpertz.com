@@ -54,7 +54,8 @@ import {
   AlertCircle,
   Save,
   Pause,
-  Play
+  Play,
+  Ban
 } from 'lucide-react';
 import { getProductUrl, openProductUrl } from '../utils/productUrl';
 import { sanitizeReferralCode } from '../services/supabaseService';
@@ -277,6 +278,15 @@ export default function AdminView() {
     depositInstructions: systemDepositAccounts?.depositInstructions || 'Please include your Account ID as transfer memo.'
   }));
   const [gatewaySavedMsg, setGatewaySavedMsg] = useState(false);
+
+  useEffect(() => {
+    if (systemDepositAccounts && Object.keys(systemDepositAccounts).length > 0) {
+      setGatewayForm(prev => ({
+        ...prev,
+        ...systemDepositAccounts
+      }));
+    }
+  }, [systemDepositAccounts]);
 
   // Detailed Withdrawal Dispatch Modal State
   const [dispatchModalRecord, setDispatchModalRecord] = useState(null);
@@ -520,12 +530,13 @@ export default function AdminView() {
     setEditingUser(null);
   };
 
-  const handleDeleteUserClick = (userId, userName) => {
-    if (window.confirm(`Are you sure you want to permanently delete user account "${userName}"?`)) {
+  const handleDeleteUserClick = async (userId, userName) => {
+    if (window.confirm(`Are you sure you want to permanently delete user account "${userName}"? This will delete the account from the database and immediately disconnect the user.`)) {
       try {
-        adminDeleteUser(userId);
+        await adminDeleteUser(userId);
+        alert(`User account "${userName}" has been permanently deleted.`);
       } catch (err) {
-        alert(err.message);
+        alert(err.message || 'Failed to delete user account.');
       }
     }
   };
@@ -551,11 +562,16 @@ export default function AdminView() {
     }
   };
 
-  const handleSaveGatewayAccounts = (e) => {
+  const handleSaveGatewayAccounts = async (e) => {
     e.preventDefault();
-    updateSystemDepositAccounts(gatewayForm);
-    setGatewaySavedMsg(true);
-    setTimeout(() => setGatewaySavedMsg(false), 3000);
+    try {
+      await updateSystemDepositAccounts(gatewayForm);
+      setGatewaySavedMsg(true);
+      setTimeout(() => setGatewaySavedMsg(false), 4000);
+      alert('System deposit wallet addresses and payment gateway settings updated successfully.');
+    } catch (err) {
+      alert('Failed to save deposit gateway settings: ' + err.message);
+    }
   };
 
   const handleCreateTask = async (e) => {
@@ -3036,7 +3052,7 @@ export default function AdminView() {
                         return matchTag && matchSearch;
                       })
                       .map(u => {
-                        const currentUWallet = (u.id === user?.id ? user?.walletAddress : u.walletAddress) || 'TNoaH87yqPKmZ7r6Tx98JkL10qV2xR8v1q';
+                        const currentUWallet = (u.id === user?.id ? (user?.walletAddress || user?.wallet_address || user?.wallet) : (u.walletAddress || u.wallet_address || u.wallet)) || '';
                         const currentUBal = (u.id === user?.id ? user?.balance : u.balance);
                         const currentUTier = (u.id === user?.id ? user?.vipLevel : (u.vipTier || u.vipLevel)) || 'eBay';
                         const currentUStatus = (u.id === user?.id ? user?.status : u.status) || 'Active';
@@ -3109,17 +3125,21 @@ export default function AdminView() {
                               </div>
                             </td>
                             <td>
-                              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                                <code className="cell-mono-addr">{formatCompactAddress(currentUWallet, 6, 4)}</code>
-                                <button
-                                  type="button"
-                                  className="cell-copy-btn"
-                                  title="Copy Wallet Address"
-                                  onClick={() => copyToClipboard(currentUWallet, 'Wallet Address')}
-                                >
-                                  <Copy size={11} />
-                                </button>
-                              </div>
+                              {currentUWallet ? (
+                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                  <code className="cell-mono-addr">{formatCompactAddress(currentUWallet, 6, 4)}</code>
+                                  <button
+                                    type="button"
+                                    className="cell-copy-btn"
+                                    title="Copy Wallet Address"
+                                    onClick={() => copyToClipboard(currentUWallet, 'Wallet Address')}
+                                  >
+                                    <Copy size={11} />
+                                  </button>
+                                </div>
+                              ) : (
+                                <span style={{ fontSize: '11px', color: '#94a3b8', fontStyle: 'italic' }}>Not Bound</span>
+                              )}
                             </td>
                             <td className="text-right">
                               <span className="cell-amount positive">
@@ -3138,7 +3158,11 @@ export default function AdminView() {
                               </span>
                             </td>
                             <td>
-                              <span className={`admin-badge ${currentUStatus.toLowerCase() === 'active' ? 'success' : 'neutral'}`}>
+                              <span className={`admin-badge ${
+                                currentUStatus.toLowerCase() === 'active' ? 'success' :
+                                currentUStatus.toLowerCase() === 'blocked' ? 'danger' :
+                                currentUStatus.toLowerCase() === 'suspended' ? 'warning' : 'neutral'
+                              }`}>
                                 {currentUStatus}
                               </span>
                             </td>
@@ -3187,6 +3211,70 @@ export default function AdminView() {
                                   <Edit2 size={12} />
                                   <span>Edit</span>
                                 </button>
+
+                                {/* Quick Status Action Buttons */}
+                                {u.id !== user?.id && (
+                                  currentUStatus.toLowerCase() === 'blocked' ? (
+                                    <button
+                                      type="button"
+                                      className="btn-table-action-approve"
+                                      title="Unblock User Account"
+                                      onClick={async () => {
+                                        if (window.confirm(`Unblock account "${u.name}" and restore full access?`)) {
+                                          await adminUpdateUser(u.id, { status: 'Active' });
+                                        }
+                                      }}
+                                    >
+                                      <CheckCircle2 size={12} />
+                                      <span>Unblock</span>
+                                    </button>
+                                  ) : currentUStatus.toLowerCase() === 'suspended' ? (
+                                    <button
+                                      type="button"
+                                      className="btn-table-action-approve"
+                                      title="Activate User Account"
+                                      onClick={async () => {
+                                        if (window.confirm(`Activate account "${u.name}" and restore access?`)) {
+                                          await adminUpdateUser(u.id, { status: 'Active' });
+                                        }
+                                      }}
+                                    >
+                                      <CheckCircle2 size={12} />
+                                      <span>Activate</span>
+                                    </button>
+                                  ) : (
+                                    <>
+                                      <button
+                                        type="button"
+                                        className="btn-table-action-reject"
+                                        style={{ background: '#fef2f2', borderColor: '#fca5a5', color: '#dc2626' }}
+                                        title="Block User (Immediate Ban - User cannot login or reactivate)"
+                                        onClick={async () => {
+                                          if (window.confirm(`BLOCK "${u.name}"?\n\nThe user will be instantly logged out and permanently blocked from logging in, re-registering, or reactivating their account.`)) {
+                                            await adminUpdateUser(u.id, { status: 'Blocked' });
+                                          }
+                                        }}
+                                      >
+                                        <Ban size={12} />
+                                        <span>Block</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="btn-table-action-secondary"
+                                        style={{ color: '#d97706', borderColor: '#fde68a' }}
+                                        title="Suspend User Account"
+                                        onClick={async () => {
+                                          if (window.confirm(`Suspend "${u.name}"?\n\nThe user will be logged out until manually un-suspended.`)) {
+                                            await adminUpdateUser(u.id, { status: 'Suspended' });
+                                          }
+                                        }}
+                                      >
+                                        <Clock size={12} />
+                                        <span>Suspend</span>
+                                      </button>
+                                    </>
+                                  )
+                                )}
 
                                 <button
                                   type="button"
@@ -3500,6 +3588,7 @@ export default function AdminView() {
                           >
                             <option value="Active">Active</option>
                             <option value="Suspended">Suspended</option>
+                            <option value="Blocked">Blocked (Permanent Ban)</option>
                             <option value="Pending Review">Pending Review</option>
                           </select>
                         </div>

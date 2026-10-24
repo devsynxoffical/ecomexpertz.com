@@ -834,16 +834,27 @@ export function AppProvider({ children }) {
   // Fetch full live state from backend server
   const refreshFromBackend = useCallback(async () => {
     try {
-      const [u, r, t, tiers, users, act] = await Promise.all([
+      const [u, r, t, tiers, users, act, gw] = await Promise.all([
         api.getMe(),
         api.getRecords(),
         api.getTasks(),
         api.getVipTiers(),
         api.getUsers(),
-        api.getActivity()
+        api.getActivity(),
+        api.getGatewaySettings().catch(() => null)
       ]);
 
+      if (gw && Object.keys(gw).length > 0) {
+        setSystemDepositAccounts(prev => ({ ...prev, ...gw }));
+        localStorage.setItem('websynx_system_deposit_accounts', JSON.stringify(gw));
+      }
+
       if (u && u.id && !u.isGuest) {
+        const uStatus = String(u.status || '').toLowerCase();
+        if (['blocked', 'suspended', 'banned', 'deleted'].includes(uStatus)) {
+          forceLogoutRestricted(uStatus);
+          return;
+        }
         const currentSavedId = localStorage.getItem('websynx_current_user_id');
         if (currentSavedId && (currentSavedId === u.id || String(currentSavedId) === String(u.id))) {
           setUser(prev => {
@@ -1086,6 +1097,16 @@ export function AppProvider({ children }) {
         }
       }
 
+      if (event.type === 'user_deleted') {
+        const deletedId = event.payload?.userId;
+        if (deletedId) {
+          setAdminUsers(prev => (prev || []).filter(u => String(u.id) !== String(deletedId)));
+          if (user && !user.isGuest && String(user.id) === String(deletedId)) {
+            forceLogoutRestricted('deleted');
+          }
+        }
+      }
+
       if (event.type === 'user_updated') {
         const { user: updatedUser } = event.payload;
         if (updatedUser) {
@@ -1108,6 +1129,11 @@ export function AppProvider({ children }) {
             return u;
           }));
           if (user && (user.id === updatedUser.id || String(user.id) === String(updatedUser.id))) {
+            const st = String(updatedUser.status || '').toLowerCase();
+            if (['blocked', 'suspended', 'banned', 'deleted'].includes(st)) {
+              forceLogoutRestricted(st);
+              return;
+            }
             setUser(prev => {
               const currentAssigned = (Array.isArray(updatedUser.assignedTasks) && updatedUser.assignedTasks.length > 0)
                 ? updatedUser.assignedTasks
@@ -1129,6 +1155,11 @@ export function AppProvider({ children }) {
             });
           }
         }
+      }
+
+      if (event.type === 'gateway_settings_updated' && event.payload?.settings) {
+        setSystemDepositAccounts(prev => ({ ...prev, ...event.payload.settings }));
+        localStorage.setItem('websynx_system_deposit_accounts', JSON.stringify(event.payload.settings));
       }
 
       if (event.type === 'tasks_assigned') {
@@ -2316,6 +2347,50 @@ export function AppProvider({ children }) {
     addNotification('Logged Out', 'Signed out of active account.');
   };
 
+  // Force logout for blocked / suspended / deleted accounts (cannot self-reactivate)
+  const RESTRICTED_STATUSES = ['blocked', 'suspended', 'banned', 'deleted'];
+  const forceLogoutRestricted = (reason = 'suspended') => {
+    if (currentView === 'admin') return; // never kick the admin console
+    localStorage.removeItem('websynx_user');
+    localStorage.removeItem('websynx_current_user_id');
+    localStorage.setItem('websynx_logged_out', 'true');
+    setUser(GUEST_USER);
+    setCurrentView('storefront');
+    setAuthMode('login');
+    setModalType('auth');
+    addNotification(
+      'Account Restricted',
+      `Your account has been ${reason} by administration. Please contact customer support.`
+    );
+    setTimeout(() => {
+      try { window.alert(`Your account has been ${reason} by administration. You have been signed out.`); } catch (e) {}
+    }, 50);
+  };
+
+  useEffect(() => {
+    if (!user || user.isGuest || !user.id || currentView === 'admin') return;
+    const st = String(user.status || '').toLowerCase();
+    if (RESTRICTED_STATUSES.includes(st)) {
+      forceLogoutRestricted(st);
+      return;
+    }
+    let cancelled = false;
+    const check = async () => {
+      try {
+        const res = await api.checkAccountStatus(user.id);
+        if (cancelled || !res) return;
+        if (res.deleted) forceLogoutRestricted('deleted');
+        else if (RESTRICTED_STATUSES.includes(String(res.status || '').toLowerCase())) {
+          forceLogoutRestricted(String(res.status).toLowerCase());
+        }
+      } catch (e) {}
+    };
+    check();
+    const iv = setInterval(check, 20000);
+    return () => { cancelled = true; clearInterval(iv); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, user?.status, currentView]);
+
   // Admin Login
   const adminLogin = async (email, password) => {
     const trimmedEmail = (email || '').trim().toLowerCase();
@@ -2382,9 +2457,14 @@ export function AppProvider({ children }) {
   };
 
   // Update System Deposit Accounts Gateway
-  const updateSystemDepositAccounts = (newAccounts) => {
+  const updateSystemDepositAccounts = async (newAccounts) => {
     setSystemDepositAccounts(newAccounts);
     localStorage.setItem('websynx_system_deposit_accounts', JSON.stringify(newAccounts));
+    try {
+      await api.updateGatewaySettings(newAccounts);
+    } catch (e) {
+      console.warn('Gateway settings persist failed:', e);
+    }
     addNotification('Gateway Settings Updated', 'Deposit receiving addresses & banking details updated.');
   };
 
@@ -2431,11 +2511,23 @@ export function AppProvider({ children }) {
 
   // Admin Delete User Account
   const adminDeleteUser = async (userId) => {
-    if (userId === user.id) {
+    if (user && !isAdminAuthenticated && String(userId) === String(user.id)) {
       throw new Error('Cannot delete currently active user session.');
     }
-    setAdminUsers(prev => prev.filter(u => u.id !== userId));
-    addNotification('User Account Removed', `User ID ${userId} removed from system.`);
+    try {
+      await api.deleteUser(userId);
+    } catch (err) {
+      console.error('adminDeleteUser failed:', err);
+      addNotification('Delete Failed', err.message || 'Could not delete user account.');
+      throw err;
+    }
+    setAdminUsers(prev => {
+      const next = (prev || []).filter(u => String(u.id) !== String(userId));
+      localStorage.setItem('websynx_admin_users', JSON.stringify(next));
+      return next;
+    });
+    setRecords(prev => (prev || []).filter(r => String(r.userId ?? r.user_id) !== String(userId)));
+    addNotification('User Account Removed', `User ID ${userId} permanently removed from system.`);
   };
 
   // Admin Open / Preview Task

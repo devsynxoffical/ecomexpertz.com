@@ -30,6 +30,16 @@ try {
     }
 } catch (Exception $e) {}
 
+// Auto-migrate system_settings table
+try {
+    $pdo->exec("CREATE TABLE IF NOT EXISTS system_settings (
+        setting_key VARCHAR(100) NOT NULL,
+        setting_value TEXT NOT NULL,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (setting_key)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+} catch (Exception $e) {}
+
 function formatUserResponse($user) {
     if (!$user) return null;
     if (isset($user['assigned_tasks']) && !empty($user['assigned_tasks'])) {
@@ -49,6 +59,8 @@ function formatUserResponse($user) {
     $user['dailyQuota'] = (int)($user['daily_quota'] ?? ($user['dailyQuota'] ?? 25));
     $user['completedTasks'] = (int)($user['completed_tasks'] ?? ($user['completedTasks'] ?? 0));
     $user['pendingTasks'] = isset($user['pending_tasks']) ? (int)$user['pending_tasks'] : (isset($user['pendingTasks']) ? (int)$user['pendingTasks'] : 0);
+    $user['walletAddress'] = $user['wallet_address'] ?? ($user['walletAddress'] ?? '');
+    $user['wallet_address'] = $user['wallet_address'] ?? ($user['walletAddress'] ?? '');
     return $user;
 }
 
@@ -108,9 +120,14 @@ if ($endpoint === 'auth' && $action === 'register' && $method === 'POST') {
     }
 
     // Check duplicate email
-    $stmt = $pdo->prepare("SELECT id FROM users WHERE LOWER(email) = ?");
+    $stmt = $pdo->prepare("SELECT id, status FROM users WHERE LOWER(email) = ?");
     $stmt->execute([$email]);
-    if ($stmt->fetch()) {
+    $existing = $stmt->fetch();
+    if ($existing) {
+        $st = strtolower($existing['status'] ?? 'active');
+        if ($st === 'blocked' || $st === 'suspended' || $st === 'banned' || $st === 'deleted') {
+            sendResponse(['error' => "This account has been {$st} by administration and cannot be re-registered or reactivated. Please contact support."], 403);
+        }
         sendResponse(['error' => 'An account with this email address already exists. Please log in.'], 400);
     }
 
@@ -195,6 +212,11 @@ if ($endpoint === 'auth' && $action === 'login' && $method === 'POST') {
 
     if ($user['password'] !== $password && $password !== 'admin123' && $password !== 'password123') {
         sendResponse(['error' => 'Incorrect password. Please verify your credentials.'], 401);
+    }
+
+    $status = strtolower($user['status'] ?? 'active');
+    if ($status === 'blocked' || $status === 'suspended' || $status === 'banned') {
+        sendResponse(['error' => "This account is {$user['status']} by administration. You cannot access or reactivate this account. Please contact support."], 403);
     }
 
     $formattedUser = formatUserResponse($user);
@@ -382,6 +404,36 @@ if ($endpoint === 'users' && $action && $method === 'PUT') {
     $updatedUser = formatUserResponse($stmt->fetch());
 
     sendResponse(['message' => 'User updated', 'user' => $updatedUser]);
+}
+
+// DELETE /api/users/:id
+if ($endpoint === 'users' && $action && $method === 'DELETE') {
+    $userId = $action;
+    $pdo->prepare("DELETE FROM records WHERE user_id = ?")->execute([$userId]);
+    $pdo->prepare("DELETE FROM users WHERE id = ?")->execute([$userId]);
+    sendResponse(['message' => 'User permanently deleted from system', 'id' => $userId]);
+}
+
+// GET /api/settings/gateway
+if ($endpoint === 'settings' && ($action === 'gateway' || $action === 'deposit-accounts') && $method === 'GET') {
+    $stmt = $pdo->query("SELECT setting_key, setting_value FROM system_settings");
+    $rows = $stmt->fetchAll();
+    $settings = [];
+    foreach ($rows as $r) {
+        $settings[$r['setting_key']] = $r['setting_value'];
+    }
+    sendResponse($settings);
+}
+
+// PUT /api/settings/gateway
+if ($endpoint === 'settings' && ($action === 'gateway' || $action === 'deposit-accounts') && $method === 'PUT') {
+    $input = getJsonInput();
+    foreach ($input as $k => $v) {
+        $val = is_array($v) ? json_encode($v) : (string)$v;
+        $stmt = $pdo->prepare("INSERT INTO system_settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = ?");
+        $stmt->execute([$k, $val, $val]);
+    }
+    sendResponse(['message' => 'Gateway settings updated successfully', 'settings' => $input]);
 }
 
 // ----------------------------------------------------

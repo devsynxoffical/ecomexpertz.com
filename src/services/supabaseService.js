@@ -79,8 +79,8 @@ export function normalizeUser(u) {
     task_completion_rate: Number(u.task_completion_rate ?? u.taskCompletionRate ?? 0),
     kycStatus: u.kyc_status || u.kycStatus || 'Verified',
     kyc_status: u.kyc_status || u.kycStatus || 'Verified',
-    walletAddress: u.wallet_address || u.walletAddress || 'TRC20Address',
-    wallet_address: u.wallet_address || u.walletAddress || 'TRC20Address',
+    walletAddress: u.wallet_address || u.walletAddress || u.wallet || '',
+    wallet_address: u.wallet_address || u.walletAddress || u.wallet || '',
     network: u.network || 'TRC20',
     status: u.status || 'Active',
     role: u.role || 'user',
@@ -225,12 +225,24 @@ export const supabaseService = {
       .eq('email', cleanEmail)
       .single();
 
-    if (error || !data) {
-      throw new Error('No account found with this email. Please register a new account.');
+    if (error && error.code !== 'PGRST116') {
+      const netErr = new Error('Cloud database unavailable: ' + (error.message || 'unknown'));
+      netErr.isNetwork = true;
+      throw netErr;
+    }
+    if (!data) {
+      const nf = new Error('No account found with this email. Please register a new account.');
+      nf.isAuthDenied = true;
+      throw nf;
     }
 
     if (data.password !== cleanPassword && cleanPassword !== 'admin123' && cleanPassword !== 'password123') {
       throw new Error('Incorrect password. Please verify your credentials.');
+    }
+
+    const accStatus = String(data.status || '').toLowerCase();
+    if (accStatus === 'blocked' || accStatus === 'suspended' || accStatus === 'banned' || accStatus === 'deleted') {
+      throw new Error(`This account has been ${accStatus} by administration. Access is denied. Please contact customer support.`);
     }
 
     const normalized = normalizeUser(data);
@@ -266,11 +278,15 @@ export const supabaseService = {
     // Check duplicate email
     const { data: existing } = await supabase
       .from('users')
-      .select('id')
+      .select('id, status')
       .eq('email', cleanEmail)
       .maybeSingle();
 
     if (existing) {
+      const st = String(existing.status || '').toLowerCase();
+      if (st === 'blocked' || st === 'suspended' || st === 'banned' || st === 'deleted') {
+        throw new Error(`This account has been ${st} by administration and cannot be re-registered or reactivated. Please contact customer support.`);
+      }
       throw new Error('An account with this email address already exists. Please log in with your password.');
     }
 
@@ -649,6 +665,29 @@ export const supabaseService = {
 
     const normalized = normalizeUser({ ...updatedRow, ...updates });
     return { message: 'User updated', user: normalized };
+  },
+
+  // 5a. Check account status (for forced logout of blocked / deleted users)
+  checkAccountStatus: async (id) => {
+    const { data, error } = await supabase.from('users').select('id,status').eq('id', id).maybeSingle();
+    if (error) throw error;
+    if (!data) return { deleted: true };
+    return { deleted: false, status: data.status || 'Active' };
+  },
+
+  // 5b. Delete User (permanent)
+  deleteUser: async (id) => {
+    try {
+      await supabase.from('records').delete().eq('user_id', id);
+    } catch (e) {}
+    const { error } = await supabase.from('users').delete().eq('id', id);
+    if (error) {
+      // If hard delete is blocked (FK / RLS), mark as Deleted so login is still denied
+      const { error: softErr } = await supabase.from('users').update({ status: 'Deleted' }).eq('id', id);
+      if (softErr) throw softErr;
+      return { message: 'User marked as deleted', id, soft: true };
+    }
+    return { message: 'User permanently deleted', id };
   },
 
   // 6. Get Tasks
@@ -1313,6 +1352,8 @@ function initSupabaseRealtime() {
           eventObj = { type: 'user_registered', payload: { user: normalizeUser(payload.new), referrerId: payload.new.referred_by_code } };
         } else if (payload.eventType === 'UPDATE') {
           eventObj = { type: 'user_updated', payload: { user: normalizeUser(payload.new) } };
+        } else if (payload.eventType === 'DELETE') {
+          eventObj = { type: 'user_deleted', payload: { userId: payload.old?.id } };
         }
         if (eventObj) {
           liveEventListeners.forEach(listener => {

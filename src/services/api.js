@@ -10,7 +10,16 @@ export const api = {
     try {
       return await supabaseService.login(email, password);
     } catch (err) {
-      console.warn('Supabase login fallback:', err.message);
+      const msg = err?.message || '';
+      if (
+        err?.isAuthDenied ||
+        msg.includes('by administration') ||
+        msg.includes('Incorrect password') ||
+        msg.includes('No account found')
+      ) {
+        throw err;
+      }
+      console.warn('Supabase login fallback:', msg);
       return handleLocalApi('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
     }
   },
@@ -58,6 +67,30 @@ export const api = {
       console.warn('Supabase updateUser fallback:', err.message);
     }
     return handleLocalApi(`/users/${id}`, { method: 'PUT', body: JSON.stringify(updates) });
+  },
+
+  deleteUser: async (id) => {
+    let cloudRes = null;
+    try {
+      cloudRes = await supabaseService.deleteUser(id);
+    } catch (err) {
+      console.warn('Supabase deleteUser fallback:', err.message);
+    }
+    try {
+      await handleLocalApi(`/users/${id}`, { method: 'DELETE' });
+    } catch (e) {}
+    return cloudRes || { message: 'User deleted', id };
+  },
+
+  getGatewaySettings: async () => handleLocalApi('/settings/gateway'),
+  updateGatewaySettings: async (settings) => handleLocalApi('/settings/gateway', { method: 'PUT', body: JSON.stringify(settings) }),
+
+  checkAccountStatus: async (id) => {
+    try {
+      return await supabaseService.checkAccountStatus(id);
+    } catch (e) {
+      return null; // unreachable -> don't kick
+    }
   },
 
   assignTasksToUser: async (id, tasks, packageName = 'Standard 25 Package', resetCompleted = true) => {
