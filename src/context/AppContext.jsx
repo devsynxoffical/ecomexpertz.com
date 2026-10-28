@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { api } from '../services/api';
 import {
   INITIAL_USER,
@@ -10,6 +10,7 @@ import {
 } from '../data/mockData';
 import { normalizeTask, sanitizeReferralCode } from '../services/supabaseService';
 import { ensureAllInitialTasks } from '../services/localDb';
+import { get25CampaignSlots } from '../utils/campaignSlots';
 
 export const GUEST_USER = {
   id: null,
@@ -71,7 +72,16 @@ export const deduplicateRecords = (recordsList) => {
       continue;
     }
 
-    const cloned = { ...r };
+    const cloned = {
+      ...r,
+      userId: r.userId || r.user_id,
+      user_id: r.user_id || r.userId,
+      userName: r.userName || r.user_name || 'Member',
+      user_name: r.user_name || r.userName || 'Member',
+      txHash: r.txHash || r.tx_hash || 'Direct Deposit',
+      tx_hash: r.tx_hash || r.txHash || 'Direct Deposit',
+      category: r.category || ((r.type && r.type.toLowerCase().includes('deposit')) ? 'Deposit' : (r.type && r.type.toLowerCase().includes('withdraw') ? 'Withdrawal' : 'General'))
+    };
     if (rId) idMap.set(rId, cloned);
     if (rCode) codeMap.set(rCode, cloned);
     result.push(cloned);
@@ -85,19 +95,38 @@ export const deduplicateRecords = (recordsList) => {
 // ==========================================
 export const getEffectiveDepositOrBalance = (targetUser) => {
   if (!targetUser) return 0;
+  // Always use active account balance first because balance increases with deposits and decreases with withdrawals
+  if (targetUser.balance !== undefined && targetUser.balance !== null && !isNaN(Number(targetUser.balance))) {
+    return Math.max(0, Number(targetUser.balance));
+  }
   const dep = Number(targetUser.totalDeposit ?? targetUser.total_deposit ?? 0);
-  const bal = Number(targetUser.balance ?? 0);
-  return Math.max(dep, bal);
+  const wth = Number(targetUser.totalWithdraw ?? targetUser.total_withdraw ?? 0);
+  return Math.max(0, dep - wth);
 };
 
 export const getTierProgressAndStatus = (tier, tiers, targetUser) => {
   const currentAmt = getEffectiveDepositOrBalance(targetUser);
   const min = Number(tier?.minBalance ?? tier?.min_balance ?? 0);
-  const max = Number(
-    tier?.maxBalance ??
-    tier?.max_balance ??
-    (tier?.name?.toLowerCase() === 'temu' ? 999999 : (tier?.name?.toLowerCase() === 'walmart' ? 899 : 499))
-  );
+  
+  // Resolve maxBalance dynamically: if explicitly provided (> 0), use it; otherwise check if there's a higher tier in tiers list
+  let max = tier?.maxBalance !== undefined && tier?.maxBalance !== null && !isNaN(Number(tier.maxBalance)) && Number(tier.maxBalance) > 0
+    ? Number(tier.maxBalance)
+    : (tier?.max_balance !== undefined && tier?.max_balance !== null && !isNaN(Number(tier.max_balance)) && Number(tier.max_balance) > 0
+        ? Number(tier.max_balance)
+        : null);
+
+  if (max === null && Array.isArray(tiers) && tiers.length > 0) {
+    const sorted = [...tiers].sort((a, b) => Number(a.minBalance ?? a.min_balance ?? 0) - Number(b.minBalance ?? b.min_balance ?? 0));
+    const curIdx = sorted.findIndex(t => (t.id && tier.id && t.id === tier.id) || (t.name || '').toLowerCase() === (tier.name || '').toLowerCase());
+    if (curIdx !== -1 && curIdx < sorted.length - 1) {
+      const nextMin = Number(sorted[curIdx + 1]?.minBalance ?? sorted[curIdx + 1]?.min_balance ?? 0);
+      if (nextMin > 0) max = nextMin - 1;
+    }
+  }
+
+  if (max === null) {
+    max = tier?.name?.toLowerCase() === 'ebay' ? 499 : (tier?.name?.toLowerCase() === 'walmart' ? 899 : 999999);
+  }
 
   if (currentAmt < min) {
     return {
@@ -110,7 +139,7 @@ export const getTierProgressAndStatus = (tier, tiers, targetUser) => {
     };
   }
 
-  if (currentAmt > max) {
+  if (max < 999999 && currentAmt > max) {
     return {
       isUnlocked: false,
       isSurpassed: true,
@@ -196,14 +225,16 @@ export function AppProvider({ children }) {
       const saved = localStorage.getItem('websynx_vip_tiers') || localStorage.getItem('seox_vip_tiers');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length >= 3) {
+        if (Array.isArray(parsed) && parsed.length >= 1) {
           return parsed.map(t => {
-            const init = INITIAL_VIP_TIERS.find(it => it.id === t.id || it.name.toLowerCase() === (t.name || '').toLowerCase());
+            const init = INITIAL_VIP_TIERS.find(it => it.id === t.id || (it.name || '').toLowerCase() === (t.name || '').toLowerCase());
             return {
               ...init,
               ...t,
               minBalance: Number(t.minBalance ?? t.min_balance ?? init?.minBalance ?? 0),
-              maxBalance: t.maxBalance !== undefined ? Number(t.maxBalance) : (t.max_balance !== undefined ? Number(t.max_balance) : (init?.maxBalance ?? 99999))
+              maxBalance: t.maxBalance !== undefined ? Number(t.maxBalance) : (t.max_balance !== undefined ? Number(t.max_balance) : (init?.maxBalance ?? 99999)),
+              commissionRate: Number(t.commissionRate ?? t.commission_rate ?? init?.commissionRate ?? 5),
+              dailyTasks: Number(t.dailyTasks ?? t.daily_tasks ?? init?.dailyTasks ?? 25)
             };
           });
         }
@@ -211,6 +242,15 @@ export function AppProvider({ children }) {
     } catch (e) {}
     return INITIAL_VIP_TIERS;
   });
+
+  // Always keep localStorage in sync with vipTiers so newly added/edited tiers persist
+  useEffect(() => {
+    if (vipTiers && vipTiers.length > 0) {
+      try {
+        localStorage.setItem('websynx_vip_tiers', JSON.stringify(vipTiers));
+      } catch (e) {}
+    }
+  }, [vipTiers]);
 
   const [adminUsers, setAdminUsers] = useState(() => {
     const saved = localStorage.getItem('websynx_admin_users') || localStorage.getItem('seox_admin_users');
@@ -560,35 +600,58 @@ export function AppProvider({ children }) {
   // Compute active tier dynamically based on progressive deposit/balance thresholds
   const userActiveTier = useMemo(() => {
     return getUserActiveTier(vipTiers, user);
-  }, [vipTiers, user?.balance, user?.totalDeposit, user?.total_deposit]);
-
-  // Auto-sync user's vipLevel to their qualifying deposit/balance tier
-  useEffect(() => {
-    if (!user || user.isGuest) return;
-    const activeTier = getUserActiveTier(vipTiers, user);
-    if (activeTier && activeTier.name && user.vipLevel !== activeTier.name) {
-      setUser(prev => {
-        if (!prev) return prev;
-        const updated = {
-          ...prev,
-          vipLevel: activeTier.name,
-          vipTier: activeTier.name,
-          vip_level: activeTier.name,
-          vipTierId: activeTier.id,
-          vip_tier_id: activeTier.id
-        };
-        try {
-          localStorage.setItem('websynx_user', JSON.stringify(updated));
-        } catch (e) {}
-        return updated;
-      });
-    }
-  }, [user?.balance, user?.totalDeposit, user?.total_deposit, vipTiers]);
+  }, [vipTiers, user?.balance]);
 
   const [dashboardTab, setDashboardTab] = useState('home'); // 'home' | 'menu' | 'records' | 'support' | 'mine' | 'platform-tasks'
   const [activePlatform, setActivePlatform] = useState('eBay');
   const [darkMode, setDarkMode] = useState(false);
   const [language, setLanguage] = useState('en');
+
+  // Auto-sync user's vipLevel to their qualifying deposit/balance tier
+  useEffect(() => {
+    if (!user || user.isGuest) return;
+    const activeTier = getUserActiveTier(vipTiers, user);
+    if (activeTier && activeTier.name) {
+      if (user.vipLevel !== activeTier.name) {
+        setUser(prev => {
+          if (!prev) return prev;
+          const updated = {
+            ...prev,
+            vipLevel: activeTier.name,
+            vipTier: activeTier.name,
+            vip_level: activeTier.name,
+            vipTierId: activeTier.id,
+            vip_tier_id: activeTier.id
+          };
+          try {
+            localStorage.setItem('websynx_user', JSON.stringify(updated));
+          } catch (e) {}
+          return updated;
+        });
+
+        // Persist to API so polling does not overwrite it
+        if (user.id) {
+          api.updateUser(user.id, {
+            vipLevel: activeTier.name,
+            vipTier: activeTier.name,
+            vip_level: activeTier.name,
+            vipTierId: activeTier.id,
+            vip_tier_id: activeTier.id
+          }).catch(() => {});
+        }
+      }
+
+      // If activePlatform is currently locked for this balance, auto-switch to activeTier.name
+      const list = Array.isArray(vipTiers) && vipTiers.length > 0 ? vipTiers : INITIAL_VIP_TIERS;
+      const curPlatTier = list.find(t => (t.platform || t.name || '').toLowerCase() === (activePlatform || '').toLowerCase());
+      if (curPlatTier) {
+        const platStatus = getTierProgressAndStatus(curPlatTier, list, user);
+        if (!platStatus.isUnlocked) {
+          setActivePlatform(activeTier.name);
+        }
+      }
+    }
+  }, [user?.balance, vipTiers, activePlatform]);
 
   const openPlatformTasks = useCallback((platform = 'eBay') => {
     const list = Array.isArray(vipTiers) && vipTiers.length > 0 ? vipTiers : INITIAL_VIP_TIERS;
@@ -659,7 +722,9 @@ export function AppProvider({ children }) {
           if (!prev) return prev;
           const prevBal = parseFloat(prev.balance || 0);
           const prevDep = parseFloat(prev.totalDeposit || prev.total_deposit || 0);
-          if (prevBal === newBalance && prevDep === newTotalDep && (prev.assignedTasks?.length || 0) === (u.assignedTasks?.length || 0) && prev.id === u.id) {
+          const tasksChanged = Array.isArray(u.assignedTasks) && u.assignedTasks.length > 0 &&
+            JSON.stringify(u.assignedTasks) !== JSON.stringify(prev.assignedTasks || []);
+          if (!tasksChanged && prevBal === newBalance && prevDep === newTotalDep && (prev.assignedTasks?.length || 0) === (u.assignedTasks?.length || 0) && prev.id === u.id) {
             return prev;
           }
           const merged = {
@@ -683,6 +748,9 @@ export function AppProvider({ children }) {
           try {
             localStorage.setItem('websynx_user', JSON.stringify(merged));
             localStorage.setItem('websynx_current_user_id', merged.id);
+            if (Array.isArray(merged.assignedTasks) && merged.assignedTasks.length > 0) {
+              localStorage.setItem(`websynx_user_assigned_tasks_${merged.id}`, JSON.stringify(merged.assignedTasks));
+            }
           } catch (e) {}
           return merged;
         });
@@ -831,6 +899,49 @@ export function AppProvider({ children }) {
     } catch (e) {}
   }, []);
 
+  // Cross-tab and window-focus live synchronizer for task amount, barrier, and balance updates
+  useEffect(() => {
+    const handleStorageChange = (e) => {
+      if (!e.key) return;
+      if (user?.id && e.key === `websynx_user_assigned_tasks_${user.id}`) {
+        try {
+          const newQueue = JSON.parse(e.newValue);
+          if (Array.isArray(newQueue) && newQueue.length > 0) {
+            setUser(prev => prev ? { ...prev, assignedTasks: newQueue } : prev);
+          }
+        } catch (err) {}
+      }
+      if (e.key === 'websynx_tasks') {
+        try {
+          const newTasks = JSON.parse(e.newValue);
+          if (Array.isArray(newTasks) && newTasks.length > 0) {
+            setTasks(newTasks);
+          }
+        } catch (err) {}
+      }
+      if (e.key === 'websynx_user') {
+        try {
+          const newUser = JSON.parse(e.newValue);
+          if (newUser && (newUser.id === user?.id || !user?.id)) {
+            setUser(newUser);
+          }
+        } catch (err) {}
+      }
+    };
+
+    const handleWindowFocus = () => {
+      // Re-fetch live user balance and custom assigned tasks whenever tab becomes focused
+      refreshUserBalance(true).catch(() => {});
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('focus', handleWindowFocus);
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('focus', handleWindowFocus);
+    };
+  }, [user?.id, refreshUserBalance]);
+
   // Fetch full live state from backend server
   const refreshFromBackend = useCallback(async () => {
     try {
@@ -890,17 +1001,30 @@ export function AppProvider({ children }) {
           const prevMap = new Map((prev || []).map(p => [p.id, p]));
           return users.map(newU => {
             const p = prevMap.get(newU.id);
+            const cachedQueue = (() => {
+              try {
+                const cached = localStorage.getItem(`websynx_user_assigned_tasks_${newU.id}`);
+                if (cached) {
+                  const parsed = JSON.parse(cached);
+                  if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+                }
+              } catch (e) {}
+              return null;
+            })();
+
+            const resolvedAssignedTasks = (Array.isArray(newU.assignedTasks) && newU.assignedTasks.length > 0)
+              ? newU.assignedTasks
+              : (Array.isArray(p?.assignedTasks) && p.assignedTasks.length > 0
+                  ? p.assignedTasks
+                  : (cachedQueue || []));
+
             return {
               ...newU,
               assignedPackage: newU.assignedPackage || p?.assignedPackage || null,
               taskPackageStatus: newU.taskPackageStatus || p?.taskPackageStatus || null,
               taskPackageRequested: newU.taskPackageRequested ?? p?.taskPackageRequested ?? false,
-              assignedTasks: (Array.isArray(newU.assignedTasks) && newU.assignedTasks.length > 0)
-                ? newU.assignedTasks
-                : (p?.assignedTasks || []),
-              assignedTaskIds: (Array.isArray(newU.assignedTasks) && newU.assignedTasks.length > 0)
-                ? newU.assignedTasks.map(t => t.id)
-                : (p?.assignedTaskIds || [])
+              assignedTasks: resolvedAssignedTasks,
+              assignedTaskIds: resolvedAssignedTasks.map(t => t.id)
             };
           });
         });
@@ -1157,9 +1281,30 @@ export function AppProvider({ children }) {
         }
       }
 
-      if (event.type === 'gateway_settings_updated' && event.payload?.settings) {
-        setSystemDepositAccounts(prev => ({ ...prev, ...event.payload.settings }));
-        localStorage.setItem('websynx_system_deposit_accounts', JSON.stringify(event.payload.settings));
+      if (event.type === 'gateway_settings_updated') {
+        if (event.payload?.settings) {
+          setSystemDepositAccounts(prev => {
+            const next = { ...prev, ...event.payload.settings };
+            try { localStorage.setItem('websynx_system_deposit_accounts', JSON.stringify(next)); } catch (e) {}
+            return next;
+          });
+        } else if (event.payload?.key && event.payload?.value !== undefined) {
+          setSystemDepositAccounts(prev => {
+            const next = { ...prev, [event.payload.key]: event.payload.value };
+            try { localStorage.setItem('websynx_system_deposit_accounts', JSON.stringify(next)); } catch (e) {}
+            return next;
+          });
+        } else {
+          api.getGatewaySettings().then(gw => {
+            if (gw && Object.keys(gw).length > 0) {
+              setSystemDepositAccounts(prev => {
+                const next = { ...prev, ...gw };
+                try { localStorage.setItem('websynx_system_deposit_accounts', JSON.stringify(next)); } catch (e) {}
+                return next;
+              });
+            }
+          }).catch(() => {});
+        }
       }
 
       if (event.type === 'tasks_assigned') {
@@ -1234,7 +1379,20 @@ export function AppProvider({ children }) {
     const parsedAmt = parseFloat(amount) || 0;
     try {
       const res = await api.createDeposit(parsedAmt, txHash, network, user?.id, user?.name, user?.email);
-      const safeRec = (res && typeof res === 'object') ? res : {
+      const safeRec = (res && typeof res === 'object') ? {
+        ...res,
+        userId: res.userId || res.user_id || user?.id,
+        user_id: res.user_id || res.userId || user?.id,
+        userName: res.userName || res.user_name || user?.name || 'Member',
+        user_name: res.user_name || res.userName || user?.name || 'Member',
+        txHash: res.txHash || res.tx_hash || txHash,
+        tx_hash: res.tx_hash || res.txHash || txHash,
+        category: res.category || 'Deposit',
+        type: res.type || `${network} Deposit`,
+        status: res.status || 'Pending',
+        amount: parsedAmt,
+        date: res.date || new Date().toISOString()
+      } : {
         id: `rec_dep_${Date.now()}`,
         code: `DEP-${Math.floor(1000000000 + Math.random() * 9000000000)}`,
         type: `${network} Deposit`,
@@ -1242,9 +1400,13 @@ export function AppProvider({ children }) {
         amount: parsedAmt,
         currency: 'USDT',
         status: 'Pending',
-        date: new Date().toISOString().split('T')[0],
+        date: new Date().toISOString(),
         userId: user?.id,
+        user_id: user?.id,
         userName: user?.name || 'Member',
+        user_name: user?.name || 'Member',
+        txHash: txHash || 'Direct Deposit',
+        tx_hash: txHash || 'Direct Deposit',
         note: 'Awaiting blockchain confirmation'
       };
 
@@ -1265,9 +1427,13 @@ export function AppProvider({ children }) {
         amount: parsedAmt,
         currency: 'USDT',
         status: 'Pending',
-        date: new Date().toISOString().split('T')[0],
+        date: new Date().toISOString(),
         userId: user?.id,
+        user_id: user?.id,
         userName: user?.name || 'Member',
+        user_name: user?.name || 'Member',
+        txHash: txHash || 'Direct Deposit',
+        tx_hash: txHash || 'Direct Deposit',
         note: 'Awaiting blockchain confirmation'
       };
       setUser(prev => ({
@@ -1284,13 +1450,36 @@ export function AppProvider({ children }) {
   const submitWithdrawal = async (amount, address, network = 'TRC20') => {
     try {
       const res = await api.createWithdrawal(amount, address, network, user.id);
-      setUser(prev => ({
-        ...prev,
-        balance: Math.max(0, parseFloat((prev.balance - parseFloat(amount)).toFixed(2))),
-        pendingRequests: (prev.pendingRequests || 0) + 1
-      }));
+      const parsedAmt = parseFloat(amount) || 0;
+      const newBal = Math.max(0, parseFloat(((user?.balance || 0) - parsedAmt).toFixed(2)));
+      const newTotalWithdraw = parseFloat(((user?.totalWithdraw || user?.total_withdraw || 0) + parsedAmt).toFixed(2));
+      const activeTier = getUserActiveTier(vipTiers, { ...(user || {}), balance: newBal, totalWithdraw: newTotalWithdraw, total_withdraw: newTotalWithdraw });
+
+      setUser(prev => {
+        if (!prev) return prev;
+        const updated = {
+          ...prev,
+          balance: newBal,
+          totalWithdraw: newTotalWithdraw,
+          total_withdraw: newTotalWithdraw,
+          vipLevel: activeTier?.name || prev.vipLevel,
+          vipTier: activeTier?.name || prev.vipTier,
+          vip_level: activeTier?.name || prev.vip_level,
+          vipTierId: activeTier?.id || prev.vipTierId,
+          pendingRequests: (prev.pendingRequests || 0) + 1
+        };
+        try {
+          localStorage.setItem('websynx_user', JSON.stringify(updated));
+        } catch (e) {}
+        return updated;
+      });
+
+      if (activeTier?.name) {
+        setActivePlatform(activeTier.name);
+      }
+
       setRecords(prev => [res, ...prev]);
-      addNotification('Withdrawal Queued', `Requested ${amount} USDT withdrawal.`);
+      addNotification('Withdrawal Queued', `Requested ${amount} USDT withdrawal. Current active tier: ${activeTier?.name || 'eBay'}.`);
       return res;
     } catch (err) {
       console.error('submitWithdrawal failed:', err);
@@ -1301,8 +1490,9 @@ export function AppProvider({ children }) {
   // Execute & Submit Task
   const completeTask = async (task) => {
     try {
-      const res = await api.submitTask(task.id, user.id);
-      const earnedAmt = res?.commissionEarned ?? Number((((Number(task.price) || 0) * 0.04).toFixed(2)));
+      const res = await api.submitTask(task, user.id);
+      const commRate = parseFloat(task.commissionRate ?? task.commission_rate ?? 4) || 4;
+      const earnedAmt = res?.commissionEarned ?? Number((((Number(task.price) || 0) * (commRate / 100)).toFixed(2)));
       setUser(prev => {
         const newCompleted = res?.user?.completedTasks !== undefined
           ? Number(res.user.completedTasks)
@@ -1690,18 +1880,89 @@ export function AppProvider({ children }) {
       const existingTask = tasks.find(t => String(t.id) === String(taskId)) || {};
       const updated = res?.task ? { ...existingTask, ...res.task } : { ...existingTask, ...updates };
 
-      setTasks(prev => prev.map(t => String(t.id) === String(taskId) ? updated : t));
+      setTasks(prev => {
+        const hasTask = prev.some(t => String(t.id) === String(taskId));
+        const next = hasTask ? prev.map(t => String(t.id) === String(taskId) ? updated : t) : [...prev, updated];
+        try {
+          localStorage.setItem('websynx_tasks', JSON.stringify(next));
+        } catch (e) {}
+        return next;
+      });
 
       // Also update task in adminUsers assignedTasks if present
+      const targetStep = updated.slotNumber || updated.learningStep;
       setAdminUsers(prevUsers => (prevUsers || []).map(u => {
         if (!Array.isArray(u.assignedTasks)) return u;
-        const hasTask = u.assignedTasks.some(at => String(at.id) === String(taskId));
-        if (!hasTask) return u;
+        let modified = false;
+        const newQueue = u.assignedTasks.map((at, idx) => {
+          const atStep = at.slotNumber || at.learningStep || (idx + 1);
+          const isMatch = String(at.id) === String(taskId) || (targetStep && Number(atStep) === Number(targetStep));
+          const shouldUpdate = isMatch && (u.assignedPackage !== 'Custom 25 Package' || !at.userCustomOverride);
+          if (shouldUpdate) {
+            modified = true;
+            return {
+              ...at,
+              ...updated,
+              price: updated.price !== undefined ? updated.price : at.price,
+              commissionRate: updated.commissionRate !== undefined ? updated.commissionRate : at.commissionRate,
+              commission_rate: updated.commissionRate !== undefined ? updated.commissionRate : at.commission_rate,
+              yieldRate: `${updated.commissionRate}%`,
+              yield_rate: `${updated.commissionRate}%`,
+              yieldAmount: updated.yieldAmount,
+              yield_amount: updated.yieldAmount,
+              requiredDeposit: updated.requiredDeposit !== undefined ? updated.requiredDeposit : at.requiredDeposit,
+              required_deposit: updated.requiredDeposit !== undefined ? updated.requiredDeposit : at.required_deposit
+            };
+          }
+          return at;
+        });
+        if (!modified) return u;
+        try {
+          localStorage.setItem(`websynx_user_assigned_tasks_${u.id}`, JSON.stringify(newQueue));
+        } catch (e) {}
+        // Also sync update to Supabase records for this user
+        api.assignTasksToUser(u.id, newQueue, u.assignedPackage || 'Standard 25 Package', false).catch(() => {});
         return {
           ...u,
-          assignedTasks: u.assignedTasks.map(at => String(at.id) === String(taskId) ? { ...at, ...updated } : at)
+          assignedTasks: newQueue
         };
       }));
+
+      // If active user is affected, update active user state
+      if (user && Array.isArray(user.assignedTasks)) {
+        let modified = false;
+        const newQueue = user.assignedTasks.map((at, idx) => {
+          const atStep = at.slotNumber || at.learningStep || (idx + 1);
+          const isMatch = String(at.id) === String(taskId) || (targetStep && Number(atStep) === Number(targetStep));
+          const shouldUpdate = isMatch && (user.assignedPackage !== 'Custom 25 Package' || !at.userCustomOverride);
+          if (shouldUpdate) {
+            modified = true;
+            return {
+              ...at,
+              ...updated,
+              price: updated.price !== undefined ? updated.price : at.price,
+              commissionRate: updated.commissionRate !== undefined ? updated.commissionRate : at.commissionRate,
+              commission_rate: updated.commissionRate !== undefined ? updated.commissionRate : at.commission_rate,
+              yieldRate: `${updated.commissionRate}%`,
+              yield_rate: `${updated.commissionRate}%`,
+              yieldAmount: updated.yieldAmount,
+              yield_amount: updated.yieldAmount,
+              requiredDeposit: updated.requiredDeposit !== undefined ? updated.requiredDeposit : at.requiredDeposit,
+              required_deposit: updated.requiredDeposit !== undefined ? updated.requiredDeposit : at.required_deposit
+            };
+          }
+          return at;
+        });
+        if (modified) {
+          setUser(prev => {
+            const up = { ...prev, assignedTasks: newQueue };
+            try {
+              localStorage.setItem('websynx_user', JSON.stringify(up));
+            } catch (e) {}
+            return up;
+          });
+        }
+      }
 
       addNotification('Task Updated', `Updated "${(updated.title || 'Task').substring(0, 25)}..."`);
       return updated;
@@ -1709,7 +1970,14 @@ export function AppProvider({ children }) {
       console.error('adminUpdateTask fallback handling:', err);
       const existingTask = tasks.find(t => String(t.id) === String(taskId)) || {};
       const fallbackUpdated = { ...existingTask, ...updates };
-      setTasks(prev => prev.map(t => String(t.id) === String(taskId) ? fallbackUpdated : t));
+      setTasks(prev => {
+        const hasTask = prev.some(t => String(t.id) === String(taskId));
+        const next = hasTask ? prev.map(t => String(t.id) === String(taskId) ? fallbackUpdated : t) : [...prev, fallbackUpdated];
+        try {
+          localStorage.setItem('websynx_tasks', JSON.stringify(next));
+        } catch (e) {}
+        return next;
+      });
       addNotification('Task Updated', `Updated "${(fallbackUpdated.title || 'Task').substring(0, 25)}..."`);
       return fallbackUpdated;
     }
@@ -1741,6 +2009,38 @@ export function AppProvider({ children }) {
     }
   };
 
+  // Admin Create VIP Tier
+  const adminCreateTier = async (tierData) => {
+    try {
+      const res = await api.createVipTier(tierData);
+      const newTier = res?.tier || res;
+      setVipTiers(prev => {
+        const next = [...prev, newTier];
+        try {
+          localStorage.setItem('websynx_vip_tiers', JSON.stringify(next));
+        } catch (e) {}
+        return next;
+      });
+      addNotification('VIP Tier Created', `Added ${newTier.name} to VIP tiers.`);
+      return newTier;
+    } catch (err) {
+      console.error('adminCreateTier failed:', err);
+      const fallback = {
+        ...tierData,
+        id: tierData.id || `tier_${Date.now()}`
+      };
+      setVipTiers(prev => {
+        const next = [...prev, fallback];
+        try {
+          localStorage.setItem('websynx_vip_tiers', JSON.stringify(next));
+        } catch (e) {}
+        return next;
+      });
+      addNotification('VIP Tier Created', `Added ${fallback.name} locally.`);
+      return fallback;
+    }
+  };
+
   // Admin Update Tier
   const adminUpdateTier = async (tierId, updates) => {
     try {
@@ -1766,6 +2066,30 @@ export function AppProvider({ children }) {
         return next;
       });
       addNotification('VIP Tier Updated', `Settings for ${tierId} updated locally.`);
+    }
+  };
+
+  // Admin Delete VIP Tier
+  const adminDeleteTier = async (tierId) => {
+    try {
+      await api.deleteVipTier(tierId);
+      setVipTiers(prev => {
+        const next = prev.filter(t => t.id !== tierId && t.name !== tierId);
+        try {
+          localStorage.setItem('websynx_vip_tiers', JSON.stringify(next));
+        } catch (e) {}
+        return next;
+      });
+      addNotification('VIP Tier Removed', 'VIP tier removed successfully.');
+    } catch (err) {
+      console.error('adminDeleteTier failed:', err);
+      setVipTiers(prev => {
+        const next = prev.filter(t => t.id !== tierId && t.name !== tierId);
+        try {
+          localStorage.setItem('websynx_vip_tiers', JSON.stringify(next));
+        } catch (e) {}
+        return next;
+      });
     }
   };
 
@@ -1871,13 +2195,22 @@ export function AppProvider({ children }) {
       let assignedTasks = Array.isArray(tasksToAssign) && tasksToAssign.length > 0 ? [...tasksToAssign] : [];
 
       if (assignedTasks.length === 0) {
-        // Build 25 tasks from pool
-        const pool = activeTasks.length >= 25 ? [...activeTasks] : [...INITIAL_TASKS];
-        for (let i = pool.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [pool[i], pool[j]] = [pool[j], pool[i]];
+        // Build 25 sequential campaign slots from pool (Slots 1 to 25)
+        const pool = activeTasks.length > 0 ? activeTasks : INITIAL_TASKS;
+        const slots = [];
+        for (let i = 1; i <= 25; i++) {
+          let match = pool.find(t => Number(t.learningStep ?? t.learning_step) === i);
+          if (!match) {
+            match = pool.find(t => {
+              const m = (t.title || '').match(/step\s*#?(\d+)/i);
+              return m && parseInt(m[1], 10) === i;
+            });
+          }
+          if (!match) match = pool.find(t => t.id === `task-${100 + i}` || t.id === `tsk-step-${i}`);
+          if (!match) match = INITIAL_TASKS.find(it => Number(it.learningStep ?? it.learning_step) === i);
+          if (match) slots.push({ ...match, learningStep: i, slotNumber: i });
         }
-        assignedTasks = pool.slice(0, 25);
+        assignedTasks = slots.length === 25 ? slots : pool.slice(0, 25);
       }
 
       const assignedTaskIds = assignedTasks.map(t => t.id);
@@ -2227,6 +2560,359 @@ export function AppProvider({ children }) {
     addNotification('Tasks Restored', 'All 25 learning steps and standard catalogue tasks restored to default.');
   }, [addNotification]);
 
+  // Helper to resolve current assigned queue for a user from all available state/storage
+  const resolveUserCurrentQueue = useCallback((targetUserId) => {
+    const tUser = adminUsers.find(u => u.id === targetUserId || String(u.id) === String(targetUserId));
+    let rawQueue = null;
+    if (Array.isArray(tUser?.assignedTasks) && tUser.assignedTasks.length > 0) {
+      rawQueue = [...tUser.assignedTasks];
+    } else if (user && (user.id === targetUserId || String(user.id) === String(targetUserId)) && Array.isArray(user.assignedTasks) && user.assignedTasks.length > 0) {
+      rawQueue = [...user.assignedTasks];
+    } else {
+      try {
+        const cached = localStorage.getItem(`websynx_user_assigned_tasks_${targetUserId}`);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) rawQueue = [...parsed];
+        }
+      } catch (e) {}
+    }
+
+    if (!rawQueue || rawQueue.length === 0) {
+      return get25CampaignSlots(tasks);
+    }
+
+    // Align with 25 slots strictly, preserving user custom overrides (price, commission, barrier)
+    const baseCatalogueSlots = get25CampaignSlots(tasks);
+    return get25CampaignSlots(rawQueue.map((item, idx) => {
+      const slotNum = Number(item.slotNumber ?? item.slot_number ?? item.learningStep ?? item.learning_step ?? (idx + 1));
+      const catItem = (tasks || []).find(t => String(t.id) === String(item.id)) ||
+                      baseCatalogueSlots.find(s => s.slotNumber === slotNum) ||
+                      item;
+      const p = item.price !== undefined ? parseFloat(item.price) : (catItem.price !== undefined ? parseFloat(catItem.price) : 10);
+      const c = parseFloat(item.commissionRate ?? item.commission_rate ?? catItem.commissionRate ?? catItem.commission_rate ?? 4) || 4;
+      const dep = item.requiredDeposit !== undefined
+        ? parseFloat(item.requiredDeposit)
+        : (item.required_deposit !== undefined
+          ? parseFloat(item.required_deposit)
+          : (parseFloat(catItem.requiredDeposit ?? catItem.required_deposit) || 0));
+      const yieldAmt = parseFloat(((p * c) / 100).toFixed(2));
+      return {
+        ...catItem,
+        ...item,
+        id: item.id || catItem.id,
+        slotNumber: slotNum,
+        learningStep: slotNum,
+        price: p,
+        commissionRate: c,
+        commission_rate: c,
+        yieldRate: `${c}%`,
+        yield_rate: `${c}%`,
+        yieldAmount: yieldAmt,
+        yield_amount: yieldAmt,
+        requiredDeposit: dep,
+        required_deposit: dep,
+        adminCustomized: Boolean(item.adminCustomized || dep > 0)
+      };
+    }));
+  }, [adminUsers, user, tasks]);
+
+  // Admin Update Specific Task in User Assigned Queue (Custom Task Pool for User)
+  const adminUpdateUserAssignedTask = useCallback(async (userId, taskId, updatedFields) => {
+    if (!userId) return false;
+    try {
+      const targetUser = adminUsers.find(u => u.id === userId || String(u.id) === String(userId));
+      const currentQueue = resolveUserCurrentQueue(userId);
+      let targetIdx = updatedFields.index !== undefined && updatedFields.index >= 0 ? Number(updatedFields.index) : -1;
+      if (targetIdx === -1 && (updatedFields.slotNumber || updatedFields.learningStep)) {
+        const stepNum = Number(updatedFields.slotNumber || updatedFields.learningStep);
+        if (stepNum >= 1 && stepNum <= currentQueue.length) {
+          targetIdx = stepNum - 1;
+        } else {
+          targetIdx = currentQueue.findIndex(t => Number(t.learningStep ?? t.slotNumber) === stepNum);
+        }
+      }
+      if (targetIdx === -1 && taskId) {
+        targetIdx = currentQueue.findIndex(t => String(t.id) === String(taskId));
+      }
+
+      const updatedQueue = currentQueue.map((t, idx) => {
+        const isTarget = targetIdx >= 0 ? idx === targetIdx : (taskId && String(t.id) === String(taskId));
+        if (isTarget) {
+          const priceNum = updatedFields.price !== undefined ? parseFloat(updatedFields.price) : (parseFloat(t.price) || 10);
+          const commNum = updatedFields.commissionRate !== undefined ? parseFloat(updatedFields.commissionRate) : (parseFloat(t.commissionRate ?? t.commission_rate) || 4);
+          const reqDepNum = updatedFields.requiredDeposit !== undefined ? parseFloat(updatedFields.requiredDeposit) : (parseFloat(t.requiredDeposit ?? t.required_deposit) || 0);
+          const yieldAmt = parseFloat(((priceNum * commNum) / 100).toFixed(2));
+          return {
+            ...t,
+            ...updatedFields,
+            id: updatedFields.id || t.id || `task_${Date.now()}_${idx}`,
+            slotNumber: idx + 1,
+            learningStep: idx + 1,
+            price: priceNum,
+            commissionRate: commNum,
+            commission_rate: commNum,
+            yieldRate: `${commNum}%`,
+            yield_rate: `${commNum}%`,
+            yieldAmount: yieldAmt,
+            yield_amount: yieldAmt,
+            requiredDeposit: reqDepNum,
+            required_deposit: reqDepNum,
+            adminCustomized: true
+          };
+        }
+        return {
+          ...t,
+          slotNumber: t.slotNumber || (idx + 1),
+          learningStep: t.learningStep || (idx + 1)
+        };
+      });
+
+      // Update in adminUsers state
+      setAdminUsers(prev => prev.map(u => {
+        if (u.id === userId || String(u.id) === String(userId)) {
+          return {
+            ...u,
+            assignedTasks: updatedQueue,
+            assignedPackage: u.assignedPackage || 'Custom 25 Package',
+            taskPackageStatus: 'assigned',
+            taskPackageRequested: false
+          };
+        }
+        return u;
+      }));
+
+      // Cache locally
+      try {
+        localStorage.setItem(`websynx_user_assigned_tasks_${userId}`, JSON.stringify(updatedQueue));
+        const currentAdminUsers = JSON.parse(localStorage.getItem('websynx_admin_users') || '[]');
+        const updatedAdminUsers = currentAdminUsers.map(u => {
+          if (u.id === userId || String(u.id) === String(userId)) {
+            return {
+              ...u,
+              assignedTasks: updatedQueue,
+              assignedPackage: u.assignedPackage || 'Custom 25 Package',
+              taskPackageStatus: 'assigned',
+              taskPackageRequested: false
+            };
+          }
+          return u;
+        });
+        localStorage.setItem('websynx_admin_users', JSON.stringify(updatedAdminUsers));
+      } catch (e) {}
+
+      // If active user is target user, update user state
+      if (user && (user.id === userId || String(user.id) === String(userId))) {
+        setUser(prev => {
+          const updated = {
+            ...prev,
+            assignedTasks: updatedQueue,
+            assignedPackage: prev?.assignedPackage || 'Custom 25 Package',
+            taskPackageStatus: 'assigned',
+            taskPackageRequested: false
+          };
+          try {
+            localStorage.setItem('websynx_user', JSON.stringify(updated));
+          } catch (e) {}
+          return updated;
+        });
+      }
+
+      const pkgName = targetUser?.assignedPackage || 'Custom 25 Package';
+      try {
+        await api.assignTasksToUser(userId, updatedQueue, pkgName, false);
+      } catch (e) {}
+
+      try {
+        window.dispatchEvent(new CustomEvent('ecomx_tasks_assigned', {
+          detail: { userId, tasks: updatedQueue, packageName: pkgName, resetCompleted: false }
+        }));
+      } catch (e) {}
+
+      addNotification('Assigned Task Updated', `Updated task for ${targetUser?.name || 'client'}.`);
+      return true;
+    } catch (err) {
+      console.error('adminUpdateUserAssignedTask error:', err);
+      return false;
+    }
+  }, [user, adminUsers, addNotification, resolveUserCurrentQueue]);
+
+  // Admin Reset User Custom Pool back to standard 25 catalogue defaults
+  const adminResetUserCustomPool = useCallback(async (userId) => {
+    if (!userId) return false;
+    const baseSlots = (tasks && tasks.length >= 25 ? tasks : INITIAL_TASKS).slice(0, 25);
+    return adminAssignTasksToUser(userId, baseSlots, 'Standard 25 Package', false);
+  }, [adminAssignTasksToUser, tasks]);
+
+  // Admin Remove Task from User Assigned Queue
+  const adminRemoveUserAssignedTask = useCallback(async (userId, taskId) => {
+    if (!userId || !taskId) return false;
+    try {
+      const targetUser = adminUsers.find(u => u.id === userId || String(u.id) === String(userId));
+      const currentQueue = resolveUserCurrentQueue(userId);
+      const updatedQueue = currentQueue.filter((t, idx) => String(t.id) !== String(taskId) && String(idx) !== String(taskId));
+
+      setAdminUsers(prev => prev.map(u => {
+        if (u.id === userId || String(u.id) === String(userId)) {
+          return {
+            ...u,
+            assignedTasks: updatedQueue,
+            pendingTasks: Math.max(0, updatedQueue.length - (u.dailyCompleted || 0))
+          };
+        }
+        return u;
+      }));
+
+      try {
+        localStorage.setItem(`websynx_user_assigned_tasks_${userId}`, JSON.stringify(updatedQueue));
+      } catch (e) {}
+
+      if (user && (user.id === userId || String(user.id) === String(userId))) {
+        setUser(prev => {
+          const updated = {
+            ...prev,
+            assignedTasks: updatedQueue,
+            pendingTasks: Math.max(0, updatedQueue.length - (prev.dailyCompleted || 0))
+          };
+          try {
+            localStorage.setItem('websynx_user', JSON.stringify(updated));
+          } catch (e) {}
+          return updated;
+        });
+      }
+
+      const pkgName = targetUser?.assignedPackage || 'Custom Package';
+      try {
+        await api.assignTasksToUser(userId, updatedQueue, pkgName, false);
+      } catch (e) {}
+
+      try {
+        window.dispatchEvent(new CustomEvent('ecomx_tasks_assigned', {
+          detail: { userId, tasks: updatedQueue, packageName: pkgName, resetCompleted: false }
+        }));
+      } catch (e) {}
+
+      addNotification('Task Removed', 'Task removed from client queue.');
+      return true;
+    } catch (err) {
+      console.error('adminRemoveUserAssignedTask error:', err);
+      return false;
+    }
+  }, [user, adminUsers, addNotification, resolveUserCurrentQueue]);
+
+  // Admin Add Task to User Assigned Queue
+  const adminAddUserAssignedTask = useCallback(async (userId, taskObj) => {
+    if (!userId || !taskObj) return false;
+    try {
+      const targetUser = adminUsers.find(u => u.id === userId || String(u.id) === String(userId));
+      const currentQueue = resolveUserCurrentQueue(userId);
+      const newTask = {
+        ...taskObj,
+        id: taskObj.id || `task_assigned_${Date.now()}_${Math.floor(Math.random() * 1000)}`
+      };
+      const updatedQueue = [...currentQueue, newTask];
+
+      setAdminUsers(prev => prev.map(u => {
+        if (u.id === userId || String(u.id) === String(userId)) {
+          return {
+            ...u,
+            assignedTasks: updatedQueue,
+            pendingTasks: Math.max(0, updatedQueue.length - (u.dailyCompleted || 0)),
+            dailyQuota: Math.max(u.dailyQuota || 25, updatedQueue.length)
+          };
+        }
+        return u;
+      }));
+
+      try {
+        localStorage.setItem(`websynx_user_assigned_tasks_${userId}`, JSON.stringify(updatedQueue));
+      } catch (e) {}
+
+      if (user && (user.id === userId || String(user.id) === String(userId))) {
+        setUser(prev => {
+          const updated = {
+            ...prev,
+            assignedTasks: updatedQueue,
+            pendingTasks: Math.max(0, updatedQueue.length - (prev.dailyCompleted || 0)),
+            dailyQuota: Math.max(prev.dailyQuota || 25, updatedQueue.length)
+          };
+          try {
+            localStorage.setItem('websynx_user', JSON.stringify(updated));
+          } catch (e) {}
+          return updated;
+        });
+      }
+
+      const pkgName = targetUser?.assignedPackage || 'Custom Package';
+      try {
+        await api.assignTasksToUser(userId, updatedQueue, pkgName, false);
+      } catch (e) {}
+
+      try {
+        window.dispatchEvent(new CustomEvent('ecomx_tasks_assigned', {
+          detail: { userId, tasks: updatedQueue, packageName: pkgName, resetCompleted: false }
+        }));
+      } catch (e) {}
+
+      addNotification('Task Added', `Added task to ${targetUser?.name || 'client'}'s queue.`);
+      return true;
+    } catch (err) {
+      console.error('adminAddUserAssignedTask error:', err);
+      return false;
+    }
+  }, [user, adminUsers, addNotification, resolveUserCurrentQueue]);
+
+  // Admin Reorder User Assigned Tasks
+  const adminReorderUserAssignedTasks = useCallback(async (userId, fromIndex, toIndex) => {
+    if (!userId || fromIndex === undefined || toIndex === undefined) return false;
+    try {
+      const targetUser = adminUsers.find(u => u.id === userId || String(u.id) === String(userId));
+      const currentQueue = resolveUserCurrentQueue(userId);
+      if (fromIndex < 0 || fromIndex >= currentQueue.length || toIndex < 0 || toIndex >= currentQueue.length) return false;
+      const reordered = [...currentQueue];
+      const [moved] = reordered.splice(fromIndex, 1);
+      reordered.splice(toIndex, 0, moved);
+
+      setAdminUsers(prev => prev.map(u => {
+        if (u.id === userId || String(u.id) === String(userId)) {
+          return { ...u, assignedTasks: reordered };
+        }
+        return u;
+      }));
+
+      try {
+        localStorage.setItem(`websynx_user_assigned_tasks_${userId}`, JSON.stringify(reordered));
+      } catch (e) {}
+
+      if (user && (user.id === userId || String(user.id) === String(userId))) {
+        setUser(prev => {
+          const updated = { ...prev, assignedTasks: reordered };
+          try {
+            localStorage.setItem('websynx_user', JSON.stringify(updated));
+          } catch (e) {}
+          return updated;
+        });
+      }
+
+      const pkgName = targetUser?.assignedPackage || 'Custom Package';
+      try {
+        await api.assignTasksToUser(userId, reordered, pkgName, false);
+      } catch (e) {}
+
+      try {
+        window.dispatchEvent(new CustomEvent('ecomx_tasks_assigned', {
+          detail: { userId, tasks: reordered, packageName: pkgName, resetCompleted: false }
+        }));
+      } catch (e) {}
+
+      addNotification('Queue Reordered', 'Task sequence updated.');
+      return true;
+    } catch (err) {
+      console.error('adminReorderUserAssignedTasks error:', err);
+      return false;
+    }
+  }, [user, adminUsers, addNotification, resolveUserCurrentQueue]);
+
   // Admin Sends Payment Request / Top-Up Notice to Client
   const sendPaymentRequestToUser = useCallback(async (userId, amount = '50.00', note = 'Please top up your balance to unlock subsequent task batches.') => {
     try {
@@ -2456,16 +3142,50 @@ export function AppProvider({ children }) {
     }
   };
 
+  // Refresh gateway deposit accounts from backend
+  const refreshGatewaySettings = useCallback(async () => {
+    try {
+      const gw = await api.getGatewaySettings();
+      if (gw && Object.keys(gw).length > 0) {
+        setSystemDepositAccounts(prev => {
+          const next = { ...prev, ...gw };
+          try {
+            localStorage.setItem('websynx_system_deposit_accounts', JSON.stringify(next));
+          } catch (e) {}
+          return next;
+        });
+        return gw;
+      }
+    } catch (e) {
+      console.warn('refreshGatewaySettings error:', e);
+    }
+    return null;
+  }, []);
+
   // Update System Deposit Accounts Gateway
   const updateSystemDepositAccounts = async (newAccounts) => {
-    setSystemDepositAccounts(newAccounts);
-    localStorage.setItem('websynx_system_deposit_accounts', JSON.stringify(newAccounts));
+    const cleanAccounts = {
+      ...(newAccounts || {}),
+      trc20Address: String(newAccounts?.trc20Address || newAccounts?.trc20 || newAccounts?.trc20_address || '').trim(),
+      erc20Address: String(newAccounts?.erc20Address || newAccounts?.erc20 || newAccounts?.erc20_address || '').trim(),
+      bep20Address: String(newAccounts?.bep20Address || newAccounts?.bep20 || newAccounts?.bep20_address || '').trim(),
+      bankName: String(newAccounts?.bankName || newAccounts?.bank_name || '').trim(),
+      bankAccount: String(newAccounts?.bankAccount || newAccounts?.bank_account || '').trim(),
+      bankHolder: String(newAccounts?.bankHolder || newAccounts?.bank_holder || '').trim(),
+      bankSwift: String(newAccounts?.bankSwift || newAccounts?.bank_swift || '').trim(),
+      depositInstructions: String(newAccounts?.depositInstructions || newAccounts?.deposit_instructions || '').trim()
+    };
+    setSystemDepositAccounts(cleanAccounts);
     try {
-      await api.updateGatewaySettings(newAccounts);
+      localStorage.setItem('websynx_system_deposit_accounts', JSON.stringify(cleanAccounts));
+    } catch (e) {}
+    try {
+      await api.updateGatewaySettings(cleanAccounts);
     } catch (e) {
       console.warn('Gateway settings persist failed:', e);
     }
     addNotification('Gateway Settings Updated', 'Deposit receiving addresses & banking details updated.');
+    return cleanAccounts;
   };
 
   // Direct Administrative Manual Deposit
@@ -2473,7 +3193,7 @@ export function AppProvider({ children }) {
     const parsedAmt = parseFloat(amount);
     if (isNaN(parsedAmt) || parsedAmt <= 0) throw new Error('Invalid deposit amount');
     
-    const targetUser = adminUsers.find(u => u.id === userId) || (user.id === userId ? user : null);
+    const targetUser = adminUsers.find(u => u.id === userId || String(u.id) === String(userId)) || (user.id === userId ? user : null);
     const userName = targetUser ? targetUser.name : 'User Account';
     
     const rec = {
@@ -2492,17 +3212,45 @@ export function AppProvider({ children }) {
       txHash: `0xAdminManual${Date.now()}`
     };
 
-    setRecords(prev => [rec, ...prev]);
+    setRecords(prev => {
+      const next = [rec, ...prev];
+      try { localStorage.setItem('websynx_records', JSON.stringify(next)); } catch (e) {}
+      return next;
+    });
 
     if (targetUser) {
+      const newBal = parseFloat(((targetUser.balance || 0) + parsedAmt).toFixed(2));
+      const newTotDep = parseFloat(((targetUser.totalDeposit || targetUser.total_deposit || 0) + parsedAmt).toFixed(2));
       const updated = {
         ...targetUser,
-        balance: parseFloat(((targetUser.balance || 0) + parsedAmt).toFixed(2)),
-        totalDeposit: parseFloat(((targetUser.totalDeposit || 0) + parsedAmt).toFixed(2))
+        balance: newBal,
+        totalDeposit: newTotDep,
+        total_deposit: newTotDep
       };
-      setAdminUsers(prev => prev.map(u => u.id === userId ? updated : u));
-      if (userId === user.id) {
+      setAdminUsers(prev => {
+        const next = prev.map(u => (u.id === userId || String(u.id) === String(userId)) ? updated : u);
+        try { localStorage.setItem('websynx_admin_users', JSON.stringify(next)); } catch (e) {}
+        return next;
+      });
+      if (userId === user.id || String(userId) === String(user.id)) {
         setUser(updated);
+        try { localStorage.setItem('websynx_user', JSON.stringify(updated)); } catch (e) {}
+      }
+
+      // Persist to database & Supabase cloud
+      try {
+        await api.updateUser(userId, {
+          balance: newBal,
+          totalDeposit: newTotDep,
+          total_deposit: newTotDep
+        });
+      } catch (err) {
+        console.warn('Manual deposit user update warning:', err);
+      }
+      try {
+        await supabaseService.createRecord(rec);
+      } catch (err) {
+        console.warn('Manual deposit record create warning:', err);
       }
     }
     addNotification('Manual Deposit Credited', `+$${parsedAmt.toFixed(2)} USDT manual deposit credited to ${userName}.`);
@@ -2549,7 +3297,9 @@ export function AppProvider({ children }) {
         adminUsers,
         activityStream,
         systemDepositAccounts,
+        setSystemDepositAccounts,
         updateSystemDepositAccounts,
+        refreshGatewaySettings,
         currentView,
         setCurrentView,
         dashboardTab,
@@ -2583,6 +3333,14 @@ export function AppProvider({ children }) {
         adminUpdateTask,
         adminDeleteTask,
         adminUpdateTier,
+        adminCreateTier,
+        adminDeleteTier,
+        adminUpdateUserAssignedTask,
+        adminResetUserCustomPool,
+        resolveUserCurrentQueue,
+        adminRemoveUserAssignedTask,
+        adminAddUserAssignedTask,
+        adminReorderUserAssignedTasks,
         resetDemoData,
         registerAccount,
         loginAccount,

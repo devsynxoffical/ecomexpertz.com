@@ -1200,6 +1200,13 @@ html.dark .audit-card {
   box-shadow: 0 10px 24px rgba(37, 99, 235, 0.35);
 }
 
+.dashboard-hero-banner h1,
+.dashboard-hero-banner h2,
+.dashboard-hero-banner h3,
+.dashboard-hero-banner h4 {
+  color: #ffffff !important;
+}
+
 .hero-banner-top {
   display: flex;
   justify-content: space-between;
@@ -1876,7 +1883,9 @@ html.dark .audit-card {
 .hero-greeting h2 {
   font-size: 1.15rem;
   font-weight: 500;
-  opacity: 0.9;
+  color: #ffffff !important;
+  opacity: 0.95;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
 .greeting-name-row {
@@ -1890,6 +1899,8 @@ html.dark .audit-card {
   font-size: 1.7rem;
   font-weight: 800;
   letter-spacing: -0.5px;
+  color: #ffffff !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
 .greeting-wave {
@@ -3507,6 +3518,8 @@ html.dark .tier-progress-banner {
 .profile-name {
   font-size: 1.3rem;
   font-weight: 800;
+  color: #ffffff !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
 .profile-vip-star {
@@ -5715,6 +5728,70 @@ html.dark .tier-progress-banner {
   box-shadow: 0 2px 6px rgba(220, 38, 38, 0.15);
 }
 
+/* 25 CAMPAIGN TASK SLOTS SPECIFIC STYLING */
+.slot-number-badge {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 4px 8px;
+  min-width: 58px;
+  text-align: center;
+  transition: all 0.15s ease;
+}
+
+.slot-number-badge:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+.slot-badge-hash {
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #64748b;
+  letter-spacing: 0.05em;
+  line-height: 1;
+}
+
+.slot-badge-num {
+  font-family: var(--font-mono, monospace);
+  font-size: 13.5px;
+  font-weight: 800;
+  color: #1e293b;
+  line-height: 1.25;
+}
+
+.btn-slot-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #ffffff;
+  background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%);
+  border: 1px solid #4338ca;
+  border-radius: 8px;
+  cursor: pointer;
+  box-shadow: 0 2px 5px rgba(79, 70, 229, 0.25);
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.btn-slot-edit:hover {
+  background: linear-gradient(135deg, #4338ca 0%, #4f46e5 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(79, 70, 229, 0.35);
+}
+
+.btn-slot-edit:active {
+  transform: translateY(0);
+}
+
 /* =========================================
    GATEWAYS & VIP TIERS (ENTERPRISE)
 ========================================= */
@@ -7738,9 +7815,11 @@ html.dark .apk-banner {
   .hero-greeting h2 {
     font-size: 0.85rem;
     line-height: 1.2;
+    color: #ffffff !important;
   }
   .greeting-name {
     font-size: 1.18rem;
+    color: #ffffff !important;
   }
   .hero-bal-label {
     font-size: 0.64rem;
@@ -7948,9 +8027,11 @@ html.dark .apk-banner {
   }
   .hero-greeting h2 {
     font-size: 0.78rem;
+    color: #ffffff !important;
   }
   .greeting-name {
     font-size: 1.05rem;
+    color: #ffffff !important;
   }
   .hero-bal-label {
     font-size: 0.58rem;

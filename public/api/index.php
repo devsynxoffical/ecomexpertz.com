@@ -808,6 +808,73 @@ if ($endpoint === 'vip-tiers' && $method === 'GET') {
     sendResponse($stmt->fetchAll());
 }
 
+// PUT /api/vip-tiers/:id
+if ($endpoint === 'vip-tiers' && $method === 'PUT' && !empty($action)) {
+    $id = $action;
+    $body = json_decode(file_get_contents('php://input'), true) ?: [];
+    $fields = [];
+    $vals = [];
+    if (isset($body['minBalance']) || isset($body['min_balance'])) {
+        $fields[] = 'min_balance = ?';
+        $vals[] = (float)($body['minBalance'] ?? $body['min_balance']);
+    }
+    if (isset($body['maxBalance']) || isset($body['max_balance'])) {
+        $fields[] = 'max_balance = ?';
+        $vals[] = (float)($body['maxBalance'] ?? $body['max_balance']);
+    }
+    if (isset($body['commissionRate']) || isset($body['commission_rate'])) {
+        $fields[] = 'commission_rate = ?';
+        $vals[] = (float)($body['commissionRate'] ?? $body['commission_rate']);
+    }
+    if (isset($body['dailyTasks']) || isset($body['daily_tasks'])) {
+        $fields[] = 'daily_tasks = ?';
+        $vals[] = (int)($body['dailyTasks'] ?? $body['daily_tasks']);
+    }
+    if (isset($body['name'])) {
+        $fields[] = 'name = ?';
+        $vals[] = $body['name'];
+    }
+    if (isset($body['platform'])) {
+        $fields[] = 'platform = ?';
+        $vals[] = $body['platform'];
+    }
+    if (isset($body['description'])) {
+        $fields[] = 'description = ?';
+        $vals[] = $body['description'];
+    }
+    if (!empty($fields)) {
+        $vals[] = $id;
+        $sql = "UPDATE vip_tiers SET " . implode(', ', $fields) . " WHERE id = ?";
+        $pdo->prepare($sql)->execute($vals);
+    }
+    $stmt = $pdo->prepare("SELECT * FROM vip_tiers WHERE id = ?");
+    $stmt->execute([$id]);
+    sendResponse(['tier' => $stmt->fetch() ?: $body]);
+}
+
+// POST /api/vip-tiers
+if ($endpoint === 'vip-tiers' && $method === 'POST') {
+    $body = json_decode(file_get_contents('php://input'), true) ?: [];
+    $id = $body['id'] ?? ('tier_' . strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $body['name'] ?? 'custom') . '_' . time()));
+    $name = $body['name'] ?? 'New Tier';
+    $platform = $body['platform'] ?? $name;
+    $minBal = (float)($body['minBalance'] ?? 0);
+    $maxBal = isset($body['maxBalance']) ? (float)$body['maxBalance'] : 99999;
+    $commRate = (float)($body['commissionRate'] ?? 5);
+    $dailyTasks = (int)($body['dailyTasks'] ?? 25);
+    $desc = $body['description'] ?? '';
+
+    $stmt = $pdo->prepare("INSERT INTO vip_tiers (id, name, platform, min_balance, max_balance, commission_rate, daily_tasks, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+    $stmt->execute([$id, $name, $platform, $minBal, $maxBal, $commRate, $dailyTasks, $desc]);
+    sendResponse(['tier' => array_merge($body, ['id' => $id])]);
+}
+
+// DELETE /api/vip-tiers/:id
+if ($endpoint === 'vip-tiers' && $method === 'DELETE' && !empty($action)) {
+    $pdo->prepare("DELETE FROM vip_tiers WHERE id = ?")->execute([$action]);
+    sendResponse(['success' => true]);
+}
+
 // GET /api/activity
 if ($endpoint === 'activity' && $method === 'GET') {
     $stmt = $pdo->query("SELECT * FROM activity_stream ORDER BY created_at DESC LIMIT 20");

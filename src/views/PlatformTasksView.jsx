@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { openProductUrl, getProductImage } from '../utils/productUrl';
 import { INITIAL_TASKS } from '../data/mockData';
+import { get25CampaignSlots } from '../utils/campaignSlots';
 
 export default function PlatformTasksView({ platform = 'eBay', onBack }) {
   const {
@@ -47,26 +48,59 @@ export default function PlatformTasksView({ platform = 'eBay', onBack }) {
 
   const tiersList = Array.isArray(vipTiers) && vipTiers.length > 0 ? vipTiers : [];
   const targetTier = tiersList.find(t => (t.platform || t.name || '').toLowerCase() === displayPlatform.toLowerCase());
-  const effectiveAmt = getEffectiveDepositOrBalance ? getEffectiveDepositOrBalance(user) : Math.max(Number(user?.totalDeposit || 0), Number(user?.balance || 0));
+  const effectiveAmt = getEffectiveDepositOrBalance ? getEffectiveDepositOrBalance(user) : Number(user?.balance || 0);
   const activeTier = userActiveTier || (getUserActiveTier ? getUserActiveTier(tiersList, user) : { name: 'eBay' });
   const tierStatus = targetTier && getTierProgressAndStatus ? getTierProgressAndStatus(targetTier, tiersList, user) : null;
 
   // 1. Resolve assigned tasks queue strictly from user object or user-specific cache assigned by admin
   let assignedQueue = [];
   if (Array.isArray(user?.assignedTasks) && user.assignedTasks.length > 0) {
-    assignedQueue = user.assignedTasks;
+    assignedQueue = [...user.assignedTasks];
   } else if (user?.id) {
     try {
       const cached = localStorage.getItem(`websynx_user_assigned_tasks_${user.id}`);
       if (cached) {
         const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed) && parsed.length > 0) assignedQueue = parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) assignedQueue = [...parsed];
       }
     } catch (e) {}
   }
   if (assignedQueue.length === 0 && (user?.assignedPackage || Number(user?.pendingTasks || user?.pending_tasks || 0) > 0)) {
-    const pool = (tasks && tasks.length >= 25 ? tasks : INITIAL_TASKS);
-    assignedQueue = pool.slice(0, 25);
+    assignedQueue = get25CampaignSlots(tasks);
+  }
+
+  // Ensure latest prices and deposit barriers:
+  if (assignedQueue.length > 0) {
+    const baseCatalogueSlots = get25CampaignSlots(tasks);
+    assignedQueue = assignedQueue.map((item, idx) => {
+      const slotNum = Number(item.slotNumber ?? item.slot_number ?? item.learningStep ?? item.learning_step ?? (idx + 1));
+      const catalogItem = (tasks || []).find(t => String(t.id) === String(item.id)) ||
+                          baseCatalogueSlots.find(s => s.slotNumber === slotNum) ||
+                          item;
+      const p = item.price !== undefined ? parseFloat(item.price) : (catalogItem.price !== undefined ? parseFloat(catalogItem.price) : 10);
+      const c = parseFloat(item.commissionRate ?? item.commission_rate ?? catalogItem.commissionRate ?? catalogItem.commission_rate ?? 4) || 4;
+      const dep = item.requiredDeposit !== undefined ? parseFloat(item.requiredDeposit) : (item.required_deposit !== undefined ? parseFloat(item.required_deposit) : (parseFloat(catalogItem.requiredDeposit ?? catalogItem.required_deposit) || 0));
+      const yieldAmt = parseFloat(((p * c) / 100).toFixed(2));
+      return {
+        ...catalogItem,
+        ...item,
+        id: item.id || catalogItem.id,
+        slotNumber: slotNum,
+        learningStep: slotNum,
+        price: p,
+        commissionRate: c,
+        commission_rate: c,
+        yieldRate: `${c}%`,
+        yield_rate: `${c}%`,
+        yieldAmount: yieldAmt,
+        yield_amount: yieldAmt,
+        requiredDeposit: dep,
+        required_deposit: dep,
+        image: item.image || item.imageUrl || catalogItem.image || catalogItem.imageUrl,
+        imageUrl: item.image || item.imageUrl || catalogItem.image || catalogItem.imageUrl,
+        adminCustomized: Boolean(item.adminCustomized || dep > 0)
+      };
+    });
   }
 
   // 2. Determine if user has an assigned package:
@@ -198,21 +232,40 @@ export default function PlatformTasksView({ platform = 'eBay', onBack }) {
                 </span>
               </div>
             </div>
-            <button
-              type="button"
-              className="btn-primary"
-              onClick={() => setModalType('deposit')}
-              style={{
-                padding: '8px 16px',
-                fontSize: '12px',
-                background: '#0284c7',
-                color: '#fff',
-                borderRadius: '10px',
-                fontWeight: '700'
-              }}
-            >
-              Deposit to Unlock →
-            </button>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              {activeTier && activeTier.name && activeTier.name.toLowerCase() !== displayPlatform.toLowerCase() && (
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => openPlatformTasks && openPlatformTasks(activeTier.name)}
+                  style={{
+                    padding: '8px 16px',
+                    fontSize: '12px',
+                    background: '#10b981',
+                    color: '#fff',
+                    borderRadius: '10px',
+                    fontWeight: '700'
+                  }}
+                >
+                  Switch to {activeTier.name} →
+                </button>
+              )}
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => setModalType('deposit')}
+                style={{
+                  padding: '8px 16px',
+                  fontSize: '12px',
+                  background: '#0284c7',
+                  color: '#fff',
+                  borderRadius: '10px',
+                  fontWeight: '700'
+                }}
+              >
+                Deposit to Unlock →
+              </button>
+            </div>
           </div>
         )}
 
@@ -411,12 +464,8 @@ export default function PlatformTasksView({ platform = 'eBay', onBack }) {
             const progressPct = Math.min(100, Math.round((completedCount / totalQuota) * 100));
             const currentActiveTask = assignedQueue[completedCount] || null;
 
-            // Requirements check on current active task (only when Admin explicitly configured it):
-            const rawDep = Number(currentActiveTask?.requiredDeposit ?? currentActiveTask?.required_deposit ?? 0);
-            const explicitDep = currentActiveTask?.adminCustomized === true || (!currentActiveTask?.isLearning && rawDep > 0)
-              ? rawDep
-              : 0;
-            const minRequired = explicitDep > 0 ? explicitDep : 0;
+            // Requirements check on current active task:
+            const minRequired = Number(currentActiveTask?.requiredDeposit ?? currentActiveTask?.required_deposit ?? 0);
             const userBal = Number(user?.balance) || 0;
             const isRestricted = minRequired > 0 && userBal < minRequired;
             const shortfall = Math.max(0, minRequired - userBal);
@@ -513,10 +562,10 @@ export default function PlatformTasksView({ platform = 'eBay', onBack }) {
 
                             {/* Row 2 */}
                             <div className="mallstocks-stat-box">
-                              <div className={`mallstocks-stat-val ${shortfall > 0 ? 'text-amber-500 font-bold' : ''}`}>
-                                {shortfall > 0 ? `${shortfall.toFixed(2)} USDT` : '0 USDT'}
+                              <div className="mallstocks-stat-val">
+                                {(Number(currentActiveTask.price) || 0).toFixed(2)} USDT
                               </div>
-                              <div className="mallstocks-stat-label">Cash gap between task</div>
+                              <div className="mallstocks-stat-label">Order amount</div>
                             </div>
                             <div className="mallstocks-stat-box">
                               <div className="mallstocks-stat-val">

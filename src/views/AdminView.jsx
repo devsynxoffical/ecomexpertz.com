@@ -1,5 +1,6 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useApp, deduplicateRecords } from '../context/AppContext';
+import { formatRecordDate } from './DashboardView';
 import {
   Home,
   Calendar,
@@ -55,7 +56,11 @@ import {
   Save,
   Pause,
   Play,
-  Ban
+  Ban,
+  ChevronUp,
+  ChevronDown,
+  ArrowUp,
+  ArrowDown
 } from 'lucide-react';
 import { getProductUrl, openProductUrl } from '../utils/productUrl';
 import { sanitizeReferralCode } from '../services/supabaseService';
@@ -70,6 +75,8 @@ import {
   ShopifyLogo,
   ShopeeLogo
 } from '../components/PlatformIcons';
+import { get25CampaignSlots } from '../utils/campaignSlots';
+export { get25CampaignSlots };
 
 export default function AdminView() {
   const {
@@ -80,6 +87,7 @@ export default function AdminView() {
     user,
     systemDepositAccounts,
     updateSystemDepositAccounts,
+    refreshGatewaySettings,
     adminApproveDeposit,
     adminRejectDeposit,
     adminApproveWithdrawal,
@@ -92,6 +100,14 @@ export default function AdminView() {
     adminDeleteTask,
     claimDummyDeposit,
     adminUpdateTier,
+    adminCreateTier,
+    adminDeleteTier,
+    adminUpdateUserAssignedTask,
+    adminResetUserCustomPool,
+    resolveUserCurrentQueue,
+    adminRemoveUserAssignedTask,
+    adminAddUserAssignedTask,
+    adminReorderUserAssignedTasks,
     resetDemoData,
     registerAccount,
     addNotification,
@@ -159,6 +175,36 @@ export default function AdminView() {
   const [withdrawalFilter, setWithdrawalFilter] = useState('all'); // 'all' | 'pending' | 'completed' | 'rejected'
   const [withdrawalSearch, setWithdrawalSearch] = useState('');
   const [taskSearch, setTaskSearch] = useState('');
+  const campaignSlots = useMemo(() => get25CampaignSlots(tasks), [tasks]);
+  const [selectedTaskPoolUser, setSelectedTaskPoolUserState] = useState(() => {
+    try {
+      return localStorage.getItem('websynx_admin_task_pool_user') || 'all';
+    } catch (e) {
+      return 'all';
+    }
+  });
+
+  const setSelectedTaskPoolUser = useCallback((val) => {
+    setSelectedTaskPoolUserState(val);
+    try {
+      localStorage.setItem('websynx_admin_task_pool_user', val);
+    } catch (e) {}
+  }, []);
+
+  const activePoolTargetUser = useMemo(() => {
+    if (selectedTaskPoolUser === 'all') return null;
+    return (adminUsers || []).find(u => String(u.id) === String(selectedTaskPoolUser)) || null;
+  }, [selectedTaskPoolUser, adminUsers]);
+
+  const activePoolSlots = useMemo(() => {
+    if (!activePoolTargetUser) {
+      return campaignSlots;
+    }
+    const userQueue = resolveUserCurrentQueue
+      ? resolveUserCurrentQueue(activePoolTargetUser.id)
+      : (Array.isArray(activePoolTargetUser.assignedTasks) && activePoolTargetUser.assignedTasks.length > 0 ? activePoolTargetUser.assignedTasks : campaignSlots);
+    return get25CampaignSlots(userQueue);
+  }, [activePoolTargetUser, campaignSlots, resolveUserCurrentQueue, adminUsers]);
   const [auditSearch, setAuditSearch] = useState('');
 
   // Helper to mask Gmail / emails across all views unless unmasked by Admin
@@ -280,6 +326,12 @@ export default function AdminView() {
   const [gatewaySavedMsg, setGatewaySavedMsg] = useState(false);
 
   useEffect(() => {
+    if (typeof refreshGatewaySettings === 'function') {
+      refreshGatewaySettings();
+    }
+  }, [refreshGatewaySettings]);
+
+  useEffect(() => {
     if (systemDepositAccounts && Object.keys(systemDepositAccounts).length > 0) {
       setGatewayForm(prev => ({
         ...prev,
@@ -399,6 +451,186 @@ export default function AdminView() {
   const [editDailyQuota, setEditDailyQuota] = useState('25');
   const [editAssignedPackage, setEditAssignedPackage] = useState('none');
 
+  // VIP Tiers Management
+  const [editingTier, setEditingTier] = useState(null);
+  const [showAddTierModal, setShowAddTierModal] = useState(false);
+  const [newTierData, setNewTierData] = useState({
+    name: '',
+    platform: 'eBay',
+    minBalance: '0',
+    maxBalance: '499',
+    commissionRate: '5.0',
+    dailyTasks: '25',
+    description: '',
+    features: 'Daily Task Limit: 25\nCommission Rate: 5.0%\nInstant Task Credit'
+  });
+
+  // Client Assigned Tasks Management
+  const [taskViewMode, setTaskViewMode] = useState('catalogue'); // 'catalogue' | 'assignedQueue'
+  const [selectedUserForTaskQueue, setSelectedUserForTaskQueue] = useState('');
+  const [editingAssignedTask, setEditingAssignedTask] = useState(null); // { userId, task, index }
+  const [showAddAssignedModalForUser, setShowAddAssignedModalForUser] = useState(null); // userId or null
+  const [addAssignedSource, setAddAssignedSource] = useState('catalog'); // 'catalog' | 'custom'
+  const [selectedCatalogTaskId, setSelectedCatalogTaskId] = useState('');
+  const [customAssignedTaskData, setCustomAssignedTaskData] = useState({
+    title: '',
+    platform: 'eBay',
+    price: '50.00',
+    commissionRate: '4.0',
+    requiredDeposit: '0.00',
+    isLearning: false,
+    learningStep: 1,
+    image: 'https://images.unsplash.com/photo-1546868871-7041f2a55e12?w=600&auto=format&fit=crop&q=80',
+    tag: 'Promotional'
+  });
+
+  const handleSaveTier = async (e) => {
+    e.preventDefault();
+    if (!editingTier) return;
+    try {
+      const minB = parseFloat(editingTier.minBalance) || 0;
+      const maxB = editingTier.maxBalance !== '' && editingTier.maxBalance !== null && editingTier.maxBalance !== undefined
+        ? parseFloat(editingTier.maxBalance)
+        : 99999;
+      const comm = parseFloat(editingTier.commissionRate) || 4;
+      const daily = parseInt(editingTier.dailyTasks, 10) || 25;
+      const feats = typeof editingTier.features === 'string'
+        ? editingTier.features.split('\n').map(s => s.trim()).filter(Boolean)
+        : editingTier.features;
+
+      await adminUpdateTier(editingTier.id, {
+        name: editingTier.name,
+        platform: editingTier.platform || editingTier.name,
+        minBalance: minB,
+        maxBalance: maxB,
+        commissionRate: comm,
+        dailyTasks: daily,
+        description: editingTier.description || '',
+        features: feats
+      });
+      setEditingTier(null);
+    } catch (err) {
+      alert('Error updating tier: ' + (err.message || err));
+    }
+  };
+
+  const handleCreateTier = async (e) => {
+    e.preventDefault();
+    try {
+      const minB = parseFloat(newTierData.minBalance) || 0;
+      const maxB = newTierData.maxBalance !== '' && newTierData.maxBalance !== null && newTierData.maxBalance !== undefined
+        ? parseFloat(newTierData.maxBalance)
+        : 99999;
+      const comm = parseFloat(newTierData.commissionRate) || 5;
+      const daily = parseInt(newTierData.dailyTasks, 10) || 25;
+      const feats = typeof newTierData.features === 'string'
+        ? newTierData.features.split('\n').map(s => s.trim()).filter(Boolean)
+        : newTierData.features;
+
+      await adminCreateTier({
+        name: newTierData.name.trim(),
+        platform: (newTierData.platform || newTierData.name).trim(),
+        minBalance: minB,
+        maxBalance: maxB,
+        commissionRate: comm,
+        dailyTasks: daily,
+        description: newTierData.description.trim(),
+        features: feats
+      });
+      setShowAddTierModal(false);
+      setNewTierData({
+        name: '',
+        platform: 'eBay',
+        minBalance: '0',
+        maxBalance: '499',
+        commissionRate: '5.0',
+        dailyTasks: '25',
+        description: '',
+        features: 'Daily Task Limit: 25\nCommission Rate: 5.0%\nInstant Task Credit'
+      });
+    } catch (err) {
+      alert('Error creating tier: ' + (err.message || err));
+    }
+  };
+
+  const handleDeleteTier = async (tier) => {
+    if (window.confirm(`Are you sure you want to remove the VIP tier "${tier.name}"?`)) {
+      try {
+        await adminDeleteTier(tier.id);
+      } catch (err) {
+        alert('Error removing tier: ' + (err.message || err));
+      }
+    }
+  };
+
+  const handleSaveAssignedTask = async (e) => {
+    e.preventDefault();
+    if (!editingAssignedTask) return;
+    try {
+      const { userId, task, index } = editingAssignedTask;
+      await adminUpdateUserAssignedTask(userId, task.id, {
+        index,
+        title: task.title,
+        platform: task.platform,
+        price: parseFloat(task.price) || 10,
+        commissionRate: parseFloat(task.commissionRate ?? task.commission_rate) || 4,
+        requiredDeposit: parseFloat(task.requiredDeposit ?? task.required_deposit) || 0,
+        isLearning: Boolean(task.isLearning),
+        learningStep: task.isLearning ? parseInt(task.learningStep || 1, 10) : null,
+        image: task.image || 'https://images.unsplash.com/photo-1546868871-7041f2a55e12?w=600&auto=format&fit=crop&q=80'
+      });
+      setEditingAssignedTask(null);
+    } catch (err) {
+      alert('Error updating assigned task: ' + (err.message || err));
+    }
+  };
+
+  const handleAddAssignedTask = async (e) => {
+    e.preventDefault();
+    if (!showAddAssignedModalForUser) return;
+    try {
+      const userId = showAddAssignedModalForUser;
+      let taskObj = null;
+      if (addAssignedSource === 'catalog') {
+        const catId = selectedCatalogTaskId || tasks[0]?.id;
+        const found = tasks.find(t => String(t.id) === String(catId));
+        if (found) {
+          taskObj = { ...found, id: `assigned_${Date.now()}_${Math.floor(Math.random() * 1000)}` };
+        }
+      } else {
+        taskObj = {
+          id: `assigned_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+          title: customAssignedTaskData.title.trim() || 'Custom Promotional Task',
+          platform: customAssignedTaskData.platform || 'eBay',
+          price: parseFloat(customAssignedTaskData.price) || 10,
+          commissionRate: parseFloat(customAssignedTaskData.commissionRate) || 4,
+          requiredDeposit: parseFloat(customAssignedTaskData.requiredDeposit) || 0,
+          isLearning: Boolean(customAssignedTaskData.isLearning),
+          learningStep: customAssignedTaskData.isLearning ? parseInt(customAssignedTaskData.learningStep || 1, 10) : null,
+          image: customAssignedTaskData.image || 'https://images.unsplash.com/photo-1546868871-7041f2a55e12?w=600&auto=format&fit=crop&q=80',
+          tag: customAssignedTaskData.tag || 'Special Deal'
+        };
+      }
+      if (taskObj) {
+        await adminAddUserAssignedTask(userId, taskObj);
+      }
+      setShowAddAssignedModalForUser(null);
+      setCustomAssignedTaskData({
+        title: '',
+        platform: 'eBay',
+        price: '50.00',
+        commissionRate: '4.0',
+        requiredDeposit: '0.00',
+        isLearning: false,
+        learningStep: 1,
+        image: 'https://images.unsplash.com/photo-1546868871-7041f2a55e12?w=600&auto=format&fit=crop&q=80',
+        tag: 'Promotional'
+      });
+    } catch (err) {
+      alert('Error adding assigned task: ' + (err.message || err));
+    }
+  };
+
   // Inspect User Record & Dossier Modal
   const [inspectingUser, setInspectingUser] = useState(null);
 
@@ -411,15 +643,32 @@ export default function AdminView() {
     return deduplicateRecords(records || []);
   }, [records]);
 
-  const pendingDeposits = uniqueRecords.filter(r => r.category === 'Deposit' && r.status === 'Pending');
-  const pendingWithdrawals = uniqueRecords.filter(r => r.category === 'Withdrawal' && r.status === 'Pending');
+  const isDepositRecord = (r) => {
+    if (!r) return false;
+    const cat = (r.category || '').toLowerCase();
+    const typ = (r.type || '').toLowerCase();
+    return cat === 'deposit' || typ.includes('deposit');
+  };
+
+  const isWithdrawalRecord = (r) => {
+    if (!r) return false;
+    const cat = (r.category || '').toLowerCase();
+    const typ = (r.type || '').toLowerCase();
+    return cat === 'withdrawal' || typ.includes('withdraw');
+  };
+
+  const pendingDeposits = uniqueRecords.filter(r => isDepositRecord(r) && (r.status || '').toLowerCase() === 'pending');
+  const pendingWithdrawals = uniqueRecords.filter(r => isWithdrawalRecord(r) && (r.status || '').toLowerCase() === 'pending');
   const totalCompletedDeposits = uniqueRecords
-    .filter(r => r.category === 'Deposit' && r.status === 'Completed')
+    .filter(r => isDepositRecord(r) && (r.status || '').toLowerCase() === 'completed')
     .reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0);
   const totalCompletedWithdrawals = uniqueRecords
-    .filter(r => r.category === 'Withdrawal' && r.status === 'Completed')
+    .filter(r => isWithdrawalRecord(r) && (r.status || '').toLowerCase() === 'completed')
     .reduce((sum, r) => sum + Math.abs(parseFloat(r.amount) || 0), 0);
-  const totalCompletedTasks = uniqueRecords.filter(r => r.category === 'Ad Tasks').length;
+  const totalCompletedTasks = uniqueRecords.filter(r => {
+    const cat = (r.category || '').toLowerCase();
+    return cat === 'ad tasks' || cat === 'tasks' || cat === 'task';
+  }).length;
   const totalUserBalances = (adminUsers || []).reduce((sum, u) => sum + (parseFloat(u.balance) || 0), 0) + (parseFloat(user?.balance) || 0);
 
   const handleAdminLoginSubmit = async (e) => {
@@ -619,12 +868,7 @@ export default function AdminView() {
       (t.yieldRate ? parseFloat(t.yieldRate) : (t.yield_rate ? parseFloat(t.yield_rate) : 4))
     ) || 4;
     const reqDepVal = parseFloat(t.requiredDeposit ?? t.required_deposit ?? 0) || 0;
-    const isLearnVal = Boolean(
-      t.isLearning ??
-      t.is_learning ??
-      (t.title && t.title.toLowerCase().startsWith('step '))
-    );
-    let stepNum = t.learningStep ?? t.learning_step;
+    let stepNum = t.slotNumber || t.learningStep || t.learning_step;
     if (!stepNum && t.title) {
       const match = t.title.match(/step\s*#?(\d+)/i);
       if (match) stepNum = parseInt(match[1], 10);
@@ -637,18 +881,20 @@ export default function AdminView() {
     setEditingTask({
       ...t, // Preserves ALL fields (orders, rating, id, etc.)
       id: t.id,
+      targetUserId: selectedTaskPoolUser !== 'all' ? selectedTaskPoolUser : null,
+      slotNumber: t.slotNumber || stepNum,
       title: t.title || '',
       platform: t.platform || 'eBay',
       category: t.category || 'General',
       price: isNaN(priceVal) ? 10 : priceVal,
       commissionRate: isNaN(commVal) ? 4 : commVal,
       requiredDeposit: isNaN(reqDepVal) ? 0 : reqDepVal,
-      isLearning: isLearnVal,
+      isLearning: true,
       learningStep: stepNum,
       image: imgVal,
       orders: t.orders !== undefined ? t.orders : 120,
       rating: t.rating !== undefined ? t.rating : 4.9,
-      tag: t.tag || '',
+      tag: t.tag || `Slot #${stepNum}`,
       description: t.description || '',
       active: t.active !== false && t.status !== 'Inactive' && t.status !== 'Disabled',
       productUrl: prodUrlVal || ''
@@ -659,7 +905,8 @@ export default function AdminView() {
     e.preventDefault();
     if (!editingTask || !editingTask.id) return;
     try {
-      const existing = tasks.find(x => String(x.id) === String(editingTask.id)) || {};
+      const poolSource = editingTask.targetUserId ? activePoolSlots : tasks;
+      const existing = (poolSource || []).find(x => String(x.id) === String(editingTask.id)) || {};
       const priceVal = parseFloat(editingTask.price);
       const commVal = parseFloat(editingTask.commissionRate);
       const depVal = parseFloat(editingTask.requiredDeposit);
@@ -669,8 +916,7 @@ export default function AdminView() {
       const finalYield = parseFloat(((finalPrice * finalComm) / 100).toFixed(2));
       const finalDep = !isNaN(depVal) ? Math.max(0, depVal) : (existing.requiredDeposit || 0);
 
-      const isLearn = Boolean(editingTask.isLearning);
-      const stepVal = isLearn ? parseInt(editingTask.learningStep || 1, 10) : null;
+      const stepVal = parseInt(editingTask.slotNumber || editingTask.learningStep || 1, 10);
 
       const finalImage = (editingTask.image || existing.image || getProductImage(editingTask)).trim();
       const finalProductUrl = editingTask.productUrl ? editingTask.productUrl.trim() : (existing.productUrl || null);
@@ -680,6 +926,7 @@ export default function AdminView() {
         ...existing,
         ...editingTask,
         id: editingTask.id,
+        slotNumber: stepVal,
         title: (editingTask.title || existing.title || '').trim(),
         platform: editingTask.platform || existing.platform || 'eBay',
         category: editingTask.category || existing.category || 'General',
@@ -693,8 +940,8 @@ export default function AdminView() {
         requiredDeposit: finalDep,
         required_deposit: finalDep,
         adminCustomized: true,
-        isLearning: isLearn,
-        is_learning: isLearn,
+        isLearning: true,
+        is_learning: true,
         learningStep: stepVal,
         learning_step: stepVal,
         image: finalImage,
@@ -702,7 +949,7 @@ export default function AdminView() {
         image_url: finalImage,
         orders: editingTask.orders !== undefined ? editingTask.orders : (existing.orders || 120),
         rating: editingTask.rating !== undefined ? editingTask.rating : (existing.rating || 4.9),
-        tag: editingTask.tag ?? existing.tag ?? '',
+        tag: editingTask.tag ?? existing.tag ?? `Slot #${stepVal}`,
         description: editingTask.description ?? existing.description ?? '',
         active: Boolean(editingTask.active),
         status: editingTask.active ? 'Active' : 'Disabled',
@@ -710,7 +957,18 @@ export default function AdminView() {
         product_url: finalProductUrl
       };
 
-      await adminUpdateTask(editingTask.id, updatedPayload);
+      if (editingTask.targetUserId) {
+        // Update user-specific custom pool
+        await adminUpdateUserAssignedTask(editingTask.targetUserId, editingTask.id, {
+          ...updatedPayload,
+          slotNumber: stepVal,
+          learningStep: stepVal,
+          index: stepVal - 1
+        });
+      } else {
+        // Update global base catalogue
+        await adminUpdateTask(editingTask.id, updatedPayload);
+      }
       setEditingTask(null);
     } catch (err) {
       console.error('Save task error:', err);
@@ -730,7 +988,17 @@ export default function AdminView() {
 
   const handleToggleTaskActive = async (t) => {
     try {
-      await adminUpdateTask(t.id, { active: !t.active });
+      if (selectedTaskPoolUser !== 'all') {
+        await adminUpdateUserAssignedTask(selectedTaskPoolUser, t.id, {
+          active: t.active === false,
+          status: t.active === false ? 'Active' : 'Disabled',
+          slotNumber: t.slotNumber,
+          learningStep: t.slotNumber,
+          index: (t.slotNumber || 1) - 1
+        });
+      } else {
+        await adminUpdateTask(t.id, { active: !t.active });
+      }
     } catch (err) {
       alert('Error toggling task status: ' + err.message);
     }
@@ -2028,10 +2296,10 @@ export default function AdminView() {
               <div className="admin-table-toolbar">
                 <div className="admin-table-filter-tabs">
                   {[
-                    { id: 'all', label: `All (${uniqueRecords.filter(r => r.category === 'Deposit').length})` },
-                    { id: 'pending', label: `Pending (${uniqueRecords.filter(r => r.category === 'Deposit' && (r.status || 'Pending').toLowerCase() === 'pending').length})` },
-                    { id: 'completed', label: `Completed (${uniqueRecords.filter(r => r.category === 'Deposit' && (r.status || '').toLowerCase() === 'completed').length})` },
-                    { id: 'rejected', label: `Rejected (${uniqueRecords.filter(r => r.category === 'Deposit' && (r.status || '').toLowerCase() === 'rejected').length})` }
+                    { id: 'all', label: `All (${uniqueRecords.filter(r => isDepositRecord(r)).length})` },
+                    { id: 'pending', label: `Pending (${uniqueRecords.filter(r => isDepositRecord(r) && (r.status || 'Pending').toLowerCase() === 'pending').length})` },
+                    { id: 'completed', label: `Completed (${uniqueRecords.filter(r => isDepositRecord(r) && (r.status || '').toLowerCase() === 'completed').length})` },
+                    { id: 'rejected', label: `Rejected (${uniqueRecords.filter(r => isDepositRecord(r) && (r.status || '').toLowerCase() === 'rejected').length})` }
                   ].map(tab => (
                     <button
                       key={tab.id}
@@ -2057,13 +2325,15 @@ export default function AdminView() {
                   </div>
                   <span className="admin-table-count-text">
                     Showing {uniqueRecords.filter(r => {
-                      if (r.category !== 'Deposit') return false;
-                      if (depositFilter !== 'all' && (r.status || 'Pending').toLowerCase() !== depositFilter) return false;
+                      if (!isDepositRecord(r)) return false;
+                      const statusLower = (r.status || 'Pending').toLowerCase();
+                      if (depositFilter !== 'all' && statusLower !== depositFilter) return false;
                       if (depositSearch) {
                         const q = depositSearch.toLowerCase();
-                        return (r.code && r.code.toLowerCase().includes(q)) ||
-                               (r.userName && r.userName.toLowerCase().includes(q)) ||
-                               (r.txHash && r.txHash.toLowerCase().includes(q));
+                        const code = (r.code || r.id || '').toLowerCase();
+                        const userName = (r.userName || r.user_name || '').toLowerCase();
+                        const txHash = (r.txHash || r.tx_hash || '').toLowerCase();
+                        return code.includes(q) || userName.includes(q) || txHash.includes(q);
                       }
                       return true;
                     }).length} records
@@ -2088,13 +2358,15 @@ export default function AdminView() {
                   <tbody>
                     {(() => {
                       const filtered = uniqueRecords.filter(r => {
-                        if (r.category !== 'Deposit') return false;
-                        if (depositFilter !== 'all' && (r.status || 'Pending').toLowerCase() !== depositFilter) return false;
+                        if (!isDepositRecord(r)) return false;
+                        const statusLower = (r.status || 'Pending').toLowerCase();
+                        if (depositFilter !== 'all' && statusLower !== depositFilter) return false;
                         if (depositSearch) {
                           const q = depositSearch.toLowerCase();
-                          return (r.code && r.code.toLowerCase().includes(q)) ||
-                                 (r.userName && r.userName.toLowerCase().includes(q)) ||
-                                 (r.txHash && r.txHash.toLowerCase().includes(q));
+                          const code = (r.code || r.id || '').toLowerCase();
+                          const userName = (r.userName || r.user_name || '').toLowerCase();
+                          const txHash = (r.txHash || r.tx_hash || '').toLowerCase();
+                          return code.includes(q) || userName.includes(q) || txHash.includes(q);
                         }
                         return true;
                       });
@@ -2149,7 +2421,7 @@ export default function AdminView() {
                               </div>
                             </td>
                             <td>
-                              <span className="cell-date">{rec.date}</span>
+                              <span className="cell-date">{formatRecordDate(rec.date)}</span>
                             </td>
                             <td>
                               <span className={`admin-badge ${statusLower === 'completed' ? 'success' : statusLower === 'rejected' ? 'danger' : 'pending'}`}>
@@ -2157,7 +2429,7 @@ export default function AdminView() {
                               </span>
                             </td>
                             <td>
-                              {rec.status === 'Pending' ? (
+                              {statusLower === 'pending' ? (
                                 <div className="admin-table-actions">
                                   <button
                                     type="button"
@@ -2831,6 +3103,29 @@ export default function AdminView() {
               </div>
             </div>
 
+            {/* PENDING DEPOSITS ACTION BANNER */}
+            {pendingDeposits.length > 0 && (
+              <div className="admin-panel-card mb-4 animate-slide-down" style={{ borderColor: '#bfdbfe', background: '#eff6ff' }}>
+                <div style={{ padding: '12px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#1e40af', fontSize: '13px', fontWeight: 600 }}>
+                    <AlertTriangle size={16} color="#2563eb" />
+                    <span>
+                      <strong>{pendingDeposits.length} Deposit{pendingDeposits.length > 1 ? 's' : ''} Pending Approval</strong> awaiting admin verification.
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn-admin-primary btn-admin-sm"
+                    onClick={() => setActiveAdminTab('deposits')}
+                    style={{ background: 'linear-gradient(135deg, #0284c7 0%, #2563eb 100%)', color: '#fff' }}
+                  >
+                    <Wallet size={13} />
+                    <span>Review Deposits ({pendingDeposits.length}) →</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* PENDING REQUESTS NOTIFICATION BANNER */}
             {adminUsers.filter(u => u.taskPackageRequested).length > 0 && (
               <div className="admin-panel-card mb-4" style={{ borderColor: '#fde68a', background: '#fffbeb' }}>
@@ -3030,7 +3325,7 @@ export default function AdminView() {
                       </th>
                       <th>Member</th>
                       <th>Email</th>
-                      <th>Ref Code</th>
+                      <th title="Member's Sponsor Code & Personal Referral Code">Ref & Sponsor</th>
                       <th>Progress</th>
                       <th>TRC20 Wallet</th>
                       <th className="text-right">Balance</th>
@@ -3057,7 +3352,9 @@ export default function AdminView() {
                         const currentUTier = (u.id === user?.id ? user?.vipLevel : (u.vipTier || u.vipLevel)) || 'eBay';
                         const currentUStatus = (u.id === user?.id ? user?.status : u.status) || 'Active';
                         const currentUKyc = (u.id === user?.id ? user?.kycStatus : (u.kyc || u.kycStatus)) || 'Verified';
-                        const ownRefCode = u.referralCode || u.code || '505282';
+                        const ownRefCode = u.referralCode || u.code || '';
+                        const joinedWithCode = u.invitedByCode || u.referredByCode || (u.referredBy && !String(u.referredBy).startsWith('usr_') ? u.referredBy : '888888');
+                        const sponsorName = u.referredByName || (joinedWithCode === '888888' ? 'System Administrator' : '');
                         const dailyQuota = u.dailyQuota || 25;
                         const completedTasks = u.dailyCompleted ?? u.completedTasks ?? 0;
                         const pendingTasks = u.pendingTasks ?? Math.max(0, dailyQuota - completedTasks);
@@ -3101,11 +3398,26 @@ export default function AdminView() {
                               <span className="cell-date font-mono" title={u.email}>{maskedEmail}</span>
                             </td>
                             <td>
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                <span className="cell-tracking-code">{ownRefCode}</span>
-                                <span style={{ fontSize: '11px', color: '#64748b' }}>
-                                  via {u.invitedByCode || u.referredByCode || '505282'}
-                                </span>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', minWidth: '130px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                  <span style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.04em', color: '#64748b', fontWeight: 600 }}>Joined:</span>
+                                  <span
+                                    className="cell-tracking-code"
+                                    style={{ padding: '2px 7px', fontSize: '11px', background: '#eff6ff', color: '#1d4ed8', borderColor: '#bfdbfe' }}
+                                    title={sponsorName ? `Sponsor: ${sponsorName}` : `Joined via code ${joinedWithCode}`}
+                                  >
+                                    {joinedWithCode}
+                                  </span>
+                                  {joinedWithCode === '888888' && (
+                                    <span style={{ fontSize: '10px', color: '#2563eb', fontWeight: 600, background: '#dbeafe', padding: '1px 5px', borderRadius: '4px' }}>Admin</span>
+                                  )}
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: '#64748b' }}>
+                                  <span style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.04em', color: '#94a3b8', fontWeight: 600 }}>User:</span>
+                                  <span className="font-mono font-semibold" style={{ color: '#0f172a' }} title="Member's personal invitation code">
+                                    {ownRefCode || 'None'}
+                                  </span>
+                                </div>
                               </div>
                             </td>
                             <td>
@@ -3201,7 +3513,7 @@ export default function AdminView() {
                                     setEditWalletAddress(currentUWallet);
                                     setEditKyc(currentUKyc);
                                     setEditReferralCode(ownRefCode);
-                                    setEditInvitedByCode(u.invitedByCode || u.referredByCode || '505282');
+                                    setEditInvitedByCode(u.invitedByCode || u.referredByCode || '888888');
                                     setEditPendingTasks((u.pendingTasks ?? Math.max(0, dailyQuota - completedTasks)).toString());
                                     setEditCompletedTasks(completedTasks.toString());
                                     setEditDailyQuota(dailyQuota.toString());
@@ -3675,19 +3987,19 @@ export default function AdminView() {
                           <div className="dossier-row">
                             <span className="d-label">Joined via Invite Code:</span>
                             <strong className="d-val admin-code-pill blue">
-                              {inspectingUser.invitedByCode || inspectingUser.referredByCode || (inspectingUser.referredBy ? inspectingUser.referredBy : '505282')}
+                              {inspectingUser.invitedByCode || inspectingUser.referredByCode || (inspectingUser.referredBy && !String(inspectingUser.referredBy).startsWith('usr_') ? inspectingUser.referredBy : '888888')}
                             </strong>
                           </div>
                           <div className="dossier-row">
                             <span className="d-label">Invited By / Sponsor:</span>
                             <span className="d-val font-medium">
-                              {inspectingUser.referredByName || (inspectingUser.invitedByCode === '888888' ? 'System Administrator' : (inspectingUser.invitedByCode ? `Code #${inspectingUser.invitedByCode}` : 'Genesis'))}
+                              {inspectingUser.referredByName || (inspectingUser.invitedByCode === '888888' ? 'System Administrator' : (inspectingUser.invitedByCode ? `Code #${inspectingUser.invitedByCode}` : 'System Administrator'))}
                             </span>
                           </div>
                           <div className="dossier-row">
                             <span className="d-label">User's Own Referral Code:</span>
                             <strong className="d-val admin-code-pill amber">
-                              {inspectingUser.referralCode || inspectingUser.code || '505282'}
+                              {inspectingUser.referralCode || inspectingUser.code || ''}
                             </strong>
                           </div>
                           <div className="dossier-row">
@@ -3890,6 +4202,177 @@ export default function AdminView() {
                       );
                     })()}
 
+                    {/* 5. Assigned Tasks Queue Section */}
+                    {(() => {
+                      const userQueue = Array.isArray(inspectingUser.assignedTasks) && inspectingUser.assignedTasks.length > 0
+                        ? inspectingUser.assignedTasks
+                        : (() => {
+                            try {
+                              const c = localStorage.getItem(`websynx_user_assigned_tasks_${inspectingUser.id}`);
+                              if (c) {
+                                const p = JSON.parse(c);
+                                if (Array.isArray(p)) return p;
+                              }
+                            } catch (e) {}
+                            return [];
+                          })();
+
+                      return (
+                        <div className="dossier-card full-width mt-4">
+                          <div className="dossier-card-header flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <ClipboardList size={16} className="text-indigo-600" />
+                              <h4 className="font-semibold text-slate-800">
+                                Assigned Tasks Queue ({userQueue.length} Steps)
+                              </h4>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                className="btn-admin-primary text-xs py-1 px-2.5 flex items-center gap-1"
+                                onClick={() => setShowAddAssignedModalForUser(inspectingUser.id)}
+                              >
+                                <Plus size={12} />
+                                <span>+ Add Task</span>
+                              </button>
+                              <button
+                                type="button"
+                                className="btn-admin-secondary text-xs py-1 px-2.5 flex items-center gap-1"
+                                onClick={() => adminAssignRandomTasks && adminAssignRandomTasks(inspectingUser.id, 25)}
+                                title="Re-assign 25 Tasks"
+                              >
+                                <Shuffle size={12} />
+                                <span>Assign 25</span>
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="mt-3">
+                            {userQueue.length === 0 ? (
+                              <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg text-center text-xs text-slate-500">
+                                No specific tasks queued for this user. System falls back to default platform catalogue tasks.
+                              </div>
+                            ) : (
+                              <div className="max-h-72 overflow-y-auto border border-slate-200 rounded-lg">
+                                <table className="w-full text-xs text-left bg-white">
+                                  <thead>
+                                    <tr className="border-b bg-slate-50 text-slate-600 font-semibold">
+                                      <th className="py-2 px-2.5 text-center w-12">#</th>
+                                      <th className="py-2 px-2.5">Task / Product</th>
+                                      <th className="py-2 px-2.5">Platform</th>
+                                      <th className="py-2 px-2.5">Price</th>
+                                      <th className="py-2 px-2.5">Yield</th>
+                                      <th className="py-2 px-2.5">Barrier</th>
+                                      <th className="py-2 px-2.5 text-right">Actions</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-100">
+                                    {userQueue.map((at, idx) => {
+                                      const price = Number(at.price || 0);
+                                      const comm = Number(at.commissionRate ?? at.commission_rate ?? 4);
+                                      const profit = (price * comm) / 100;
+                                      const barrier = Number(at.requiredDeposit ?? at.required_deposit ?? 0);
+
+                                      return (
+                                        <tr key={at.id || idx} className="hover:bg-indigo-50/20">
+                                          <td className="py-2 px-2.5 text-center font-bold text-slate-400">
+                                            #{idx + 1}
+                                          </td>
+                                          <td className="py-2 px-2.5">
+                                            <div className="flex items-center gap-2">
+                                              <img
+                                                src={at.image || 'https://images.unsplash.com/photo-1546868871-7041f2a55e12?w=600&auto=format&fit=crop&q=80'}
+                                                alt=""
+                                                className="w-8 h-8 rounded object-cover border border-slate-200 flex-shrink-0"
+                                                onError={(e) => {
+                                                  e.currentTarget.onerror = null;
+                                                  e.currentTarget.src = 'https://images.unsplash.com/photo-1546868871-7041f2a55e12?w=600&auto=format&fit=crop&q=80';
+                                                }}
+                                              />
+                                              <div className="max-w-[200px]">
+                                                <div className="font-medium text-slate-800 truncate" title={at.title}>
+                                                  {at.title}
+                                                </div>
+                                                {at.isLearning && (
+                                                  <span className="text-[10px] text-amber-600 font-semibold">
+                                                    Step {at.learningStep || (idx + 1)} Learning Task
+                                                  </span>
+                                                )}
+                                              </div>
+                                            </div>
+                                          </td>
+                                          <td className="py-2 px-2.5">
+                                            <span className="admin-code-pill font-medium">{at.platform || 'eBay'}</span>
+                                          </td>
+                                          <td className="py-2 px-2.5 font-mono font-semibold text-slate-700">
+                                            ${price.toFixed(2)}
+                                          </td>
+                                          <td className="py-2 px-2.5">
+                                            <div className="font-semibold text-emerald-600">+{comm}%</div>
+                                            <div className="text-[10px] text-slate-400">+${profit.toFixed(2)}</div>
+                                          </td>
+                                          <td className="py-2 px-2.5 font-mono">
+                                            {barrier > 0 ? (
+                                              <span className="text-amber-600 font-semibold">${barrier.toFixed(2)}</span>
+                                            ) : (
+                                              <span className="text-slate-400">$0.00</span>
+                                            )}
+                                          </td>
+                                          <td className="py-2 px-2.5 text-right">
+                                            <div className="flex items-center justify-end gap-1">
+                                              <button
+                                                type="button"
+                                                className="p-1 text-slate-400 hover:text-indigo-600 rounded"
+                                                title="Move Up"
+                                                disabled={idx === 0}
+                                                onClick={() => adminReorderUserAssignedTasks && adminReorderUserAssignedTasks(inspectingUser.id, idx, idx - 1)}
+                                              >
+                                                <ChevronUp size={14} />
+                                              </button>
+                                              <button
+                                                type="button"
+                                                className="p-1 text-slate-400 hover:text-indigo-600 rounded"
+                                                title="Move Down"
+                                                disabled={idx === userQueue.length - 1}
+                                                onClick={() => adminReorderUserAssignedTasks && adminReorderUserAssignedTasks(inspectingUser.id, idx, idx + 1)}
+                                              >
+                                                <ChevronDown size={14} />
+                                              </button>
+                                              <button
+                                                type="button"
+                                                className="btn-table-action-secondary text-xs py-0.5 px-1.5 flex items-center gap-1"
+                                                title="Edit this Assigned Task"
+                                                onClick={() => setEditingAssignedTask({ userId: inspectingUser.id, task: { ...at }, index: idx })}
+                                              >
+                                                <Edit2 size={11} />
+                                                <span>Edit</span>
+                                              </button>
+                                              <button
+                                                type="button"
+                                                className="btn-table-action-danger text-xs py-0.5 px-1.5"
+                                                title="Remove Task"
+                                                onClick={() => {
+                                                  if (confirm(`Remove "${at.title}" from this user's queue?`)) {
+                                                    adminRemoveUserAssignedTask && adminRemoveUserAssignedTask(inspectingUser.id, at.id);
+                                                  }
+                                                }}
+                                              >
+                                                <Trash2 size={11} />
+                                              </button>
+                                            </div>
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
+
                     {/* Footer Actions */}
                     <div className="modal-btn-row mt-4 pt-3 border-t">
                       <button
@@ -3905,8 +4388,8 @@ export default function AdminView() {
                           setEditStatus(u.status || 'Active');
                           setEditWalletAddress(u.walletAddress || u.wallet || '');
                           setEditKyc(u.kycStatus || u.kyc || 'Verified');
-                          setEditReferralCode(u.referralCode || u.code || '505282');
-                          setEditInvitedByCode(u.invitedByCode || u.referredByCode || '505282');
+                          setEditReferralCode(u.referralCode || u.code || '');
+                          setEditInvitedByCode(u.invitedByCode || u.referredByCode || '888888');
                           setEditPendingTasks((u.pendingTasks ?? 25).toString());
                           setEditCompletedTasks((u.completedTasks ?? 0).toString());
                           setEditDailyQuota((u.dailyQuota ?? 25).toString());
@@ -3943,7 +4426,7 @@ export default function AdminView() {
         ========================================= */}
         {activeAdminTab === 'tasks' && (
           <div className="admin-tasks animate-fade-in">
-            {/* SAPPHIRE HERO BANNER (Homepage aesthetic) */}
+            {/* DYNAMIC SAPPHIRE HERO BANNER */}
             <div className="dashboard-hero-banner mb-6">
               <div className="hero-banner-top">
                 <div className="hero-greeting">
@@ -3951,423 +4434,721 @@ export default function AdminView() {
                     <div className="hero-invite-badge">
                       <div className="invite-tag-label">
                         <Zap size={13} className="text-amber-300" />
-                        <span>TASK CAMPAIGN ENGINE:</span>
+                        <span>{activePoolTargetUser ? 'CUSTOM CLIENT POOL:' : 'CAMPAIGN ENGINE:'}</span>
                       </div>
-                      <span className="invite-code-number">25 STEPS ACTIVE</span>
+                      <span className="invite-code-number">
+                        {activePoolTargetUser ? activePoolTargetUser.name.toUpperCase() : '25 SLOTS SEQUENTIAL'}
+                      </span>
                     </div>
 
                     <div className="hero-invite-team-btn" style={{ background: 'rgba(255, 255, 255, 0.18)', color: '#ffffff' }}>
                       <Layers size={12} />
-                      <span>Catalogue ({tasks.length})</span>
+                      <span>{activePoolTargetUser ? `Client Tier: ${activePoolTargetUser.vipLevel || 'eBay'}` : 'Global Base Catalogue'}</span>
                     </div>
                   </div>
 
-                  <h2>Task Pool & Progressive Steps Manager</h2>
+                  <h2>
+                    {activePoolTargetUser ? `🎯 ${activePoolTargetUser.name}'s Custom 25 Task Pool` : '25 Campaign Task Slots Pool'}
+                  </h2>
                   <div className="greeting-name-row">
-                    <span className="greeting-name" style={{ fontSize: '1rem', fontWeight: 500, opacity: 0.9 }}>
-                      Configure catalogue inventory, set progressive deposit requirements, and manage 25 sequential learning milestones.
+                    <span className="greeting-name" style={{ fontSize: '0.95rem', fontWeight: 500, opacity: 0.95 }}>
+                      {activePoolTargetUser
+                        ? `Custom promotional slots assigned specifically to ${activePoolTargetUser.name} (${activePoolTargetUser.email || 'No email'}). Every price, commission profit, and deposit barrier changed here applies ONLY to this user.`
+                        : 'Manage the global 25 sequential promotion slots. Configure default product pricing, commission profits, and deposit balance barriers for each slot.'}
                     </span>
                   </div>
                 </div>
 
-                <div className="hero-balance-col" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div className="hero-balance-col" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                   <div>
-                    <span className="hero-bal-label">TOTAL CATALOGUE</span>
+                    <span className="hero-bal-label">{activePoolTargetUser ? 'CLIENT BALANCE' : 'TOTAL CAMPAIGN SLOTS'}</span>
                     <div className="hero-bal-val">
-                      <span className="bal-num">{tasks.length}</span>
-                      <span className="bal-curr">PRODUCTS</span>
+                      <span className="bal-num">
+                        {activePoolTargetUser ? Number(activePoolTargetUser.balance || 0).toFixed(2) : '25'}
+                      </span>
+                      <span className="bal-curr">{activePoolTargetUser ? 'USDT' : 'SLOTS'}</span>
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Action Buttons matching User Side Hero buttons */}
+              {/* Action Buttons */}
               <div className="hero-action-row">
-                <button
-                  type="button"
-                  className="btn-hero-deposit"
-                  onClick={() => {
-                    setSelectedUserForRandom(adminUsers[0]?.id || '');
-                    setRandomTaskCount(25);
-                    setShowAssignRandomModal(true);
-                  }}
-                  title="Assign 25 random tasks to any user"
-                >
-                  <Shuffle size={16} />
-                  <span>🎲 Assign 25 Random</span>
-                </button>
+                {activePoolTargetUser ? (
+                  <>
+                    <button
+                      type="button"
+                      className="btn-hero-deposit"
+                      onClick={() => {
+                        adminAssignTasksToUser && adminAssignTasksToUser(activePoolTargetUser.id, activePoolSlots, 'Custom 25 Package', false);
+                      }}
+                      title={`Assign or re-sync this 25 custom slot package directly to ${activePoolTargetUser.name}`}
+                    >
+                      <Check size={16} />
+                      <span>Assign Package to {activePoolTargetUser.name}</span>
+                    </button>
 
-                <button
-                  type="button"
-                  className="btn-hero-withdraw"
-                  onClick={() => {
-                    if (confirm('Restore all 25 default learning steps and standard catalogue tasks to default state?')) {
-                      adminRestoreDefaultTasks && adminRestoreDefaultTasks();
+                    <button
+                      type="button"
+                      className="btn-hero-withdraw"
+                      onClick={() => {
+                        if (confirm(`Reset ${activePoolTargetUser.name}'s custom pool back to standard initial 25 default slots?`)) {
+                          adminResetUserCustomPool && adminResetUserCustomPool(activePoolTargetUser.id);
+                        }
+                      }}
+                      title={`Reset ${activePoolTargetUser.name}'s tasks to default base slots`}
+                    >
+                      <RefreshCw size={16} />
+                      <span>Reset {activePoolTargetUser.name} to Defaults</span>
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className="btn-hero-deposit"
+                      onClick={() => {
+                        setSelectedUserForRandom(adminUsers[0]?.id || '');
+                        setRandomTaskCount(25);
+                        setShowAssignRandomModal(true);
+                      }}
+                      title="Assign 25 sequential campaign slots to any user"
+                    >
+                      <Shuffle size={16} />
+                      <span>🎲 Assign 25 to Client</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      className="btn-hero-withdraw"
+                      onClick={() => {
+                        if (confirm('Restore all 25 campaign task slots back to standard initial defaults?')) {
+                          adminRestoreDefaultTasks && adminRestoreDefaultTasks();
+                        }
+                      }}
+                      title="Reload and restore all 25 default campaign slots"
+                    >
+                      <RefreshCw size={16} />
+                      <span>Restore 25 Defaults</span>
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* USER POOL DROPDOWN SELECTOR BAR */}
+            <div className="admin-clean-card p-3.5 mb-5 flex items-center justify-between gap-3 flex-wrap shadow-sm" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+              <div className="flex items-center gap-3 flex-wrap flex-1">
+                <div className="flex items-center gap-1.5 font-bold text-xs text-slate-700">
+                  <Users size={16} className="text-indigo-600" />
+                  <span>Task Pool Scope:</span>
+                </div>
+
+                <select
+                  value={selectedTaskPoolUser}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setSelectedTaskPoolUser(val);
+                    if (val !== 'all') {
+                      setSelectedUserForTaskQueue(val);
                     }
                   }}
-                  title="Reload and restore all 25 default learning steps"
+                  className="admin-form-select text-xs py-2 px-3 rounded-xl border border-indigo-200 font-bold text-indigo-900 bg-white shadow-sm focus:border-indigo-500 min-w-[280px]"
                 >
-                  <RefreshCw size={16} />
-                  <span>Restore 25 Defaults</span>
-                </button>
+                  <option value="all">🌐 Global Default Pool (Base Catalogue for All Users)</option>
+                  <optgroup label="Custom Client Pools (Select to view & customize only for that user):">
+                    {adminUsers.map(u => (
+                      <option key={u.id} value={u.id}>
+                        👤 {u.name} ({u.email || 'No email'}) • {u.vipLevel || u.vipTier || 'eBay'} • ${Number(u.balance || 0).toFixed(2)} USDT
+                      </option>
+                    ))}
+                  </optgroup>
+                </select>
 
+                {activePoolTargetUser ? (
+                  <span className="admin-code-pill indigo text-xs py-1 px-2.5 font-bold flex items-center gap-1">
+                    <Zap size={11} className="text-amber-500" />
+                    <span>Custom Pool Active: {activePoolTargetUser.name}</span>
+                  </span>
+                ) : (
+                  <span className="admin-code-pill neutral text-xs py-1 px-2.5 font-medium">
+                    Global Base Pool (Shared)
+                  </span>
+                )}
+              </div>
+
+              {activePoolTargetUser && (
+                <div className="flex items-center gap-2 text-xs text-slate-500 flex-wrap">
+                  <span>Completed: <strong>{activePoolTargetUser.dailyCompleted ?? activePoolTargetUser.completedTasks ?? 0}/25</strong></span>
+                  <span>•</span>
+                  <span>Balance: <strong>${Number(activePoolTargetUser.balance || 0).toFixed(2)}</strong></span>
+                  <span>•</span>
+                  <span className="font-semibold text-emerald-600">
+                    {activePoolTargetUser.taskPackageStatus === 'assigned' ? '✓ Assigned' : '○ Ready'}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* VIEW MODE TOGGLE: 25 CAMPAIGN SLOTS vs CLIENT QUEUE */}
+            <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
+              <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl border border-slate-200">
                 <button
                   type="button"
-                  className="btn-hero-withdraw"
-                  onClick={() => setShowAddTaskModal(true)}
-                  title="Create New Campaign Task"
+                  className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${taskViewMode === 'catalogue' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+                  onClick={() => setTaskViewMode('catalogue')}
                 >
-                  <Plus size={16} />
-                  <span>+ Add Campaign Task</span>
+                  <Layers size={14} />
+                  <span>25 Campaign Task Slots (25)</span>
+                </button>
+                <button
+                  type="button"
+                  className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${taskViewMode === 'assignedQueue' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+                  onClick={() => {
+                    setTaskViewMode('assignedQueue');
+                    if (selectedTaskPoolUser !== 'all') {
+                      setSelectedUserForTaskQueue(selectedTaskPoolUser);
+                    } else if (!selectedUserForTaskQueue && adminUsers.length > 0) {
+                      setSelectedUserForTaskQueue(adminUsers[0].id);
+                    }
+                  }}
+                >
+                  <ClipboardList size={14} />
+                  <span>Client Assigned Tasks Queue</span>
                 </button>
               </div>
-            </div>
 
-            {/* PARTNER PLATFORMS PILL ROW (Exact match to User Side) */}
-            <div className="partner-platforms-card mb-6">
-              <span className="card-section-title">PARTNER PLATFORMS & CAMPAIGN DISPATCH</span>
-              <div className="platforms-pills-row">
-                {[
-                  { name: 'eBay', platform: 'ebay', url: 'https://www.ebay.com', icon: <EbayLogo size={42} /> },
-                  { name: 'Walmart', platform: 'walmart', url: 'https://www.walmart.com', icon: <WalmartLogo size={42} /> },
-                  { name: 'Temu', platform: 'temu', url: 'https://www.temu.com', icon: <TemuLogo size={42} /> },
-                  { name: 'Amazon', platform: 'amazon', url: 'https://www.amazon.com', icon: <AmazonLogo size={42} /> },
-                  { name: 'AliExpress', platform: 'aliexpress', url: 'https://www.aliexpress.com', icon: <AliExpressLogo size={42} /> },
-                  { name: 'Target', platform: 'target', url: 'https://www.target.com', icon: <TargetLogo size={42} /> },
-                  { name: 'Shopify', platform: 'shopify', url: 'https://www.shopify.com', icon: <ShopifyLogo size={42} /> },
-                  { name: 'Shopee', platform: 'shopee', url: 'https://www.shopee.com', icon: <ShopeeLogo size={42} /> },
-                ].map((item, idx) => (
-                  <div
-                    key={idx}
-                    className="partner-pill-item cursor-pointer"
-                    onClick={() => {
-                      setTaskFilter(item.name);
-                    }}
-                    title={`Filter ${item.name} catalog tasks`}
+              {taskViewMode === 'assignedQueue' && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <label className="text-xs font-semibold text-slate-700">Select Client:</label>
+                  <select
+                    value={selectedUserForTaskQueue || (adminUsers[0]?.id || '')}
+                    onChange={(e) => setSelectedUserForTaskQueue(e.target.value)}
+                    className="admin-form-select text-xs py-1.5 px-3 rounded-lg border border-slate-300 font-semibold text-indigo-900 bg-white"
                   >
-                    <div className="partner-icon-circle">
-                      {item.icon}
+                    {adminUsers.map(u => (
+                      <option key={u.id} value={u.id}>
+                        {u.name} ({u.email || 'No email'}) • {u.vipLevel || u.vipTier || 'eBay'} • Balance: ${Number(u.balance || 0).toFixed(2)}
+                      </option>
+                    ))}
+                  </select>
+
+                  <button
+                    type="button"
+                    className="btn-admin-primary text-xs py-1.5 px-3 flex items-center gap-1.5"
+                    onClick={() => setShowAddAssignedModalForUser(selectedUserForTaskQueue || adminUsers[0]?.id)}
+                  >
+                    <Plus size={14} />
+                    <span>+ Add Task to Queue</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {taskViewMode === 'assignedQueue' ? (
+              (() => {
+                const targetUser = adminUsers.find(u => String(u.id) === String(selectedUserForTaskQueue)) || adminUsers[0];
+                if (!targetUser) {
+                  return (
+                    <div className="p-8 text-center text-slate-400 text-xs admin-clean-card">
+                      No client registered yet. Register a user or create an account to view assigned queues.
                     </div>
-                    <div className="partner-pill-name-row">
-                      <span className="partner-pill-name">{item.name}</span>
-                      <ExternalLink size={10} className="partner-ext-icon" />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* 4 COLORED STAT CARDS (Exact match to User Side .four-stats-grid) */}
-            <div className="four-stats-grid mb-6">
-              {/* Sapphire Card */}
-              <div className="stat-card sapphire-card">
-                <div className="stat-card-icon">
-                  <Layers size={18} />
-                </div>
-                <div className="stat-card-body">
-                  <div className="stat-num">{tasks.length} <span className="stat-unit">Products</span></div>
-                  <span className="stat-label">Total Catalogue Tasks</span>
-                </div>
-              </div>
-
-              {/* Green Card */}
-              <div className="stat-card green-card">
-                <div className="stat-card-icon">
-                  <Award size={18} />
-                </div>
-                <div className="stat-card-body">
-                  <div className="stat-num">25 <span className="stat-unit">Steps</span></div>
-                  <span className="stat-label">Learning Task Series ($10 - $300)</span>
-                </div>
-              </div>
-
-              {/* Blue Card */}
-              <div className="stat-card blue-card">
-                <div className="stat-card-icon">
-                  <Lock size={18} />
-                </div>
-                <div className="stat-card-body">
-                  <div className="stat-num">{tasks.filter(t => (t.requiredDeposit || 0) > 0).length} <span className="stat-unit">Enforced</span></div>
-                  <span className="stat-label">Deposit-Restricted Tasks</span>
-                </div>
-              </div>
-
-              {/* Orange Card */}
-              <div className="stat-card orange-card">
-                <div className="stat-card-icon">
-                  <CheckCircle2 size={18} />
-                </div>
-                <div className="stat-card-body">
-                  <div className="stat-num">{tasks.reduce((sum, t) => sum + (t.orders || 0), 0).toLocaleString()}</div>
-                  <span className="stat-label">Completed Orders Volume</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Explanatory Policy Grid */}
-            <div className="admin-policy-grid">
-              <div className="admin-policy-card">
-                <div className="admin-policy-icon emerald">
-                  <span className="text-base">🎓</span>
-                </div>
-                <div>
-                  <div className="admin-policy-title">25 Progressive Learning Steps (10.00 USDT to 300.00 USDT)</div>
-                  <p className="admin-policy-desc">
-                    Steps 1 to 25 feature progressive deposit requirements starting from Step 1 (10.00 USDT deposit) up to Step 25 (300.00 USDT) to protect high-yield commissions.
-                  </p>
-                </div>
-              </div>
-
-              <div className="admin-policy-card">
-                <div className="admin-policy-icon amber">
-                  <Lock size={18} />
-                </div>
-                <div>
-                  <div className="admin-policy-title">Deposit Restriction Engine</div>
-                  <p className="admin-policy-desc">
-                    Set custom Required Deposit thresholds on any task. When set, users cannot execute the task until their available balance or total deposit meets the requirement.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Table Toolbar */}
-            {(() => {
-              const filteredTasks = tasks.filter(t => {
-                if (taskFilter === 'learning') return Boolean(t.isLearning);
-                if (taskFilter === 'restricted') return (t.requiredDeposit || 0) > 0;
-                if (['ebay', 'walmart', 'temu'].includes(taskFilter.toLowerCase())) {
-                  return (t.platform || '').toLowerCase() === taskFilter.toLowerCase();
+                  );
                 }
-                if (taskSearch) {
-                  const q = taskSearch.toLowerCase();
-                  const match = (t.title || '').toLowerCase().includes(q) ||
-                                (t.category || '').toLowerCase().includes(q) ||
-                                (t.platform || '').toLowerCase().includes(q);
-                  if (!match) return false;
-                }
-                return true;
-              });
 
-              return (
-                <>
-                  <div className="admin-table-toolbar">
-                    <div className="admin-table-tabs">
-                      {[
-                        { id: 'all', label: `All Tasks (${tasks.length})` },
-                        { id: 'learning', label: `Learning Phase (${tasks.filter(t => t.isLearning).length})` },
-                        { id: 'restricted', label: `Deposit Restricted (${tasks.filter(t => (t.requiredDeposit || 0) > 0).length})` },
-                        { id: 'eBay', label: 'eBay' },
-                        { id: 'Walmart', label: 'Walmart' },
-                        { id: 'Temu', label: 'Temu' },
-                      ].map(tab => (
+                const queue = Array.isArray(targetUser.assignedTasks) && targetUser.assignedTasks.length > 0
+                  ? targetUser.assignedTasks
+                  : (() => {
+                      try {
+                        const c = localStorage.getItem(`websynx_user_assigned_tasks_${targetUser.id}`);
+                        if (c) {
+                          const p = JSON.parse(c);
+                          if (Array.isArray(p)) return p;
+                        }
+                      } catch(e) {}
+                      return [];
+                    })();
+
+                return (
+                  <div className="admin-clean-card p-5">
+                    <div className="flex items-center justify-between pb-4 border-b border-slate-100 flex-wrap gap-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-slate-800 text-sm">{targetUser.name}</span>
+                          <span className="admin-code-pill font-medium">{targetUser.vipLevel || targetUser.vipTier || 'eBay'}</span>
+                          <span className="text-xs text-slate-400">({targetUser.email || 'No email'})</span>
+                        </div>
+                        <div className="text-xs text-slate-500 mt-1">
+                          Active Queue: <strong>{queue.length} Tasks</strong> • Completed Today: <strong>{targetUser.dailyCompleted ?? targetUser.completedTasks ?? 0}</strong> • Balance: <strong>${Number(targetUser.balance || 0).toFixed(2)} USDT</strong>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
                         <button
-                          key={tab.id}
                           type="button"
-                          className={`admin-table-tab ${taskFilter === tab.id ? 'active' : ''}`}
-                          onClick={() => setTaskFilter(tab.id)}
+                          className="btn-admin-primary text-xs py-1 px-3 flex items-center gap-1.5"
+                          onClick={() => setShowAddAssignedModalForUser(targetUser.id)}
                         >
-                          {tab.label}
+                          <Plus size={13} />
+                          <span>+ Add Task to Queue</span>
                         </button>
-                      ))}
+                        <button
+                          type="button"
+                          className="btn-admin-secondary text-xs py-1 px-3 flex items-center gap-1.5"
+                          onClick={() => adminAssignRandomTasks && adminAssignRandomTasks(targetUser.id, 25)}
+                        >
+                          <Shuffle size={13} />
+                          <span>Assign 25 Package</span>
+                        </button>
+                      </div>
                     </div>
 
-                    <div className="admin-table-search-wrap">
-                      <Search size={14} className="admin-table-search-icon" />
-                      <input
-                        type="text"
-                        placeholder="Search product or category..."
-                        value={taskSearch}
-                        onChange={(e) => setTaskSearch(e.target.value)}
-                        className="admin-table-search-input"
-                      />
-                      <span className="admin-table-count-text">
-                        {filteredTasks.length} of {tasks.length} tasks
-                      </span>
-                    </div>
-                  </div>
+                    <div className="mt-4">
+                      {queue.length === 0 ? (
+                        <div className="p-8 text-center text-slate-400 text-xs">
+                          This client has no assigned tasks queued. Tasks will default to standard catalogue products for their tier.
+                        </div>
+                      ) : (
+                        <div className="admin-data-table-scroll">
+                          <table className="admin-clean-table">
+                            <thead>
+                              <tr>
+                                <th className="text-center w-12">#</th>
+                                <th>Product & Campaign</th>
+                                <th>Platform</th>
+                                <th className="text-right">Price</th>
+                                <th>Commission Rate</th>
+                                <th className="text-right">Profit</th>
+                                <th>Deposit Barrier</th>
+                                <th>Type</th>
+                                <th style={{ minWidth: '180px' }} className="text-right">Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {queue.map((at, idx) => {
+                                const price = Number(at.price || 0);
+                                const comm = Number(at.commissionRate ?? at.commission_rate ?? 4);
+                                const profit = (price * comm) / 100;
+                                const barrier = Number(at.requiredDeposit ?? at.required_deposit ?? 0);
 
-                  {/* Task Management Clean Table */}
-                  <div className="admin-clean-card">
-                    <div className="admin-data-table-scroll">
-                      <table className="admin-clean-table">
-                        <thead>
-                          <tr>
-                            <th>Product & Campaign</th>
-                            <th>Platform</th>
-                            <th className="text-right">Price</th>
-                            <th>Commission</th>
-                            <th className="text-right">Member Profit</th>
-                            <th>Deposit Barrier</th>
-                            <th>Learning Step</th>
-                            <th>Status</th>
-                            <th style={{ minWidth: '240px' }}>Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {filteredTasks.length === 0 ? (
-                            <tr>
-                              <td colSpan={9} style={{ textAlign: 'center', padding: '36px', color: '#64748b' }}>
-                                No tasks found matching the filter criteria.
-                              </td>
-                            </tr>
-                          ) : (
-                            filteredTasks.map(t => {
-                              const priceNum = parseFloat(t.price) || 0;
-                              const commRate = parseFloat(
-                                t.commissionRate ??
-                                t.commission_rate ??
-                                t.commission ??
-                                (t.yieldRate ? parseFloat(t.yieldRate) : (t.yield_rate ? parseFloat(t.yield_rate) : 4))
-                              ) || 4;
-                              const estProfit = (priceNum * commRate) / 100;
-                              const platformLower = (t.platform || 'ebay').toLowerCase();
-                              const reqDep = parseFloat(t.requiredDeposit ?? t.required_deposit ?? 0) || 0;
-
-                              return (
-                                <tr key={t.id} className={t.active === false ? 'opacity-50' : ''}>
-                                  <td>
-                                    <div className="admin-task-product-cell">
-                                      <div className="admin-task-thumb-wrap">
-                                        <img
-                                          src={t.image || getProductImage(t)}
-                                          alt=""
-                                          className="admin-task-thumb"
-                                          onError={(e) => {
-                                            e.currentTarget.onerror = null;
-                                            e.currentTarget.src = 'https://images.unsplash.com/photo-1546868871-7041f2a55e12?w=600&auto=format&fit=crop&q=80';
+                                return (
+                                  <tr key={at.id || idx}>
+                                    <td className="text-center font-bold text-slate-400">
+                                      #{idx + 1}
+                                    </td>
+                                    <td>
+                                      <div className="admin-task-product-cell">
+                                        <div className="admin-task-thumb-wrap">
+                                          <img
+                                            src={at.image || 'https://images.unsplash.com/photo-1546868871-7041f2a55e12?w=600&auto=format&fit=crop&q=80'}
+                                            alt=""
+                                            className="admin-task-thumb"
+                                            onError={(e) => {
+                                              e.currentTarget.onerror = null;
+                                              e.currentTarget.src = 'https://images.unsplash.com/photo-1546868871-7041f2a55e12?w=600&auto=format&fit=crop&q=80';
+                                            }}
+                                          />
+                                        </div>
+                                        <div style={{ minWidth: 0, flex: 1 }}>
+                                          <div className="admin-task-meta-title" title={at.title}>
+                                            {at.title}
+                                          </div>
+                                          <div className="text-[11px] text-slate-400">
+                                            ID: {at.id}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </td>
+                                    <td>
+                                      <span className="admin-code-pill font-medium">{at.platform || 'eBay'}</span>
+                                    </td>
+                                    <td className="text-right font-mono font-semibold text-slate-800">
+                                      ${price.toFixed(2)}
+                                    </td>
+                                    <td>
+                                      <span className="font-semibold text-emerald-600">+{comm}%</span>
+                                    </td>
+                                    <td className="text-right font-mono font-semibold text-emerald-600">
+                                      +${profit.toFixed(2)}
+                                    </td>
+                                    <td>
+                                      {barrier > 0 ? (
+                                        <span className="admin-code-pill amber font-bold">${barrier.toFixed(2)}</span>
+                                      ) : (
+                                        <span className="text-slate-400 text-xs">None ($0)</span>
+                                      )}
+                                    </td>
+                                    <td>
+                                      {at.isLearning ? (
+                                        <span className="badge-tech text-[10px]">Step {at.learningStep || (idx + 1)}</span>
+                                      ) : (
+                                        <span className="text-xs text-slate-400">Standard</span>
+                                      )}
+                                    </td>
+                                    <td className="text-right">
+                                      <div className="flex items-center justify-end gap-1">
+                                        <button
+                                          type="button"
+                                          className="p-1 text-slate-400 hover:text-indigo-600 rounded"
+                                          title="Move Up"
+                                          disabled={idx === 0}
+                                          onClick={() => adminReorderUserAssignedTasks && adminReorderUserAssignedTasks(targetUser.id, idx, idx - 1)}
+                                        >
+                                          <ChevronUp size={15} />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="p-1 text-slate-400 hover:text-indigo-600 rounded"
+                                          title="Move Down"
+                                          disabled={idx === queue.length - 1}
+                                          onClick={() => adminReorderUserAssignedTasks && adminReorderUserAssignedTasks(targetUser.id, idx, idx + 1)}
+                                        >
+                                          <ChevronDown size={15} />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="btn-table-action-secondary text-xs py-1 px-2 flex items-center gap-1"
+                                          onClick={() => setEditingAssignedTask({ userId: targetUser.id, task: { ...at }, index: idx })}
+                                          title="Edit this Assigned Task"
+                                        >
+                                          <Edit2 size={12} />
+                                          <span>Edit</span>
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="btn-table-action-danger text-xs py-1 px-2"
+                                          title="Remove Task"
+                                          onClick={() => {
+                                            if (confirm(`Remove "${at.title}" from this user's queue?`)) {
+                                              adminRemoveUserAssignedTask && adminRemoveUserAssignedTask(targetUser.id, at.id);
+                                            }
                                           }}
-                                        />
-                                        {t.isLearning && (
-                                          <span className="task-thumb-step-badge">#{t.learningStep || 1}</span>
-                                        )}
+                                        >
+                                          <Trash2 size={12} />
+                                        </button>
                                       </div>
-                                      <div style={{ minWidth: 0, flex: 1 }}>
-                                        <div className="admin-task-meta-title" title={t.title}>
-                                          {t.title}
-                                        </div>
-                                        <div className="admin-task-meta-sub flex items-center gap-1.5 flex-wrap">
-                                          <span className="admin-task-meta-category">{t.category || 'General'}</span>
-                                          {t.orders ? (
-                                            <span className="admin-task-meta-orders text-slate-400 text-xs">
-                                              • {Number(t.orders).toLocaleString()} orders
-                                            </span>
-                                          ) : null}
-                                        </div>
-                                      </div>
-                                    </div>
-                                  </td>
-                                  <td>
-                                    <span className={`admin-badge platform-${platformLower}`}>
-                                      {t.platform || 'eBay'}
-                                    </span>
-                                  </td>
-                                  <td className="text-right cell-amount">
-                                    {formatUSDT(priceNum)}
-                                  </td>
-                                  <td>
-                                    <span className="admin-badge neutral">{commRate}%</span>
-                                  </td>
-                                  <td className="text-right cell-amount positive">
-                                    {formatUSDT(estProfit, true)}
-                                  </td>
-                                  <td>
-                                    {reqDep > 0 ? (
-                                      <span className="admin-badge pending" title={`Requires ${formatUSDT(reqDep)} account balance`}>
-                                        <Lock size={11} />
-                                        <span>Min: {formatUSDT(reqDep)}</span>
-                                      </span>
-                                    ) : (
-                                      <span className="admin-badge neutral">
-                                        0.00 USDT (Free)
-                                      </span>
-                                    )}
-                                  </td>
-                                  <td>
-                                    {t.isLearning ? (
-                                      <span className="admin-badge success" style={{ background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0' }}>
-                                        <Award size={11} />
-                                        <span>Step #{t.learningStep || 1}</span>
-                                      </span>
-                                    ) : (
-                                      <span className="text-xs text-slate-400 font-medium">Standard</span>
-                                    )}
-                                  </td>
-                                  <td>
-                                    <span className={`admin-badge ${t.active !== false ? 'success' : 'neutral'}`}>
-                                      {t.active !== false ? 'Active' : 'Disabled'}
-                                    </span>
-                                  </td>
-                                  <td>
-                                    <div className="admin-task-actions-row">
-                                      <button
-                                        type="button"
-                                        className="btn-task-action-edit"
-                                        title="Edit Task & Pricing (Preserves all data)"
-                                        onClick={() => handleOpenEditModal(t)}
-                                      >
-                                        <Edit2 size={12} />
-                                        <span>Edit</span>
-                                      </button>
-                                      <button
-                                        type="button"
-                                        className="btn-task-action-assign"
-                                        title="Assign this task to a client"
-                                        onClick={() => {
-                                          setAssignModalTask(t);
-                                          setSelectedUserForSpecific(adminUsers[0]?.id || '');
-                                        }}
-                                      >
-                                        <UserCheck size={12} />
-                                        <span>Assign</span>
-                                      </button>
-                                      <button
-                                        type="button"
-                                        className="btn-task-action-icon"
-                                        title="Preview Task in Execution Engine"
-                                        onClick={() => openTaskPreview(t)}
-                                      >
-                                        <Eye size={13} />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        className="btn-task-action-icon"
-                                        title={`Open live product listing on ${t.platform || 'Store'}`}
-                                        onClick={(e) => openProductUrl(t, e)}
-                                      >
-                                        <ExternalLink size={13} />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        className={`btn-task-action-icon ${t.active !== false ? 'icon-pause' : 'icon-play'}`}
-                                        title={t.active !== false ? 'Pause Task' : 'Activate Task'}
-                                        onClick={() => handleToggleTaskActive(t)}
-                                      >
-                                        {t.active !== false ? <Pause size={13} /> : <Play size={13} />}
-                                      </button>
-                                      <button
-                                        type="button"
-                                        className="btn-task-action-icon icon-delete"
-                                        title="Delete Task from catalogue"
-                                        onClick={() => handleDeleteTask(t.id, t.title)}
-                                      >
-                                        <Trash2 size={13} />
-                                      </button>
-                                    </div>
-                                  </td>
-                                </tr>
-                              );
-                            })
-                          )}
-                        </tbody>
-                      </table>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
                     </div>
                   </div>
-                </>
-              );
-            })()}
-          </div>
-        )}
+                );
+              })()
+            ) : (
+              (() => {
+                const currentSlots = activePoolSlots;
+                const totalCampaignOrderValue = currentSlots.reduce((sum, s) => sum + (parseFloat(s.price) || 0), 0);
+                const totalCampaignMemberProfit = currentSlots.reduce((sum, s) => {
+                  const p = parseFloat(s.price) || 0;
+                  const c = parseFloat(s.commissionRate ?? s.commission_rate ?? s.commission ?? 4) || 4;
+                  return sum + ((p * c) / 100);
+                }, 0);
+                const restrictedSlotsCount = currentSlots.filter(s => (parseFloat(s.requiredDeposit ?? s.required_deposit ?? 0) || 0) > 0).length;
+                const freeSlotsCount = 25 - restrictedSlotsCount;
+
+                const filteredSlots = currentSlots.filter(s => {
+                  if (taskFilter === 'starter') return s.slotNumber <= 10;
+                  if (taskFilter === 'growth') return s.slotNumber > 10 && s.slotNumber <= 20;
+                  if (taskFilter === 'highyield') return s.slotNumber > 20;
+                  if (taskFilter === 'restricted') return (parseFloat(s.requiredDeposit ?? s.required_deposit ?? 0) || 0) > 0;
+                  if (taskFilter === 'free') return (parseFloat(s.requiredDeposit ?? s.required_deposit ?? 0) || 0) <= 0;
+                  if (taskFilter !== 'all') {
+                    if ((s.platform || '').toLowerCase() !== taskFilter.toLowerCase()) return false;
+                  }
+                  if (taskSearch) {
+                    const q = taskSearch.toLowerCase().trim();
+                    const slotNumStr = String(s.slotNumber);
+                    const matchSlot = slotNumStr === q || `slot #${slotNumStr}`.includes(q) || `slot ${slotNumStr}`.includes(q) || `step ${slotNumStr}`.includes(q);
+                    const matchText = (s.title || '').toLowerCase().includes(q) ||
+                                      (s.category || '').toLowerCase().includes(q) ||
+                                      (s.platform || '').toLowerCase().includes(q);
+                    if (!matchSlot && !matchText) return false;
+                  }
+                  return true;
+                });
+
+                return (
+                  <>
+                    {/* 4 CLEAN CAMPAIGN STAT CARDS */}
+                    <div className="four-stats-grid mb-6">
+                      <div className="stat-card sapphire-card">
+                        <div className="stat-card-icon">
+                          <Layers size={18} />
+                        </div>
+                        <div className="stat-card-body">
+                          <div className="stat-num">25 <span className="stat-unit">Slots</span></div>
+                          <span className="stat-label">
+                            {activePoolTargetUser ? `${activePoolTargetUser.name}'s Sequence` : 'Full Campaign Sequence'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="stat-card green-card">
+                        <div className="stat-card-icon">
+                          <DollarSign size={18} />
+                        </div>
+                        <div className="stat-card-body">
+                          <div className="stat-num">{formatUSDT(totalCampaignMemberProfit, true)}</div>
+                          <span className="stat-label">
+                            {activePoolTargetUser ? `${activePoolTargetUser.name}'s 25-Slot Profit` : 'Total 25-Slot User Profit'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="stat-card orange-card">
+                        <div className="stat-card-icon">
+                          <Award size={18} />
+                        </div>
+                        <div className="stat-card-body">
+                          <div className="stat-num">{formatUSDT(totalCampaignOrderValue)}</div>
+                          <span className="stat-label">
+                            {activePoolTargetUser ? `${activePoolTargetUser.name}'s Total Orders` : 'Total Campaign Order Value'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="stat-card blue-card">
+                        <div className="stat-card-icon">
+                          <Lock size={18} />
+                        </div>
+                        <div className="stat-card-body">
+                          <div className="stat-num">{restrictedSlotsCount} <span className="stat-unit">Gated</span></div>
+                          <span className="stat-label">Deposit Barriers ({freeSlotsCount} Free)</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* FOCUSED 25-SLOT TOOLBAR */}
+                    <div className="admin-table-toolbar">
+                      <div className="admin-table-tabs">
+                        {[
+                          { id: 'all', label: `All 25 Slots (25)` },
+                          { id: 'starter', label: 'Starter (Slots 1-10)' },
+                          { id: 'growth', label: 'Growth (Slots 11-20)' },
+                          { id: 'highyield', label: 'High Yield (Slots 21-25)' },
+                          { id: 'restricted', label: `Deposit Required (${restrictedSlotsCount})` },
+                          { id: 'free', label: `Free Unlocked (${freeSlotsCount})` }
+                        ].map(tab => (
+                          <button
+                            key={tab.id}
+                            type="button"
+                            className={`admin-table-tab ${taskFilter.toLowerCase() === tab.id.toLowerCase() ? 'active' : ''}`}
+                            onClick={() => setTaskFilter(tab.id)}
+                          >
+                            {tab.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="admin-table-search-wrap">
+                        <Search size={14} className="admin-table-search-icon" />
+                        <input
+                          type="text"
+                          placeholder="Search slot #, product, or platform..."
+                          value={taskSearch}
+                          onChange={(e) => setTaskSearch(e.target.value)}
+                          className="admin-table-search-input"
+                        />
+                        <span className="admin-table-count-text">
+                          {filteredSlots.length} of 25 slots {activePoolTargetUser ? `(${activePoolTargetUser.name})` : ''}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* PROPERLY ALIGNED 25 SLOTS TABLE */}
+                    <div className="admin-clean-card">
+                      <div className="admin-data-table-scroll">
+                        <table className="admin-clean-table">
+                          <thead>
+                            <tr>
+                              <th className="text-center" style={{ width: '85px' }}>Slot</th>
+                              <th>Product & Campaign</th>
+                              <th className="text-center" style={{ width: '110px' }}>Platform</th>
+                              <th className="text-right" style={{ width: '130px' }}>Order Amount</th>
+                              <th className="text-center" style={{ width: '95px' }}>Commission</th>
+                              <th className="text-right" style={{ width: '130px' }}>Member Profit</th>
+                              <th className="text-center" style={{ width: '150px' }}>Deposit Barrier</th>
+                              <th className="text-center" style={{ width: '90px' }}>Status</th>
+                              <th className="text-center" style={{ width: '200px' }}>Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {filteredSlots.length === 0 ? (
+                              <tr>
+                                <td colSpan={9} style={{ textAlign: 'center', padding: '36px', color: '#64748b' }}>
+                                  No slots found matching the search filter criteria.
+                                </td>
+                              </tr>
+                            ) : (
+                              filteredSlots.map(slot => {
+                                const priceNum = parseFloat(slot.price) || 0;
+                                const commRate = parseFloat(
+                                  slot.commissionRate ??
+                                  slot.commission_rate ??
+                                  slot.commission ??
+                                  4
+                                ) || 4;
+                                const estProfit = (priceNum * commRate) / 100;
+                                const platformLower = (slot.platform || 'ebay').toLowerCase();
+                                const reqDep = parseFloat(slot.requiredDeposit ?? slot.required_deposit ?? 0) || 0;
+
+                                return (
+                                  <tr key={slot.id || slot.slotNumber} className={slot.active === false ? 'opacity-60 bg-slate-50/50' : ''}>
+                                    {/* Slot # */}
+                                    <td className="text-center">
+                                      <div className="slot-number-badge">
+                                        <span className="slot-badge-hash">Slot</span>
+                                        <span className="slot-badge-num">#{String(slot.slotNumber).padStart(2, '0')}</span>
+                                      </div>
+                                    </td>
+
+                                    {/* Product & Campaign */}
+                                    <td>
+                                      <div className="admin-task-product-cell">
+                                        <div className="admin-task-thumb-wrap">
+                                          <img
+                                            src={slot.image || getProductImage(slot)}
+                                            alt=""
+                                            className="admin-task-thumb"
+                                            onError={(e) => {
+                                              e.currentTarget.onerror = null;
+                                              e.currentTarget.src = 'https://images.unsplash.com/photo-1546868871-7041f2a55e12?w=600&auto=format&fit=crop&q=80';
+                                            }}
+                                          />
+                                          <span className="task-thumb-step-badge">#{slot.slotNumber}</span>
+                                        </div>
+                                        <div style={{ minWidth: 0, flex: 1 }}>
+                                          <div className="admin-task-meta-title" title={slot.title}>
+                                            {slot.title}
+                                          </div>
+                                          <div className="admin-task-meta-sub flex items-center gap-2 flex-wrap">
+                                            <span className="admin-task-meta-category">{slot.category || 'Campaign'}</span>
+                                            <span className="text-[11px] text-slate-400 font-mono">ID: {slot.id}</span>
+                                            {slot.adminCustomized && (
+                                              <span className="admin-code-pill indigo text-[10px] py-0.5 px-1.5 font-bold">
+                                                Custom for User
+                                              </span>
+                                            )}
+                                            {slot.orders ? (
+                                              <span className="text-[11px] text-slate-400">
+                                                • {Number(slot.orders).toLocaleString()} orders
+                                              </span>
+                                            ) : null}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </td>
+
+                                    {/* Platform */}
+                                    <td className="text-center">
+                                      <span className={`admin-badge platform-${platformLower}`}>
+                                        {slot.platform || 'eBay'}
+                                      </span>
+                                    </td>
+
+                                    {/* Order Amount (Click to Edit) */}
+                                    <td
+                                      className="text-right cell-amount font-mono cursor-pointer hover:bg-indigo-50/70 transition-colors"
+                                      onClick={() => handleOpenEditModal(slot)}
+                                      title={activePoolTargetUser ? `Click to edit price for ${activePoolTargetUser.name}'s slot #${slot.slotNumber}` : `Click to edit price for slot #${slot.slotNumber}`}
+                                    >
+                                      <div className="inline-flex items-center justify-end gap-1.5 group">
+                                        <span className="font-bold text-slate-800">{formatUSDT(priceNum)}</span>
+                                        <Edit2 size={12} className="text-indigo-400 group-hover:text-indigo-600 opacity-60 group-hover:opacity-100 transition-opacity" />
+                                      </div>
+                                    </td>
+
+                                    {/* Commission */}
+                                    <td className="text-center">
+                                      <span className="admin-badge neutral font-semibold">
+                                        +{commRate}%
+                                      </span>
+                                    </td>
+
+                                    {/* Member Profit */}
+                                    <td className="text-right cell-amount positive font-mono">
+                                      {formatUSDT(estProfit, true)}
+                                    </td>
+
+                                    {/* Deposit Barrier */}
+                                    <td className="text-center">
+                                      {reqDep > 0 ? (
+                                        <span className="admin-badge pending font-semibold" title={`Requires ${formatUSDT(reqDep)} account balance`}>
+                                          <Lock size={11} />
+                                          <span>Min: {formatUSDT(reqDep)}</span>
+                                        </span>
+                                      ) : (
+                                        <span className="admin-badge neutral">
+                                          0.00 USDT (Free)
+                                        </span>
+                                      )}
+                                    </td>
+
+                                    {/* Status */}
+                                    <td className="text-center">
+                                      <span className={`admin-badge ${slot.active !== false ? 'success' : 'neutral'}`}>
+                                        {slot.active !== false ? 'Active' : 'Disabled'}
+                                      </span>
+                                    </td>
+
+                                    {/* Actions */}
+                                    <td className="text-center">
+                                      <div className="admin-task-actions-row justify-center">
+                                        <button
+                                          type="button"
+                                          className={`btn-slot-edit ${activePoolTargetUser ? 'border-indigo-400 bg-indigo-50 text-indigo-700 font-bold' : ''}`}
+                                          title={activePoolTargetUser ? `Edit Slot #${slot.slotNumber} specifically for ${activePoolTargetUser.name}` : `Edit Slot #${slot.slotNumber} Details, Price, Commission, Deposit Barrier`}
+                                          onClick={() => handleOpenEditModal(slot)}
+                                        >
+                                          <Edit2 size={13} />
+                                          <span>{activePoolTargetUser ? `Edit for ${activePoolTargetUser.name.split(' ')[0]}` : 'Edit Slot'}</span>
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="btn-task-action-icon"
+                                          title="Preview Slot in Execution Engine"
+                                          onClick={() => openTaskPreview(slot)}
+                                        >
+                                          <Eye size={13} />
+                                        </button>
+                                        {slot.productUrl && (
+                                          <button
+                                            type="button"
+                                            className="btn-task-action-icon"
+                                            title={`Open live product listing on ${slot.platform || 'Store'}`}
+                                            onClick={(e) => openProductUrl(slot, e)}
+                                          >
+                                            <ExternalLink size={13} />
+                                          </button>
+                                        )}
+                                        <button
+                                          type="button"
+                                          className={`btn-task-action-icon ${slot.active !== false ? 'icon-pause' : 'icon-play'}`}
+                                          title={slot.active !== false ? 'Pause Slot' : 'Activate Slot'}
+                                          onClick={() => handleToggleTaskActive(slot)}
+                                        >
+                                          {slot.active !== false ? <Pause size={13} /> : <Play size={13} />}
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </>
+                );
+              })()
+            )}
+        </div>
+      )}
 
         {/* =========================================
             6. TAB: DEPOSIT & PAYOUT GATEWAYS (ACCOUNTS)
@@ -4659,12 +5440,22 @@ export default function AdminView() {
         ========================================= */}
         {activeAdminTab === 'tiers' && (
           <div className="admin-tiers animate-fade-in">
-            <div className="admin-page-header">
+            <div className="admin-page-header flex items-center justify-between flex-wrap gap-4">
               <div className="admin-page-title-wrap">
                 <h1 className="admin-page-title">VIP Tier Rules & Progressive Yield Settings</h1>
                 <p className="admin-page-subtitle">
                   Configure qualification deposit ranges (Min & Max Balance), progressive locking rules, daily task allocation quotas, and commission rates.
                 </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="btn-admin-primary flex items-center gap-1.5"
+                  onClick={() => setShowAddTierModal(true)}
+                >
+                  <Plus size={15} />
+                  <span>+ Add New VIP Tier</span>
+                </button>
               </div>
             </div>
 
@@ -4723,13 +5514,43 @@ export default function AdminView() {
 
                 return (
                   <div key={tier.id} className="admin-tier-card">
-                    <div className="admin-tier-header">
-                      <div className="admin-tier-icon">
-                        {(tier.platform || tier.name || 'E').charAt(0)}
+                    <div className="admin-tier-header flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="admin-tier-icon">
+                          {(tier.platform || tier.name || 'E').charAt(0)}
+                        </div>
+                        <div>
+                          <h3 className="admin-tier-name">{tier.name} VIP Tier</h3>
+                          <span className="text-xs text-slate-400">ID: {tier.id}</span>
+                        </div>
                       </div>
-                      <div>
-                        <h3 className="admin-tier-name">{tier.name} VIP Tier</h3>
-                        <span className="text-xs text-slate-400">Yield Configuration ID: {tier.id}</span>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          className="btn-table-action-secondary flex items-center gap-1 text-xs py-1 px-2"
+                          onClick={() => setEditingTier({
+                            ...tier,
+                            minBalance: tierMinBal,
+                            maxBalance: tierMaxBal,
+                            commissionRate: tierCommRate,
+                            dailyTasks: tierDailyTasks,
+                            features: tierFeatures.join('\n')
+                          })}
+                          title="Edit Tier Settings"
+                        >
+                          <Edit2 size={12} />
+                          <span>Edit</span>
+                        </button>
+                        {tier.id !== 'tier_ebay' && (
+                          <button
+                            type="button"
+                            className="btn-table-action-danger text-xs py-1 px-2"
+                            onClick={() => handleDeleteTier(tier)}
+                            title="Delete VIP Tier"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        )}
                       </div>
                     </div>
 
@@ -5289,6 +6110,8 @@ export default function AdminView() {
                         <option value="Temu">Temu</option>
                         <option value="AliExpress">AliExpress</option>
                         <option value="Target">Target</option>
+                        <option value="Shopify">Shopify</option>
+                        <option value="Shopee">Shopee</option>
                       </select>
                     </div>
 
@@ -5434,12 +6257,32 @@ export default function AdminView() {
                       <Edit2 size={18} />
                     </div>
                     <div>
-                      <h3 className="modal-title font-semibold text-base text-slate-900">Edit Campaign Task & Restrictions</h3>
-                      <span className="text-xs text-slate-500">Task Reference ID: {editingTask.id}</span>
+                      <h3 className="modal-title font-semibold text-base text-slate-900 flex items-center gap-2 flex-wrap">
+                        <span>Edit Campaign Slot #{editingTask.slotNumber || editingTask.learningStep || 1} of 25</span>
+                        {editingTask.targetUserId && (
+                          <span className="text-xs font-bold px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-700 border border-indigo-200">
+                            👤 For {adminUsers.find(u => String(u.id) === String(editingTask.targetUserId))?.name || 'Client'} Only
+                          </span>
+                        )}
+                      </h3>
+                      <span className="text-xs text-slate-500">
+                        Sequential Step #{editingTask.slotNumber || editingTask.learningStep || 1} • Ref ID: {editingTask.id}
+                      </span>
                     </div>
                   </div>
                   <button className="close-btn" onClick={() => setEditingTask(null)}>✕</button>
                 </div>
+
+                {editingTask.targetUserId && (
+                  <div style={{ background: '#eff6ff', padding: '10px 14px', borderRadius: '8px', border: '1px solid #bfdbfe', marginTop: '12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Users size={16} className="text-indigo-600 flex-shrink-0" />
+                      <span style={{ fontSize: '12px', fontWeight: '600', color: '#1e40af' }}>
+                        Client Custom Pool Mode: Changes to price, commission, or deposit barrier will apply ONLY to {adminUsers.find(u => String(u.id) === String(editingTask.targetUserId))?.name || 'this user'}. Other users and the global base catalogue remain untouched.
+                      </span>
+                    </div>
+                  </div>
+                )}
 
                 <form onSubmit={handleSaveTask} className="mt-4">
                   <div className="admin-form-group">
@@ -5705,7 +6548,11 @@ export default function AdminView() {
                       style={{ flex: 2, justifyContent: 'center', padding: '10px' }}
                     >
                       <Save size={15} />
-                      <span>Save Task Changes</span>
+                      <span>
+                        {editingTask.targetUserId
+                          ? `Save Changes for ${adminUsers.find(u => String(u.id) === String(editingTask.targetUserId))?.name || 'Client'}`
+                          : `Save Changes to Slot #${editingTask.slotNumber || editingTask.learningStep || 1}`}
+                      </span>
                     </button>
                   </div>
                 </form>
@@ -5713,6 +6560,680 @@ export default function AdminView() {
             </div>
           </div>
         )}
+
+        {/* ========================================================
+            MODAL: EDIT VIP TIER (eBay, Walmart, Amazon, etc.)
+        ======================================================== */}
+        {editingTier && (
+          <div className="modal-overlay animate-fade-in" style={{ zIndex: 100000 }} onClick={() => setEditingTier(null)}>
+            <div className="modal-container" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-box" style={{ maxWidth: '540px', width: '100%', background: '#ffffff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 40px rgba(0,0,0,0.35)' }}>
+                <div className="modal-header">
+                  <div className="modal-title-with-icon">
+                    <div className="modal-icon-badge" style={{ background: '#e0e7ff', color: '#4338ca' }}>
+                      <Edit2 size={18} />
+                    </div>
+                    <div>
+                      <h3>Edit VIP Tier: {editingTier.name}</h3>
+                      <span className="text-xs text-slate-400">Configure balance requirements, yield rate and limits</span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="modal-close-btn"
+                    onClick={() => setEditingTier(null)}
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+
+                <div className="modal-body" style={{ maxHeight: '75vh', overflowY: 'auto' }}>
+                  <form onSubmit={handleSaveTier}>
+                    <div className="grid-two-col">
+                      <div className="admin-form-group">
+                      <label className="admin-form-label text-xs font-semibold text-slate-700">Tier Name</label>
+                      <input
+                        type="text"
+                        value={editingTier.name || ''}
+                        onChange={(e) => setEditingTier({ ...editingTier, name: e.target.value })}
+                        className="admin-form-input text-xs"
+                        required
+                      />
+                    </div>
+                    <div className="admin-form-group">
+                      <label className="admin-form-label text-xs font-semibold text-slate-700">Platform Identifier</label>
+                      <input
+                        type="text"
+                        value={editingTier.platform || editingTier.name || ''}
+                        onChange={(e) => setEditingTier({ ...editingTier, platform: e.target.value })}
+                        className="admin-form-input text-xs"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid-two-col mt-3">
+                    <div className="admin-form-group">
+                      <label className="admin-form-label text-xs font-semibold text-slate-700">Min Balance to Qualify (USDT)</label>
+                      <input
+                        type="number"
+                        step="1"
+                        value={editingTier.minBalance ?? 0}
+                        onChange={(e) => setEditingTier({ ...editingTier, minBalance: e.target.value })}
+                        className="admin-form-input text-xs tabular-nums"
+                        required
+                      />
+                    </div>
+                    <div className="admin-form-group">
+                      <label className="admin-form-label text-xs font-semibold text-slate-700">Max Balance to Qualify (USDT)</label>
+                      <input
+                        type="number"
+                        step="1"
+                        value={editingTier.maxBalance ?? 99999}
+                        onChange={(e) => setEditingTier({ ...editingTier, maxBalance: e.target.value })}
+                        className="admin-form-input text-xs tabular-nums"
+                        placeholder="e.g. 499 (or 99999 for unlimited)"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid-two-col mt-3">
+                    <div className="admin-form-group">
+                      <label className="admin-form-label text-xs font-semibold text-slate-700">Commission Rate (%)</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={editingTier.commissionRate ?? 4}
+                        onChange={(e) => setEditingTier({ ...editingTier, commissionRate: e.target.value })}
+                        className="admin-form-input text-xs tabular-nums"
+                        required
+                      />
+                    </div>
+                    <div className="admin-form-group">
+                      <label className="admin-form-label text-xs font-semibold text-slate-700">Daily Task Allocation Quota</label>
+                      <input
+                        type="number"
+                        step="1"
+                        value={editingTier.dailyTasks ?? 25}
+                        onChange={(e) => setEditingTier({ ...editingTier, dailyTasks: e.target.value })}
+                        className="admin-form-input text-xs tabular-nums"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="admin-form-group mt-3">
+                    <label className="admin-form-label text-xs font-semibold text-slate-700">Marketing / Card Description</label>
+                    <textarea
+                      rows={2}
+                      value={editingTier.description || ''}
+                      onChange={(e) => setEditingTier({ ...editingTier, description: e.target.value })}
+                      className="admin-form-input text-xs"
+                      placeholder="e.g. Review product listings and earn progressive commissions."
+                    />
+                  </div>
+
+                  <div className="admin-form-group mt-3">
+                    <label className="admin-form-label text-xs font-semibold text-slate-700">Features Checklist (1 per line)</label>
+                    <textarea
+                      rows={3}
+                      value={editingTier.features || ''}
+                      onChange={(e) => setEditingTier({ ...editingTier, features: e.target.value })}
+                      className="admin-form-input text-xs"
+                      placeholder="Daily Task Limit: 25&#10;Instant Task Credit&#10;Multi-Sig Protection"
+                    />
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
+                    <button
+                      type="button"
+                      className="btn-admin-secondary"
+                      style={{ flex: 1, justifyContent: 'center', padding: '10px' }}
+                      onClick={() => setEditingTier(null)}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="btn-admin-primary"
+                      style={{ flex: 2, justifyContent: 'center', padding: '10px' }}
+                    >
+                      <Save size={15} />
+                      <span>Save Tier Configuration</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+        {/* ========================================================
+            MODAL: ADD NEW VIP TIER
+        ======================================================== */}
+        {showAddTierModal && (
+          <div className="modal-overlay animate-fade-in" style={{ zIndex: 100000 }} onClick={() => setShowAddTierModal(false)}>
+            <div className="modal-container" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-box" style={{ maxWidth: '540px', width: '100%', background: '#ffffff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 40px rgba(0,0,0,0.35)' }}>
+                <div className="modal-header">
+                  <div className="modal-title-with-icon">
+                    <div className="modal-icon-badge" style={{ background: '#dcfce7', color: '#166534' }}>
+                      <Plus size={18} />
+                    </div>
+                    <div>
+                      <h3>Create New VIP Tier</h3>
+                      <span className="text-xs text-slate-400">Add a new earning platform & progressive lock range</span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="modal-close-btn"
+                    onClick={() => setShowAddTierModal(false)}
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+
+                <div className="modal-body" style={{ maxHeight: '75vh', overflowY: 'auto' }}>
+                <form onSubmit={handleCreateTier}>
+                  <div className="grid-two-col">
+                    <div className="admin-form-group">
+                      <label className="admin-form-label text-xs font-semibold text-slate-700">Tier Name</label>
+                      <input
+                        type="text"
+                        value={newTierData.name}
+                        onChange={(e) => setNewTierData({ ...newTierData, name: e.target.value })}
+                        className="admin-form-input text-xs"
+                        placeholder="e.g. Amazon, AliExpress, VIP4"
+                        required
+                      />
+                    </div>
+                    <div className="admin-form-group">
+                      <label className="admin-form-label text-xs font-semibold text-slate-700">Platform Identifier</label>
+                      <input
+                        type="text"
+                        value={newTierData.platform}
+                        onChange={(e) => setNewTierData({ ...newTierData, platform: e.target.value })}
+                        className="admin-form-input text-xs"
+                        placeholder="e.g. Amazon"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid-two-col mt-3">
+                    <div className="admin-form-group">
+                      <label className="admin-form-label text-xs font-semibold text-slate-700">Min Balance to Qualify (USDT)</label>
+                      <input
+                        type="number"
+                        step="1"
+                        value={newTierData.minBalance}
+                        onChange={(e) => setNewTierData({ ...newTierData, minBalance: e.target.value })}
+                        className="admin-form-input text-xs tabular-nums"
+                        required
+                      />
+                    </div>
+                    <div className="admin-form-group">
+                      <label className="admin-form-label text-xs font-semibold text-slate-700">Max Balance to Qualify (USDT)</label>
+                      <input
+                        type="number"
+                        step="1"
+                        value={newTierData.maxBalance}
+                        onChange={(e) => setNewTierData({ ...newTierData, maxBalance: e.target.value })}
+                        className="admin-form-input text-xs tabular-nums"
+                        placeholder="e.g. 1999 or 99999"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid-two-col mt-3">
+                    <div className="admin-form-group">
+                      <label className="admin-form-label text-xs font-semibold text-slate-700">Commission Rate (%)</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={newTierData.commissionRate}
+                        onChange={(e) => setNewTierData({ ...newTierData, commissionRate: e.target.value })}
+                        className="admin-form-input text-xs tabular-nums"
+                        required
+                      />
+                    </div>
+                    <div className="admin-form-group">
+                      <label className="admin-form-label text-xs font-semibold text-slate-700">Daily Task Allocation Quota</label>
+                      <input
+                        type="number"
+                        step="1"
+                        value={newTierData.dailyTasks}
+                        onChange={(e) => setNewTierData({ ...newTierData, dailyTasks: e.target.value })}
+                        className="admin-form-input text-xs tabular-nums"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="admin-form-group mt-3">
+                    <label className="admin-form-label text-xs font-semibold text-slate-700">Marketing / Card Description</label>
+                    <textarea
+                      rows={2}
+                      value={newTierData.description}
+                      onChange={(e) => setNewTierData({ ...newTierData, description: e.target.value })}
+                      className="admin-form-input text-xs"
+                      placeholder="e.g. Premium retail listing review tasks with high commissions."
+                    />
+                  </div>
+
+                  <div className="admin-form-group mt-3">
+                    <label className="admin-form-label text-xs font-semibold text-slate-700">Features Checklist (1 per line)</label>
+                    <textarea
+                      rows={3}
+                      value={newTierData.features}
+                      onChange={(e) => setNewTierData({ ...newTierData, features: e.target.value })}
+                      className="admin-form-input text-xs"
+                    />
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
+                    <button
+                      type="button"
+                      className="btn-admin-secondary"
+                      style={{ flex: 1, justifyContent: 'center', padding: '10px' }}
+                      onClick={() => setShowAddTierModal(false)}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="btn-admin-primary"
+                      style={{ flex: 2, justifyContent: 'center', padding: '10px' }}
+                    >
+                      <Plus size={15} />
+                      <span>Create VIP Tier</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+        {/* ========================================================
+            MODAL: EDIT INDIVIDUAL ASSIGNED TASK FOR A USER
+        ======================================================== */}
+        {editingAssignedTask && (
+          <div className="modal-overlay animate-fade-in" style={{ zIndex: 100000 }} onClick={() => setEditingAssignedTask(null)}>
+            <div className="modal-container" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-box" style={{ maxWidth: '560px', width: '100%', background: '#ffffff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 40px rgba(0,0,0,0.35)' }}>
+                <div className="modal-header">
+                  <div className="modal-title-with-icon">
+                    <div className="modal-icon-badge" style={{ background: '#ede9fe', color: '#6d28d9' }}>
+                      <Edit2 size={18} />
+                    </div>
+                    <div>
+                      <h3>Edit Assigned Task #{editingAssignedTask.index + 1}</h3>
+                      <span className="text-xs text-slate-400">
+                        Modifying task specifically for this user's queued workflow
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="modal-close-btn"
+                    onClick={() => setEditingAssignedTask(null)}
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+
+                <div className="modal-body" style={{ maxHeight: '75vh', overflowY: 'auto' }}>
+                  <form onSubmit={handleSaveAssignedTask}>
+                    <div className="admin-form-group">
+                    <label className="admin-form-label text-xs font-semibold text-slate-700">Task Title / Product Name</label>
+                    <input
+                      type="text"
+                      value={editingAssignedTask.task.title || ''}
+                      onChange={(e) => setEditingAssignedTask({
+                        ...editingAssignedTask,
+                        task: { ...editingAssignedTask.task, title: e.target.value }
+                      })}
+                      className="admin-form-input text-xs"
+                      required
+                    />
+                  </div>
+
+                  <div className="grid-two-col mt-3">
+                    <div className="admin-form-group">
+                      <label className="admin-form-label text-xs font-semibold text-slate-700">Platform</label>
+                      <select
+                        value={editingAssignedTask.task.platform || 'eBay'}
+                        onChange={(e) => setEditingAssignedTask({
+                          ...editingAssignedTask,
+                          task: { ...editingAssignedTask.task, platform: e.target.value }
+                        })}
+                        className="admin-form-select text-xs"
+                      >
+                        <option value="eBay">eBay</option>
+                        <option value="Walmart">Walmart</option>
+                        <option value="Temu">Temu</option>
+                        <option value="Amazon">Amazon</option>
+                        <option value="AliExpress">AliExpress</option>
+                        <option value="Target">Target</option>
+                        <option value="Shopify">Shopify</option>
+                        <option value="Shopee">Shopee</option>
+                      </select>
+                    </div>
+
+                    <div className="admin-form-group">
+                      <label className="admin-form-label text-xs font-semibold text-slate-700">Product Price (USDT)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={editingAssignedTask.task.price ?? 50}
+                        onChange={(e) => setEditingAssignedTask({
+                          ...editingAssignedTask,
+                          task: { ...editingAssignedTask.task, price: e.target.value }
+                        })}
+                        className="admin-form-input text-xs tabular-nums"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid-two-col mt-3">
+                    <div className="admin-form-group">
+                      <label className="admin-form-label text-xs font-semibold text-slate-700">Commission Rate (%)</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={editingAssignedTask.task.commissionRate ?? editingAssignedTask.task.commission_rate ?? 4}
+                        onChange={(e) => setEditingAssignedTask({
+                          ...editingAssignedTask,
+                          task: { ...editingAssignedTask.task, commissionRate: e.target.value }
+                        })}
+                        className="admin-form-input text-xs tabular-nums"
+                        required
+                      />
+                      <span className="text-[10px] text-emerald-600 mt-1 block">
+                        Profit: ${(
+                          ((parseFloat(editingAssignedTask.task.price) || 0) * (parseFloat(editingAssignedTask.task.commissionRate ?? editingAssignedTask.task.commission_rate) || 0)) / 100
+                        ).toFixed(2)} USDT
+                      </span>
+                    </div>
+
+                    <div className="admin-form-group">
+                      <label className="admin-form-label text-xs font-semibold text-slate-700">Required Deposit Barrier (USDT)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={editingAssignedTask.task.requiredDeposit ?? editingAssignedTask.task.required_deposit ?? 0}
+                        onChange={(e) => setEditingAssignedTask({
+                          ...editingAssignedTask,
+                          task: { ...editingAssignedTask.task, requiredDeposit: e.target.value }
+                        })}
+                        className="admin-form-input text-xs tabular-nums"
+                      />
+                      <span className="text-[10px] text-slate-400 mt-1 block">
+                        If &gt; 0, user must have deposit/balance &gt;= this amount to submit.
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="admin-form-group mt-3">
+                    <label className="admin-form-label text-xs font-semibold text-slate-700">Product Image URL</label>
+                    <input
+                      type="url"
+                      value={editingAssignedTask.task.image || ''}
+                      onChange={(e) => setEditingAssignedTask({
+                        ...editingAssignedTask,
+                        task: { ...editingAssignedTask.task, image: e.target.value }
+                      })}
+                      className="admin-form-input text-xs"
+                    />
+                    {editingAssignedTask.task.image && (
+                      <div className="mt-2 flex items-center gap-2">
+                        <img
+                          src={editingAssignedTask.task.image}
+                          alt=""
+                          className="w-10 h-10 rounded-md object-cover border border-slate-200"
+                          onError={(e) => {
+                            e.currentTarget.onerror = null;
+                            e.currentTarget.src = 'https://images.unsplash.com/photo-1546868871-7041f2a55e12?w=600&auto=format&fit=crop&q=80';
+                          }}
+                        />
+                        <span className="text-xs text-slate-500 truncate max-w-xs">{editingAssignedTask.task.image}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="grid-two-col mt-3">
+                    <div className="admin-form-group">
+                      <label className="admin-form-label text-xs font-semibold text-slate-700">Learning Milestone Step</label>
+                      <select
+                        value={editingAssignedTask.task.isLearning ? 'true' : 'false'}
+                        onChange={(e) => setEditingAssignedTask({
+                          ...editingAssignedTask,
+                          task: { ...editingAssignedTask.task, isLearning: e.target.value === 'true' }
+                        })}
+                        className="admin-form-select text-xs"
+                      >
+                        <option value="false">Standard Task</option>
+                        <option value="true">Learning Step Milestone</option>
+                      </select>
+                    </div>
+
+                    {editingAssignedTask.task.isLearning && (
+                      <div className="admin-form-group">
+                        <label className="admin-form-label text-xs font-semibold text-slate-700">Step # (1 to 25)</label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="25"
+                          value={editingAssignedTask.task.learningStep ?? (editingAssignedTask.index + 1)}
+                          onChange={(e) => setEditingAssignedTask({
+                            ...editingAssignedTask,
+                            task: { ...editingAssignedTask.task, learningStep: e.target.value }
+                          })}
+                          className="admin-form-input text-xs tabular-nums"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
+                    <button
+                      type="button"
+                      className="btn-admin-secondary"
+                      style={{ flex: 1, justifyContent: 'center', padding: '10px' }}
+                      onClick={() => setEditingAssignedTask(null)}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="btn-admin-primary"
+                      style={{ flex: 2, justifyContent: 'center', padding: '10px' }}
+                    >
+                      <Save size={15} />
+                      <span>Save Assigned Task Changes</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+        {/* ========================================================
+            MODAL: ADD TASK TO CLIENT QUEUE
+        ======================================================== */}
+        {showAddAssignedModalForUser && (
+          <div className="modal-overlay animate-fade-in" style={{ zIndex: 100000 }} onClick={() => setShowAddAssignedModalForUser(null)}>
+            <div className="modal-container" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-box" style={{ maxWidth: '560px', width: '100%', background: '#ffffff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 40px rgba(0,0,0,0.35)' }}>
+                <div className="modal-header">
+                  <div className="modal-title-with-icon">
+                    <div className="modal-icon-badge" style={{ background: '#dcfce7', color: '#166534' }}>
+                      <Plus size={18} />
+                    </div>
+                    <div>
+                      <h3>Add Task to Client Queue</h3>
+                      <span className="text-xs text-slate-400">Append a task from the catalogue or create custom</span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="modal-close-btn"
+                    onClick={() => setShowAddAssignedModalForUser(null)}
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+
+                <div className="modal-body" style={{ maxHeight: '75vh', overflowY: 'auto' }}>
+                {/* Source Selection: Catalog or Custom */}
+                <div className="flex items-center gap-3 mb-4 p-1 bg-slate-100 rounded-lg">
+                  <button
+                    type="button"
+                    className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${addAssignedSource === 'catalog' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600'}`}
+                    onClick={() => setAddAssignedSource('catalog')}
+                  >
+                    Select From Catalogue
+                  </button>
+                  <button
+                    type="button"
+                    className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${addAssignedSource === 'custom' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600'}`}
+                    onClick={() => setAddAssignedSource('custom')}
+                  >
+                    Create Custom Task
+                  </button>
+                </div>
+
+                <form onSubmit={handleAddAssignedTask}>
+                  {addAssignedSource === 'catalog' ? (
+                    <div className="admin-form-group">
+                      <label className="admin-form-label text-xs font-semibold text-slate-700">Choose Catalogue Product</label>
+                      <select
+                        value={selectedCatalogTaskId || (tasks[0]?.id || '')}
+                        onChange={(e) => setSelectedCatalogTaskId(e.target.value)}
+                        className="admin-form-select text-xs"
+                      >
+                        {tasks.map(t => (
+                          <option key={t.id} value={t.id}>
+                            [{t.platform}] {t.title} (${Number(t.price || 0).toFixed(2)} • {t.commissionRate || 4}%)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="admin-form-group">
+                        <label className="admin-form-label text-xs font-semibold text-slate-700">Task Title / Product</label>
+                        <input
+                          type="text"
+                          value={customAssignedTaskData.title}
+                          onChange={(e) => setCustomAssignedTaskData({ ...customAssignedTaskData, title: e.target.value })}
+                          className="admin-form-input text-xs"
+                          placeholder="e.g. Apple Watch Ultra 2 Titanium"
+                          required
+                        />
+                      </div>
+
+                      <div className="grid-two-col mt-3">
+                        <div className="admin-form-group">
+                          <label className="admin-form-label text-xs font-semibold text-slate-700">Platform</label>
+                          <select
+                            value={customAssignedTaskData.platform}
+                            onChange={(e) => setCustomAssignedTaskData({ ...customAssignedTaskData, platform: e.target.value })}
+                            className="admin-form-select text-xs"
+                          >
+                            <option value="eBay">eBay</option>
+                            <option value="Walmart">Walmart</option>
+                            <option value="Temu">Temu</option>
+                            <option value="Amazon">Amazon</option>
+                            <option value="AliExpress">AliExpress</option>
+                            <option value="Target">Target</option>
+                          </select>
+                        </div>
+
+                        <div className="admin-form-group">
+                          <label className="admin-form-label text-xs font-semibold text-slate-700">Price (USDT)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={customAssignedTaskData.price}
+                            onChange={(e) => setCustomAssignedTaskData({ ...customAssignedTaskData, price: e.target.value })}
+                            className="admin-form-input text-xs tabular-nums"
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid-two-col mt-3">
+                        <div className="admin-form-group">
+                          <label className="admin-form-label text-xs font-semibold text-slate-700">Commission Rate (%)</label>
+                          <input
+                            type="number"
+                            step="0.1"
+                            value={customAssignedTaskData.commissionRate}
+                            onChange={(e) => setCustomAssignedTaskData({ ...customAssignedTaskData, commissionRate: e.target.value })}
+                            className="admin-form-input text-xs tabular-nums"
+                            required
+                          />
+                        </div>
+
+                        <div className="admin-form-group">
+                          <label className="admin-form-label text-xs font-semibold text-slate-700">Required Deposit Barrier (USDT)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={customAssignedTaskData.requiredDeposit}
+                            onChange={(e) => setCustomAssignedTaskData({ ...customAssignedTaskData, requiredDeposit: e.target.value })}
+                            className="admin-form-input text-xs tabular-nums"
+                            placeholder="0.00"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="admin-form-group mt-3">
+                        <label className="admin-form-label text-xs font-semibold text-slate-700">Image URL</label>
+                        <input
+                          type="url"
+                          value={customAssignedTaskData.image}
+                          onChange={(e) => setCustomAssignedTaskData({ ...customAssignedTaskData, image: e.target.value })}
+                          className="admin-form-input text-xs"
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
+                    <button
+                      type="button"
+                      className="btn-admin-secondary"
+                      style={{ flex: 1, justifyContent: 'center', padding: '10px' }}
+                      onClick={() => setShowAddAssignedModalForUser(null)}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="btn-admin-primary"
+                      style={{ flex: 2, justifyContent: 'center', padding: '10px' }}
+                    >
+                      <Plus size={15} />
+                      <span>Add to User Queue</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
         </div>
       </main>
     </div>

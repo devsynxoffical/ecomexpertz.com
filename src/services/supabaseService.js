@@ -25,7 +25,7 @@ export function normalizeUser(u) {
   const refCode = sanitizeReferralCode(u.referral_code || u.referralCode || u.code) || '';
   const invitedByCode = sanitizeReferralCode(u.invited_by_code || u.invitedByCode || u.referred_by_code || u.referredByCode || u.referred_by || u.referredBy) || '';
   const referredByName = u.referred_by_name || u.referredByName || (invitedByCode === '888888' ? 'System Genesis' : (invitedByCode ? `Code #${invitedByCode}` : 'Direct'));
-  
+
   return {
     ...u,
     id: u.id,
@@ -101,19 +101,19 @@ export function normalizeUser(u) {
 
 export function applyTaskRecordsToUser(norm, taskRecords = []) {
   if (!norm || !norm.id) return norm;
-  const userRecs = (taskRecords || []).filter(r => 
-    r.user_id === norm.id || 
-    r.userId === norm.id || 
-    String(r.user_id) === String(norm.id) || 
+  const userRecs = (taskRecords || []).filter(r =>
+    r.user_id === norm.id ||
+    r.userId === norm.id ||
+    String(r.user_id) === String(norm.id) ||
     (norm.name && r.user_name && r.user_name.toLowerCase() === norm.name.toLowerCase())
   );
 
   if (userRecs.length > 0) {
-    const latestAssignment = userRecs.find(r => 
+    const latestAssignment = userRecs.find(r =>
       r.type && (r.type.includes('Assigned') || r.type.includes('Package Assigned')) &&
       r.status !== 'Cancelled'
     );
-    const latestRequest = userRecs.find(r => 
+    const latestRequest = userRecs.find(r =>
       r.type && r.type.includes('Request') && r.status === 'Pending'
     );
 
@@ -121,17 +121,42 @@ export function applyTaskRecordsToUser(norm, taskRecords = []) {
       let parsed = null;
       try {
         parsed = typeof latestAssignment.note === 'string' ? JSON.parse(latestAssignment.note) : latestAssignment.note;
-      } catch (e) {}
+      } catch (e) { }
 
       if (parsed) {
         norm.assignedPackage = parsed.assignedPackage || 'Standard 25 Package';
         norm.taskPackageStatus = 'assigned';
         norm.taskPackageRequested = false;
         if (Array.isArray(parsed.tasks) && parsed.tasks.length > 0) {
-          norm.assignedTasks = parsed.tasks;
-          norm.assignedTaskIds = parsed.tasks.map(t => t.id);
+          norm.assignedTasks = parsed.tasks.map((t, idx) => {
+            const normT = normalizeTask(t);
+            const slotNum = Number(t.slotNumber ?? t.slot_number ?? normT?.slotNumber ?? (idx + 1));
+            const p = t.price !== undefined ? parseFloat(t.price) : (normT?.price || 10);
+            const c = parseFloat(t.commissionRate ?? t.commission_rate ?? normT?.commissionRate ?? 4) || 4;
+            const dep = t.requiredDeposit !== undefined ? parseFloat(t.requiredDeposit) : (parseFloat(t.required_deposit) || normT?.requiredDeposit || 0);
+            const yieldAmt = parseFloat(((p * c) / 100).toFixed(2));
+            return {
+              ...(normT || {}),
+              ...t,
+              slotNumber: slotNum,
+              slot_number: slotNum,
+              learningStep: slotNum,
+              learning_step: slotNum,
+              price: p,
+              commissionRate: c,
+              commission_rate: c,
+              yieldRate: `${c}%`,
+              yield_rate: `${c}%`,
+              yieldAmount: yieldAmt,
+              yield_amount: yieldAmt,
+              requiredDeposit: dep,
+              required_deposit: dep,
+              adminCustomized: true
+            };
+          });
+          norm.assignedTaskIds = norm.assignedTasks.map(t => t.id);
         } else if (Array.isArray(parsed.taskIds) && parsed.taskIds.length > 0) {
-          norm.assignedTasks = INITIAL_TASKS.filter(t => parsed.taskIds.includes(t.id));
+          norm.assignedTasks = INITIAL_TASKS.filter(t => parsed.taskIds.includes(t.id)).map(normalizeTask);
           norm.assignedTaskIds = parsed.taskIds;
         }
       }
@@ -139,7 +164,7 @@ export function applyTaskRecordsToUser(norm, taskRecords = []) {
       let parsed = null;
       try {
         parsed = typeof latestRequest.note === 'string' ? JSON.parse(latestRequest.note) : latestRequest.note;
-      } catch (e) {}
+      } catch (e) { }
       norm.taskPackageRequested = true;
       norm.taskPackageStatus = 'pending';
       norm.taskRequestId = parsed?.requestId || latestRequest.code;
@@ -151,8 +176,41 @@ export function applyTaskRecordsToUser(norm, taskRecords = []) {
   if ((!norm.assignedTasks || norm.assignedTasks.length === 0) && (Number(norm.pending_tasks || norm.pendingTasks || 0) > 0 || norm.assignedPackage)) {
     norm.assignedPackage = norm.assignedPackage || 'Standard 25 Package';
     norm.taskPackageStatus = 'assigned';
-    norm.assignedTasks = INITIAL_TASKS.slice(0, 25);
-    norm.assignedTaskIds = norm.assignedTasks.map(t => t.id);
+
+    // Priority 1: User-specific custom assigned tasks from local cache
+    let loaded = false;
+    try {
+      const userCached = localStorage.getItem(`websynx_user_assigned_tasks_${norm.id}`);
+      if (userCached) {
+        const parsed = JSON.parse(userCached);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          norm.assignedTasks = parsed;
+          norm.assignedTaskIds = parsed.map(t => t.id);
+          loaded = true;
+        }
+      }
+    } catch (e) {}
+
+    // Priority 2: Global catalogue tasks with latest updated prices
+    if (!loaded) {
+      try {
+        const globalCached = localStorage.getItem('websynx_tasks');
+        if (globalCached) {
+          const parsedG = JSON.parse(globalCached);
+          if (Array.isArray(parsedG) && parsedG.length >= 25) {
+            norm.assignedTasks = parsedG.slice(0, 25);
+            norm.assignedTaskIds = norm.assignedTasks.map(t => t.id);
+            loaded = true;
+          }
+        }
+      } catch (e) {}
+    }
+
+    // Priority 3: Default Initial Tasks
+    if (!loaded) {
+      norm.assignedTasks = INITIAL_TASKS.slice(0, 25);
+      norm.assignedTaskIds = norm.assignedTasks.map(t => t.id);
+    }
   }
 
   return norm;
@@ -180,10 +238,26 @@ export function normalizeTask(t) {
     const match = t.title.match(/step\s*#?(\d+)/i);
     if (match) learningStep = parseInt(match[1], 10);
   }
+  if (!learningStep && t.id) {
+    const mId = String(t.id).match(/task-1(\d{2})/);
+    if (mId) {
+      const stepVal = parseInt(mId[1], 10);
+      if (stepVal >= 1 && stepVal <= 25) learningStep = stepVal;
+    }
+    const mEb = String(t.id).match(/tsk-(?:eb|step)-0?(\d+)/);
+    if (mEb) {
+      const stepVal = parseInt(mEb[1], 10);
+      if (stepVal >= 1 && stepVal <= 25) learningStep = stepVal;
+    }
+  }
+
+  const slotNum = t.slotNumber || t.slot_number || learningStep || (isLearning ? (learningStep || 1) : null);
 
   return {
     ...t,
     id: t.id,
+    slotNumber: slotNum,
+    slot_number: slotNum,
     title: t.title,
     platform: t.platform || 'eBay',
     category: t.category || 'General',
@@ -198,8 +272,10 @@ export function normalizeTask(t) {
     required_deposit: Number(t.required_deposit ?? t.requiredDeposit ?? 0),
     isLearning: isLearning,
     is_learning: isLearning,
-    learningStep: isLearning ? (learningStep || 1) : null,
-    learning_step: isLearning ? (learningStep || 1) : null,
+    learningStep: isLearning ? (learningStep || slotNum || 1) : null,
+    learning_step: isLearning ? (learningStep || slotNum || 1) : null,
+    adminCustomized: Boolean(t.adminCustomized || t.admin_customized || Number(t.required_deposit ?? t.requiredDeposit ?? 0) > 0),
+    admin_customized: Boolean(t.adminCustomized || t.admin_customized || Number(t.required_deposit ?? t.requiredDeposit ?? 0) > 0),
     badge: t.badge || 'VIP Level 1',
     orders: Number(t.orders) || 120,
     rating: Number(t.rating) || 4.9,
@@ -308,7 +384,7 @@ export const supabaseService = {
 
     // 2. Check initial mock users (admin / Noah / Alex)
     if (!resolvedReferrer) {
-      const initMatch = INITIAL_ADMIN_USERS.find(u => 
+      const initMatch = INITIAL_ADMIN_USERS.find(u =>
         (u.referralCode && sanitizeReferralCode(u.referralCode) === cleanRefCode) ||
         (u.code && sanitizeReferralCode(u.code) === cleanRefCode) ||
         (u.referral_code && sanitizeReferralCode(u.referral_code) === cleanRefCode) ||
@@ -331,7 +407,7 @@ export const supabaseService = {
         const savedUsersRaw = localStorage.getItem('websynx_admin_users');
         if (savedUsersRaw) {
           const savedUsers = JSON.parse(savedUsersRaw);
-          const localMatch = (savedUsers || []).find(u => 
+          const localMatch = (savedUsers || []).find(u =>
             (u.referralCode && sanitizeReferralCode(u.referralCode) === cleanRefCode) ||
             (u.code && sanitizeReferralCode(u.code) === cleanRefCode) ||
             (u.referral_code && sanitizeReferralCode(u.referral_code) === cleanRefCode) ||
@@ -347,22 +423,12 @@ export const supabaseService = {
             };
           }
         }
-      } catch (e) {}
+      } catch (e) { }
     }
 
-    // 4. If any 4-20 char alphanumeric code is supplied, accept it dynamically
-    // so new users sharing their generated 6-digit codes are NEVER blocked by sync lag!
+    // 4. Strict Verification: An invitation code MUST belong to a verified registered user or official platform code
     if (!resolvedReferrer) {
-      if (/^[a-zA-Z0-9_-]{4,20}$/.test(cleanRefCode)) {
-        resolvedReferrer = {
-          id: `ref_${cleanRefCode}`,
-          name: cleanRefCode === '888888' ? 'Official Platform' : `Member #${cleanRefCode}`,
-          referral_code: cleanRefCode,
-          code: cleanRefCode
-        };
-      } else {
-        throw new Error(`Invalid invitation code "${cleanRefCode}". Please verify your invitation code and try again.`);
-      }
+      throw new Error(`Invalid invitation code "${cleanRefCode}". An invitation code from an active verified member or platform partner is required to register.`);
     }
 
     const newUserId = `usr_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
@@ -478,7 +544,7 @@ export const supabaseService = {
     let savedUser = null;
     try {
       if (savedUserRaw) savedUser = JSON.parse(savedUserRaw);
-    } catch (e) {}
+    } catch (e) { }
 
     let userRow = null;
     if (currentUserId) {
@@ -522,15 +588,26 @@ export const supabaseService = {
     const norm = normalizeUser(userRow);
     let userTaskRecs = [];
     try {
-      const { data: recs } = await supabase
+      // 1. Prioritize fetching latest Task Package Assignment record
+      const { data: pkgRecs } = await supabase
+        .from('records')
+        .select('*')
+        .or(`user_id.eq.${norm.id},user_name.ilike.${norm.name}`)
+        .ilike('type', '%Package%')
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      // 2. Also fetch latest task activity records
+      const { data: otherRecs } = await supabase
         .from('records')
         .select('*')
         .or(`user_id.eq.${norm.id},user_name.ilike.${norm.name}`)
         .ilike('category', '%task%')
         .order('created_at', { ascending: false })
-        .limit(10);
-      if (recs) userTaskRecs = recs;
-    } catch (e) {}
+        .limit(15);
+
+      userTaskRecs = [...(pkgRecs || []), ...(otherRecs || [])];
+    } catch (e) { }
     return applyTaskRecordsToUser(norm, userTaskRecs);
   },
 
@@ -545,14 +622,15 @@ export const supabaseService = {
 
     let taskRecords = [];
     try {
+      // Query package assignment and request records specifically
       const { data: recs } = await supabase
         .from('records')
         .select('*')
-        .ilike('category', '%task%')
+        .or('type.ilike.%Package%,type.ilike.%Request%,type.ilike.%Assign%')
         .order('created_at', { ascending: false })
-        .limit(200);
+        .limit(300);
       if (recs) taskRecords = recs;
-    } catch (e) {}
+    } catch (e) { }
 
     return data.map(u => {
       const norm = normalizeUser(u);
@@ -590,6 +668,9 @@ export const supabaseService = {
     // Map camelCase to snake_case column names supported by Postgres
     const payload = {};
     if (updates.balance !== undefined) payload.balance = Number(updates.balance);
+    if (updates.total_deposit !== undefined || updates.totalDeposit !== undefined) {
+      payload.total_deposit = Number(updates.total_deposit ?? updates.totalDeposit);
+    }
     if (updates.name !== undefined) payload.name = updates.name;
     if (updates.email !== undefined) payload.email = updates.email;
     if (updates.status !== undefined) payload.status = updates.status;
@@ -679,7 +760,7 @@ export const supabaseService = {
   deleteUser: async (id) => {
     try {
       await supabase.from('records').delete().eq('user_id', id);
-    } catch (e) {}
+    } catch (e) { }
     const { error } = await supabase.from('users').delete().eq('id', id);
     if (error) {
       // If hard delete is blocked (FK / RLS), mark as Deleted so login is still denied
@@ -707,11 +788,11 @@ export const supabaseService = {
       const commRate = parseFloat(updates.commissionRate ?? updates.commission_rate ?? (updates.yieldRate ? parseFloat(updates.yieldRate) : 4)) || 4;
       const priceNum = Number(updates.price) || 0;
       const yieldAmt = Number(updates.yieldAmount ?? updates.yield_amount ?? (((priceNum * commRate) / 100).toFixed(2)));
-      
+
       const baseFields = {
         title: updates.title,
-        platform: updates.platform,
-        category: updates.category,
+        platform: updates.platform || 'eBay',
+        category: updates.category || 'General',
         price: priceNum,
         yield_rate: `${commRate}%`,
         yield_amount: yieldAmt,
@@ -720,30 +801,40 @@ export const supabaseService = {
         status: updates.active !== false ? 'Active' : 'Disabled'
       };
 
-      try {
-        const { data, error } = await supabase
+      if (updates.badge !== undefined) baseFields.badge = updates.badge;
+      if (updates.orders !== undefined) baseFields.orders = Number(updates.orders) || 120;
+      if (updates.rating !== undefined) baseFields.rating = Number(updates.rating) || 4.9;
+
+      let result = null;
+
+      // 1. Direct update to Supabase tasks table
+      const { data, error } = await supabase
+        .from('tasks')
+        .update(baseFields)
+        .eq('id', id)
+        .select();
+
+      if (!error && data && data.length > 0) {
+        result = data[0];
+      }
+
+      // 2. If record doesn't exist in Supabase tasks table, upsert it!
+      if (!result) {
+        const { data: upsertData, error: upsertErr } = await supabase
           .from('tasks')
-          .update({
-            ...baseFields,
-            product_url: updates.productUrl || updates.product_url
+          .upsert({
+            id,
+            ...baseFields
           })
-          .eq('id', id)
           .select();
 
-        if (!error && data && data.length > 0) {
-          return normalizeTask(data[0]);
+        if (!upsertErr && upsertData && upsertData.length > 0) {
+          result = upsertData[0];
         }
-      } catch (colErr) {
-        // Fallback if product_url column is absent in remote database
-        const { data, error } = await supabase
-          .from('tasks')
-          .update(baseFields)
-          .eq('id', id)
-          .select();
+      }
 
-        if (!error && data && data.length > 0) {
-          return normalizeTask(data[0]);
-        }
+      if (result) {
+        return normalizeTask(result);
       }
     } catch (err) {
       console.warn('Supabase updateTask fallback:', err.message);
@@ -752,8 +843,8 @@ export const supabaseService = {
   },
 
   // 7. Submit Task
-  submitTask: async (taskId, userId) => {
-    let task = null;
+  submitTask: async (taskId, userId, taskDetails = null) => {
+    let task = taskDetails || null;
     let user = null;
 
     if (userId) {
@@ -764,7 +855,7 @@ export const supabaseService = {
       let savedUser = null;
       try {
         savedUser = JSON.parse(localStorage.getItem('websynx_user') || '{}');
-      } catch (e) {}
+      } catch (e) { }
       if (savedUser && savedUser.name && savedUser.name !== 'Guest User') {
         const { data } = await supabase.from('users').select('*').ilike('name', savedUser.name).maybeSingle();
         user = data;
@@ -775,11 +866,11 @@ export const supabaseService = {
       }
     }
 
-    if (taskId) {
+    if (!task && taskId) {
       const { data } = await supabase.from('tasks').select('*').eq('id', taskId).maybeSingle();
       task = data;
     }
-    if (!task) {
+    if (!task && taskId) {
       task = INITIAL_TASKS.find(t => t.id === taskId);
     }
     if (!task) {
@@ -793,7 +884,9 @@ export const supabaseService = {
     }
     if (!user) throw new Error('User not found');
 
-    const commission = parseFloat(task.yield_amount || task.yieldAmount || (((Number(task.price) || 0) * 0.04).toFixed(2)));
+    const commRate = parseFloat(task.commissionRate ?? task.commission_rate ?? (task.yieldRate ? parseFloat(task.yieldRate) : (task.yield_rate ? parseFloat(task.yield_rate) : 4))) || 4;
+    const priceNum = Number(task.price) || 0;
+    const commission = parseFloat(task.yield_amount || task.yieldAmount || (((priceNum * commRate) / 100).toFixed(2)));
     const newBal = parseFloat(((Number(user.balance) || 0) + commission).toFixed(2));
     const newEarnings = parseFloat(((Number(user.total_earnings || user.totalEarnings) || 0) + commission).toFixed(2));
     const newCompleted = (Number(user.completed_tasks || user.completedTasks) || 0) + 1;
@@ -882,20 +975,35 @@ export const supabaseService = {
       pendingTasks: count,
       completedTasks: resetCompleted ? 0 : (user.completed_tasks || 0),
       taskIds: finalTasks.map(t => t.id),
-      tasks: finalTasks.map(t => ({
-        id: t.id,
-        platform: t.platform || 'eBay',
-        title: t.title,
-        price: Number(t.price) || 0,
-        yieldRate: t.yieldRate || `${t.commissionRate || 4.0}%`,
-        yieldAmount: Number(t.yieldAmount || (((Number(t.price) || 0) * 0.04).toFixed(2))),
-        requiredDeposit: Number(t.requiredDeposit || t.required_deposit || 0),
-        image: t.image || t.imageUrl || '',
-        imageUrl: t.image || t.imageUrl || '',
-        productUrl: t.productUrl || t.product_url || '',
-        category: t.category || 'General',
-        badge: t.badge || 'VIP Level 1'
-      })),
+      tasks: finalTasks.map((t, idx) => {
+        const slotNum = Number(t.slotNumber ?? t.slot_number ?? (idx + 1));
+        const priceNum = Number(t.price) || 0;
+        const commRate = Number(t.commissionRate ?? t.commission_rate ?? 4.0);
+        const depNum = Number(t.requiredDeposit ?? t.required_deposit ?? 0);
+        const yieldAmt = Number((((priceNum * commRate) / 100).toFixed(2)));
+        return {
+          id: t.id || `task-${100 + slotNum}`,
+          slotNumber: slotNum,
+          learningStep: slotNum,
+          platform: t.platform || 'eBay',
+          title: t.title,
+          price: priceNum,
+          commissionRate: commRate,
+          commission_rate: commRate,
+          yieldRate: `${commRate}%`,
+          yield_rate: `${commRate}%`,
+          yieldAmount: yieldAmt,
+          yield_amount: yieldAmt,
+          requiredDeposit: depNum,
+          required_deposit: depNum,
+          image: t.image || t.imageUrl || '',
+          imageUrl: t.image || t.imageUrl || '',
+          productUrl: t.productUrl || t.product_url || '',
+          category: t.category || 'General',
+          badge: t.badge || 'VIP Level 1',
+          adminCustomized: Boolean(t.adminCustomized !== false)
+        };
+      }),
       assignedAt: new Date().toISOString()
     };
 
@@ -907,6 +1015,7 @@ export const supabaseService = {
       amount: 0.00,
       currency: 'USDT',
       date: new Date().toISOString().slice(0, 10),
+      created_at: new Date().toISOString(),
       status: 'Completed',
       note: JSON.stringify(noteObj),
       user_id: user.id,
@@ -915,6 +1024,10 @@ export const supabaseService = {
     };
 
     await supabase.from('records').insert([newRec]);
+
+    try {
+      localStorage.setItem(`websynx_user_assigned_tasks_${user.id}`, JSON.stringify(finalTasks));
+    } catch (e) {}
 
     return {
       success: true,
@@ -944,7 +1057,7 @@ export const supabaseService = {
       let saved = null;
       try {
         saved = JSON.parse(localStorage.getItem('websynx_user') || '{}');
-      } catch (e) {}
+      } catch (e) { }
       if (saved && saved.name && saved.name !== 'Guest User') {
         const { data } = await supabase.from('users').select('*').ilike('name', saved.name).maybeSingle();
         user = data;
@@ -1295,22 +1408,74 @@ export const supabaseService = {
     }
   },
 
+  createVipTier: async (tierData) => {
+    try {
+      const id = tierData.id || `tier_${String(tierData.name || 'custom').toLowerCase().replace(/[^a-z0-9]/g, '')}_${Date.now()}`;
+      const payload = {
+        id,
+        name: tierData.name || 'Custom VIP Tier',
+        platform: tierData.platform || tierData.name || 'Custom',
+        min_balance: Number(tierData.minBalance ?? tierData.min_balance ?? 0),
+        max_balance: Number(tierData.maxBalance ?? tierData.max_balance ?? 99999),
+        commission_rate: Number(tierData.commissionRate ?? tierData.commission_rate ?? 5),
+        daily_tasks: Number(tierData.dailyTasks ?? tierData.daily_tasks ?? 25),
+        description: tierData.description || ''
+      };
+      const { data, error } = await supabase.from('vip_tiers').insert([payload]).select().single();
+      if (!error && data) {
+        return {
+          ...data,
+          minBalance: Number(data.min_balance ?? payload.min_balance),
+          maxBalance: Number(data.max_balance ?? payload.max_balance),
+          commissionRate: Number(data.commission_rate ?? payload.commission_rate),
+          dailyTasks: Number(data.daily_tasks ?? payload.daily_tasks)
+        };
+      }
+    } catch (e) { }
+    return {
+      ...tierData,
+      id: tierData.id || `tier_${Date.now()}`,
+      minBalance: Number(tierData.minBalance || 0),
+      maxBalance: Number(tierData.maxBalance || 99999),
+      commissionRate: Number(tierData.commissionRate || 5),
+      dailyTasks: Number(tierData.dailyTasks || 25)
+    };
+  },
+
   updateVipTier: async (id, updates) => {
     try {
       const payload = {};
-      if (updates.minBalance !== undefined) payload.min_balance = updates.minBalance;
-      if (updates.maxBalance !== undefined) payload.max_balance = updates.maxBalance;
-      if (updates.commissionRate !== undefined) payload.commission_rate = updates.commissionRate;
-      if (updates.dailyTasks !== undefined) payload.daily_tasks = updates.dailyTasks;
+      if (updates.minBalance !== undefined) payload.min_balance = Number(updates.minBalance);
+      if (updates.maxBalance !== undefined) payload.max_balance = Number(updates.maxBalance);
+      if (updates.commissionRate !== undefined) payload.commission_rate = Number(updates.commissionRate);
+      if (updates.dailyTasks !== undefined) payload.daily_tasks = Number(updates.dailyTasks);
       if (updates.name !== undefined) payload.name = updates.name;
+      if (updates.platform !== undefined) payload.platform = updates.platform;
+      if (updates.description !== undefined) payload.description = updates.description;
       const { data, error } = await supabase
         .from('vip_tiers')
         .update(payload)
         .eq('id', id)
         .select();
-      if (!error && data && data.length > 0) return data[0];
-    } catch (e) {}
+      if (!error && data && data.length > 0) {
+        const item = data[0];
+        return {
+          ...item,
+          minBalance: Number(item.min_balance ?? updates.minBalance),
+          maxBalance: Number(item.max_balance ?? updates.maxBalance),
+          commissionRate: Number(item.commission_rate ?? updates.commissionRate),
+          dailyTasks: Number(item.daily_tasks ?? updates.dailyTasks)
+        };
+      }
+    } catch (e) { }
     return null;
+  },
+
+  deleteVipTier: async (id) => {
+    try {
+      await supabase.from('vip_tiers').delete().eq('id', id);
+    } catch (e) { }
+    return true;
   },
 
   // 14. Activity
@@ -1325,6 +1490,99 @@ export const supabaseService = {
     return data;
   },
 
+  // 14b. System Gateway Settings (Deposit Addresses & Banking)
+  getGatewaySettings: async () => {
+    try {
+      const { data, error } = await supabase
+        .from('system_settings')
+        .select('*');
+      if (error) {
+        console.warn('Supabase getGatewaySettings error:', error.message);
+        return null;
+      }
+      if (data && data.length > 0) {
+        const settings = {};
+        data.forEach(item => {
+          if (!item || !item.setting_key) return;
+          let val = item.setting_value;
+          try {
+            if (typeof val === 'string' && (val.startsWith('{') || val.startsWith('['))) {
+              val = JSON.parse(val);
+            }
+          } catch (e) { }
+          settings[item.setting_key] = val;
+        });
+        return settings;
+      }
+    } catch (err) {
+      console.warn('supabaseService.getGatewaySettings exception:', err);
+    }
+    return null;
+  },
+
+  updateGatewaySettings: async (settings) => {
+    if (!settings || typeof settings !== 'object') return settings;
+    try {
+      const cleanKeys = {
+        trc20Address: String(settings.trc20Address || settings.trc20 || settings.trc20_address || '').trim(),
+        erc20Address: String(settings.erc20Address || settings.erc20 || settings.erc20_address || '').trim(),
+        bep20Address: String(settings.bep20Address || settings.bep20 || settings.bep20_address || '').trim(),
+        bankName: String(settings.bankName || settings.bank_name || '').trim(),
+        bankAccount: String(settings.bankAccount || settings.bank_account || '').trim(),
+        bankHolder: String(settings.bankHolder || settings.bank_holder || '').trim(),
+        bankSwift: String(settings.bankSwift || settings.bank_swift || '').trim(),
+        depositInstructions: String(settings.depositInstructions || settings.deposit_instructions || '').trim()
+      };
+
+      const rows = Object.entries(cleanKeys).map(([k, v]) => ({
+        setting_key: k,
+        setting_value: v,
+        updated_at: new Date().toISOString()
+      }));
+
+      const { error } = await supabase
+        .from('system_settings')
+        .upsert(rows, { onConflict: 'setting_key' });
+
+      if (error) {
+        console.warn('Batch upsert failed, trying sequential:', error.message);
+        for (const row of rows) {
+          await supabase.from('system_settings').upsert([row], { onConflict: 'setting_key' });
+        }
+      }
+    } catch (err) {
+      console.warn('supabaseService.updateGatewaySettings exception:', err);
+    }
+    return settings;
+  },
+
+  // 14c. Direct Create Record
+  createRecord: async (rec) => {
+    if (!rec) return null;
+    try {
+      const payload = {
+        id: rec.id || `rec_${Date.now()}`,
+        code: rec.code || `REC-${Math.floor(1000 + Math.random() * 9000)}`,
+        type: rec.type || 'Direct Deposit',
+        category: rec.category || 'Deposit',
+        amount: Number(rec.amount || 0),
+        currency: rec.currency || 'USDT',
+        date: rec.date || new Date().toISOString().replace('T', ' ').substring(0, 19),
+        status: rec.status || 'Completed',
+        note: rec.note || '',
+        user_id: rec.userId || rec.user_id,
+        user_name: rec.userName || rec.user_name || 'Member',
+        network: rec.network || 'TRC20',
+        tx_hash: rec.txHash || rec.tx_hash || 'Direct Transfer'
+      };
+      const { data, error } = await supabase.from('records').insert([payload]).select().maybeSingle();
+      if (!error && data) return data;
+    } catch (e) {
+      console.warn('supabaseService.createRecord warning:', e);
+    }
+    return rec;
+  },
+
   // 15. Real-Time Channel Subscription (Singleton Manager)
   subscribeLiveEvents: (onEvent) => {
     liveEventListeners.add(onEvent);
@@ -1332,18 +1590,26 @@ export const supabaseService = {
 
     return () => {
       liveEventListeners.delete(onEvent);
+      if (liveEventListeners.size === 0 && liveChannel) {
+        try {
+          supabase.removeChannel(liveChannel);
+        } catch (e) {}
+        liveChannel = null;
+        lastRealtimeStatus = null;
+      }
     };
   }
 };
 
 let liveChannel = null;
 const liveEventListeners = new Set();
+let lastRealtimeStatus = null;
 
 function initSupabaseRealtime() {
   if (liveChannel) return;
 
   try {
-    const channelId = `realtime-ecomxstocks-${Date.now()}`;
+    const channelId = 'realtime-ecomxstocks-live';
     liveChannel = supabase
       .channel(channelId)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, payload => {
@@ -1357,7 +1623,7 @@ function initSupabaseRealtime() {
         }
         if (eventObj) {
           liveEventListeners.forEach(listener => {
-            try { listener(eventObj); } catch (e) {}
+            try { listener(eventObj); } catch (e) { }
           });
         }
       })
@@ -1386,15 +1652,37 @@ function initSupabaseRealtime() {
         }
         if (eventObj) {
           liveEventListeners.forEach(listener => {
-            try { listener(eventObj); } catch (e) {}
+            try { listener(eventObj); } catch (e) { }
           });
         }
       })
-      .subscribe((status) => {
-        console.log('📡 Supabase Realtime channel status:', status);
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'system_settings' }, payload => {
+        const eventObj = {
+          type: 'gateway_settings_updated',
+          payload: {
+            setting: payload.new,
+            key: payload.new?.setting_key,
+            value: payload.new?.setting_value
+          }
+        };
+        liveEventListeners.forEach(listener => {
+          try { listener(eventObj); } catch (e) { }
+        });
+      })
+      .subscribe((status, err) => {
+        if (status !== lastRealtimeStatus) {
+          lastRealtimeStatus = status;
+          if (status === 'SUBSCRIBED') {
+            console.log('📡 Supabase Realtime channel connected');
+          } else if (status === 'CHANNEL_ERROR') {
+            // Quiet warning on reconnecting rather than spamming errors
+            console.warn('📡 Supabase Realtime reconnecting...', err?.message || '');
+          }
+        }
       });
   } catch (err) {
     console.warn('Supabase Realtime subscription error:', err);
+    liveChannel = null;
   }
 }
 

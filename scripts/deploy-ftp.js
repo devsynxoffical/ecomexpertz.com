@@ -2,103 +2,126 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { execSync } from 'child_process';
 import * as ftp from 'basic-ftp';
+import fs from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.join(__dirname, '..');
 const distDir = path.join(projectRoot, 'dist');
 
-import fs from 'fs';
-
 async function deploy() {
   console.log('🚀 Building production bundle with latest fixes...');
   execSync('npm run build', { cwd: projectRoot, stdio: 'inherit' });
 
   const client = new ftp.Client();
-  client.ftp.verbose = true;
-  client.ftp.timeout = 60000;
+  client.ftp.verbose = false; // cleaner output
+  client.ftp.timeout = 120000;
+
+  const ftpConfig = {
+    host: '209.42.21.27',
+    user: 'nadeem@websynx.devsynx.com',
+    password: 'Allah512@@',
+    port: 21,
+    secure: false
+  };
+
+  const ensureConnected = async () => {
+    if (!client.closed) {
+      try {
+        await client.pwd();
+        return;
+      } catch (e) {}
+    }
+    console.log('🔌 Connecting to FTP server: 209.42.21.27...');
+    await client.access(ftpConfig);
+    console.log('✅ Connected successfully!');
+  };
+
+  const uploadFileWithRetry = async (localPath, remoteName, targetDir = '/') => {
+    let attempts = 3;
+    while (attempts > 0) {
+      try {
+        await ensureConnected();
+        await client.cd('/');
+        if (targetDir && targetDir !== '/') {
+          await client.ensureDir(targetDir);
+        }
+        await client.uploadFrom(localPath, remoteName);
+        console.log(`  ✓ Uploaded ${targetDir === '/' ? '' : targetDir + '/'}${remoteName}`);
+        await new Promise(r => setTimeout(r, 200));
+        return;
+      } catch (err) {
+        attempts--;
+        console.warn(`  ⚠️ Upload failed for ${remoteName}: ${err.message}. Retrying (${attempts} attempts left)...`);
+        try { client.close(); } catch (e) {}
+        await new Promise(r => setTimeout(r, 1500));
+        if (attempts === 0) throw err;
+      }
+    }
+  };
 
   try {
-    console.log('\n🔌 Connecting to FTP server: 209.42.21.27 (ecomxstocks.com)...');
-    await client.access({
-      host: '209.42.21.27',
-      user: 'nadeem@websynx.devsynx.com',
-      password: 'Allah512@@',
-      port: 21,
-      secure: false
-    });
+    await ensureConnected();
 
-    console.log('✅ Connected successfully!');
-
-    // 1. Ensure assets directory exists and upload assets FIRST (the JS & CSS bundle)
-    console.log('📤 Uploading assets directory...');
-    await client.ensureDir('assets');
+    // 1. Upload assets
+    console.log('\n📤 Uploading assets directory...');
     const assetFiles = fs.readdirSync(path.join(distDir, 'assets'));
     for (const file of assetFiles) {
-      console.log(`Uploading assets/${file}...`);
-      await client.uploadFrom(path.join(distDir, 'assets', file), file);
+      await uploadFileWithRetry(path.join(distDir, 'assets', file), file, 'assets');
     }
-    await client.cdup();
 
-    // 2. Ensure api directory exists and upload PHP REST API files
+    // 2. Upload api files if present
     if (fs.existsSync(path.join(distDir, 'api'))) {
-      console.log('📤 Uploading api directory for cPanel MySQL...');
-      await client.ensureDir('api');
+      console.log('\n📤 Uploading api directory for cPanel MySQL...');
       const apiFiles = fs.readdirSync(path.join(distDir, 'api'));
       for (const file of apiFiles) {
-        console.log(`Uploading api/${file}...`);
-        await client.uploadFrom(path.join(distDir, 'api', file), file);
+        await uploadFileWithRetry(path.join(distDir, 'api', file), file, 'api');
       }
-      await client.cdup();
     }
 
-    // 3. Upload index.html and root files
-    console.log('📤 Uploading index.html and root files...');
-    await client.uploadFrom(path.join(distDir, 'index.html'), 'index.html');
+    // 3. Upload root files
+    console.log('\n📤 Uploading root files...');
+    await uploadFileWithRetry(path.join(distDir, 'index.html'), 'index.html', '/');
     if (fs.existsSync(path.join(distDir, 'favicon.svg'))) {
-      await client.uploadFrom(path.join(distDir, 'favicon.svg'), 'favicon.svg');
+      await uploadFileWithRetry(path.join(distDir, 'favicon.svg'), 'favicon.svg', '/');
     }
     if (fs.existsSync(path.join(distDir, 'icons.svg'))) {
-      await client.uploadFrom(path.join(distDir, 'icons.svg'), 'icons.svg');
+      await uploadFileWithRetry(path.join(distDir, 'icons.svg'), 'icons.svg', '/');
     }
     if (fs.existsSync(path.join(distDir, 'robots.txt'))) {
-      await client.uploadFrom(path.join(distDir, 'robots.txt'), 'robots.txt');
+      await uploadFileWithRetry(path.join(distDir, 'robots.txt'), 'robots.txt', '/');
     }
     if (fs.existsSync(path.join(distDir, 'sitemap.xml'))) {
-      await client.uploadFrom(path.join(distDir, 'sitemap.xml'), 'sitemap.xml');
+      await uploadFileWithRetry(path.join(distDir, 'sitemap.xml'), 'sitemap.xml', '/');
     }
     if (fs.existsSync(path.join(distDir, 'Ecomxstocks_Operations_Manual.pdf'))) {
-      await client.uploadFrom(path.join(distDir, 'Ecomxstocks_Operations_Manual.pdf'), 'Ecomxstocks_Operations_Manual.pdf');
+      await uploadFileWithRetry(path.join(distDir, 'Ecomxstocks_Operations_Manual.pdf'), 'Ecomxstocks_Operations_Manual.pdf', '/');
     }
     if (fs.existsSync(path.join(distDir, '.htaccess'))) {
       try {
-        console.log('📤 Uploading .htaccess...');
-        await client.uploadFrom(path.join(distDir, '.htaccess'), '.htaccess');
+        await uploadFileWithRetry(path.join(distDir, '.htaccess'), '.htaccess', '/');
       } catch (e) {
         console.warn('Notice: .htaccess preserved on server');
       }
     }
 
-    // 4. Admin folder fallback (optional, non-blocking)
+    // 4. Admin folder fallback if present
     if (fs.existsSync(path.join(distDir, 'admin', 'index.html'))) {
       try {
-        console.log('📤 Uploading /admin fallback...');
-        await client.ensureDir('admin');
-        await client.uploadFrom(path.join(distDir, 'admin', 'index.html'), 'index.html');
-        await client.cdup();
+        console.log('\n📤 Uploading /admin fallback...');
+        await uploadFileWithRetry(path.join(distDir, 'admin', 'index.html'), 'index.html', 'admin');
       } catch (adminErr) {
         console.warn('Notice: /admin folder managed via .htaccess rewrite rule:', adminErr.message);
       }
     }
 
-    // Final confirmation index.html upload
-    await client.uploadFrom(path.join(distDir, 'index.html'), 'index.html');
-
-    console.log('\n🎉 Deployment complete! All latest assets, PHP REST API, and index.html have been successfully published to http://websynx.devsynx.com');
+    console.log('\n🎉 Deployment complete! All latest assets and files have been successfully published to http://websynx.devsynx.com');
   } catch (err) {
     console.error('❌ FTP Deployment error:', err);
   } finally {
-    client.close();
+    try {
+      client.close();
+    } catch(e) {}
   }
 }
 

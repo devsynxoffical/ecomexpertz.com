@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useApp } from '../context/AppContext';
+import { get25CampaignSlots } from '../utils/campaignSlots.js';
 import confetti from 'canvas-confetti';
 import {
   X,
@@ -101,7 +102,7 @@ export default function Modals() {
 
 // 1. USDT CRYPTO DEPOSIT MODAL
 function DepositModal({ onClose }) {
-  const { submitDeposit, user, systemDepositAccounts, setDashboardTab } = useApp();
+  const { submitDeposit, user, systemDepositAccounts, refreshGatewaySettings, setDashboardTab } = useApp();
   const [network, setNetwork] = useState('TRC20');
   const [amount, setAmount] = useState('100.00');
   const [txHash, setTxHash] = useState('');
@@ -109,11 +110,17 @@ function DepositModal({ onClose }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submittedCode, setSubmittedCode] = useState(null);
 
+  useEffect(() => {
+    if (typeof refreshGatewaySettings === 'function') {
+      refreshGatewaySettings();
+    }
+  }, [refreshGatewaySettings]);
+
   const depositAddress = network === 'ERC20'
-    ? (systemDepositAccounts?.erc20Address || '0x71C94156b53982e0C63810a972c72b04B46bF022')
+    ? (systemDepositAccounts?.erc20Address || systemDepositAccounts?.erc20_address || systemDepositAccounts?.erc20 || '0x71C94156b53982e0C63810a972c72b04B46bF022')
     : network === 'BEP20'
-    ? (systemDepositAccounts?.bep20Address || '0x71C94156b53982e0C63810a972c72b04B46bF022')
-    : (systemDepositAccounts?.trc20Address || 'TNoaH87yqPKmZ7r6Tx98JkL10qV2xR8v1q');
+    ? (systemDepositAccounts?.bep20Address || systemDepositAccounts?.bep20_address || systemDepositAccounts?.bep20 || '0x71C94156b53982e0C63810a972c72b04B46bF022')
+    : (systemDepositAccounts?.trc20Address || systemDepositAccounts?.trc20_address || systemDepositAccounts?.trc20 || systemDepositAccounts?.usdtAddress || systemDepositAccounts?.walletAddress || 'TNoaH87yqPKmZ7r6Tx98JkL10qV2xR8v1q');
 
   const handleCopy = () => {
     navigator.clipboard.writeText(depositAddress);
@@ -317,7 +324,7 @@ function DepositModal({ onClose }) {
 
           <div className="notice-box mt-3">
             <AlertCircle size={15} />
-            <span>Send only USDT ({network}) to this address. Minimum deposit is 10 USDT. Credited immediately upon network confirmation.</span>
+            <span>Send only USDT ({network}) to this address. Minimum deposit is 10 USDT. {systemDepositAccounts?.depositInstructions || 'Credited immediately upon network confirmation.'}</span>
           </div>
 
           <button type="submit" className="btn-primary w-full mt-4" disabled={isSubmitting}>
@@ -366,13 +373,13 @@ function WithdrawModal({ onClose }) {
     }
 
     setIsSubmitting(true);
-    setTimeout(() => {
+    setTimeout(async () => {
       try {
-        const rec = submitWithdrawal(numAmount, address, 'TRC20');
+        const rec = await submitWithdrawal(numAmount, address, 'TRC20');
         setIsSubmitting(false);
-        setSubmittedCode(rec.code);
+        setSubmittedCode(rec?.code || `WTH-${Date.now()}`);
       } catch (err) {
-        setError(err.message);
+        setError(err.message || 'Withdrawal request failed');
         setIsSubmitting(false);
       }
     }, 600);
@@ -530,59 +537,67 @@ function TaskExecutionModal({ task, onClose }) {
     }
   }, [task]);
 
-  // Balance & Deposit restriction check (only locks when Admin explicitly sets a requirement):
+  // Balance & Deposit restriction check:
   const userBalance = Number(user?.balance || 0);
   const taskPrice = Number(currentTask?.price || 0);
-  const rawDeposit = Number(currentTask?.requiredDeposit || currentTask?.required_deposit || 0);
-  const explicitDeposit = currentTask?.adminCustomized === true || (!currentTask?.isLearning && rawDeposit > 0)
-    ? rawDeposit
-    : 0;
-  const minRequiredBalance = explicitDeposit > 0 ? explicitDeposit : 0;
-  const isDepositRestricted = currentTask && minRequiredBalance > 0 && userBalance < minRequiredBalance;
-  const shortfall = Math.max(0, minRequiredBalance - userBalance);
-
-  const [step, setStep] = useState('ready'); // 'ready' -> 'processing' -> 'success'
-
-  // Current tier info
-  const userVip = (user?.vipLevel || '').toLowerCase();
-  const currentTier = vipTiers?.find(t => (t.name || '').toLowerCase() === userVip) || vipTiers?.[0] || { commissionRate: 4.0 };
-  const commissionRate = currentTier?.commissionRate || 4.0;
-  const calculatedCommission = currentTask ? parseFloat((((Number(currentTask.price) || 0) * commissionRate) / 100).toFixed(2)) : 0;
 
   // Queue and Next Task discovery - exactly matches PlatformTasksView 25-task queue
-  const platform = currentTask?.platform || 'eBay';
-  const allPlatformTasks = (tasks || []).filter(
-    t => (t.platform || '').toLowerCase() === platform.toLowerCase()
-  );
   let queue = [];
   if (user?.assignedTasks && Array.isArray(user.assignedTasks) && user.assignedTasks.length > 0) {
-    queue = user.assignedTasks;
+    queue = [...user.assignedTasks];
   } else {
     try {
       const cached = localStorage.getItem(`websynx_user_assigned_tasks_${user?.id}`);
       if (cached) {
         const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed) && parsed.length > 0) queue = parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) queue = [...parsed];
       }
     } catch (e) {}
   }
 
   if (queue.length === 0) {
-    if (allPlatformTasks.length >= 25) {
-      queue = allPlatformTasks.slice(0, 25);
-    } else {
-      const others = (tasks || []).filter(
-        t => (t.platform || '').toLowerCase() !== platform.toLowerCase()
-      );
-      const combined = [...allPlatformTasks, ...others];
-      queue = combined.slice(0, 25);
-      while (queue.length < 25 && combined.length > 0) {
-        queue = [...queue, ...combined.slice(0, 25 - queue.length)];
-      }
-    }
+    queue = get25CampaignSlots(tasks);
+  } else {
+    const baseCatalogueSlots = get25CampaignSlots(tasks);
+    queue = queue.map((item, idx) => {
+      const slotNum = Number(item.slotNumber ?? item.slot_number ?? item.learningStep ?? item.learning_step ?? (idx + 1));
+      const catalogItem = (tasks || []).find(t => String(t.id) === String(item.id)) ||
+                          baseCatalogueSlots.find(s => s.slotNumber === slotNum) ||
+                          item;
+      const p = item.price !== undefined ? parseFloat(item.price) : (catalogItem.price !== undefined ? parseFloat(catalogItem.price) : 10);
+      const c = parseFloat(item.commissionRate ?? item.commission_rate ?? catalogItem.commissionRate ?? catalogItem.commission_rate ?? 4) || 4;
+      const dep = item.requiredDeposit !== undefined
+        ? parseFloat(item.requiredDeposit)
+        : (item.required_deposit !== undefined
+          ? parseFloat(item.required_deposit)
+          : (parseFloat(catalogItem.requiredDeposit ?? catalogItem.required_deposit) || 0));
+      return {
+        ...catalogItem,
+        ...item,
+        id: item.id || catalogItem.id,
+        slotNumber: slotNum,
+        learningStep: slotNum,
+        price: p,
+        commissionRate: c,
+        commission_rate: c,
+        requiredDeposit: dep,
+        required_deposit: dep,
+        adminCustomized: Boolean(item.adminCustomized || dep > 0)
+      };
+    });
   }
 
-  const currentTaskIndex = queue.findIndex(t => String(t.id) === String(currentTask?.id));
+  const currentTaskIndex = queue.findIndex(t => String(t.id) === String(currentTask?.id) || (currentTask?.slotNumber && Number(t.slotNumber) === Number(currentTask.slotNumber)));
+  const effectiveTask = currentTaskIndex >= 0 ? queue[currentTaskIndex] : currentTask;
+  const minRequiredBalance = Number(effectiveTask?.requiredDeposit ?? effectiveTask?.required_deposit ?? currentTask?.requiredDeposit ?? currentTask?.required_deposit ?? 0);
+  const isDepositRestricted = currentTask && minRequiredBalance > 0 && userBalance < minRequiredBalance;
+  const shortfall = Math.max(0, minRequiredBalance - userBalance);
+
+  const [step, setStep] = useState('ready'); // 'ready' -> 'processing' -> 'success'
+
+  // Commission calculation: prioritize task's own commissionRate
+  const taskCommRate = parseFloat(currentTask?.commissionRate ?? currentTask?.commission_rate ?? (currentTask?.yieldRate ? parseFloat(currentTask.yieldRate) : (currentTask?.yield_rate ? parseFloat(currentTask.yield_rate) : 4))) || 4.0;
+  const calculatedCommission = currentTask ? parseFloat((((Number(currentTask.price) || 0) * taskCommRate) / 100).toFixed(2)) : 0;
   const completedCount = Number(user?.dailyCompleted ?? user?.completedTasks ?? 0);
   const isLockedSequential = currentTaskIndex > completedCount;
   const isAlreadyDone = currentTaskIndex >= 0 && currentTaskIndex < completedCount;
@@ -794,10 +809,10 @@ function TaskExecutionModal({ task, onClose }) {
 
               {/* Row 2 */}
               <div className="mallstocks-stat-box">
-                <div className={`mallstocks-stat-val ${shortfall > 0 ? 'text-amber-500' : ''}`}>
-                  {shortfall > 0 ? `${shortfall.toFixed(2)} USDT` : '0 USDT'}
+                <div className="mallstocks-stat-val">
+                  {(Number(currentTask.price) || 0).toFixed(2)} USDT
                 </div>
-                <div className="mallstocks-stat-label">Cash gap between task</div>
+                <div className="mallstocks-stat-label">Order amount</div>
               </div>
               <div className="mallstocks-stat-box">
                 <div className="mallstocks-stat-val">
@@ -847,7 +862,7 @@ function TaskExecutionModal({ task, onClose }) {
                   </h4>
                   <div className="mallstocks-pricing-chips">
                     <span className="price-chip">Order: ${(Number(currentTask.price) || 0).toFixed(2)} USDT</span>
-                    <span className="profit-chip">+{commissionRate}% (+${calculatedCommission.toFixed(2)} USDT)</span>
+                    <span className="profit-chip">+{taskCommRate}% (+${calculatedCommission.toFixed(2)} USDT)</span>
                   </div>
                 </div>
               </div>

@@ -73,12 +73,14 @@ export const ensureAllInitialTasks = (taskList) => {
       existingMap.set(String(init.id), init);
     }
   }
-  // Sanitize: clear legacy hardcoded 10-300 default deposits unless admin specifically configured it
   return result.map(t => {
-    if (t.isLearning && t.adminCustomized !== true) {
-      return { ...t, requiredDeposit: 0.00, required_deposit: 0.00 };
-    }
-    return t;
+    const dep = t.requiredDeposit !== undefined ? Number(t.requiredDeposit) : (Number(t.required_deposit) || 0);
+    return {
+      ...t,
+      requiredDeposit: dep,
+      required_deposit: dep,
+      adminCustomized: Boolean(t.adminCustomized || dep > 0)
+    };
   });
 };
 
@@ -359,16 +361,7 @@ export async function handleLocalApi(endpoint, options = {}) {
     }
 
     if (!referrerUser) {
-      if (/^[a-zA-Z0-9_-]{4,20}$/.test(cleanRefCode)) {
-        referrerUser = {
-          id: `ref_${cleanRefCode}`,
-          name: cleanRefCode === '888888' ? 'Official Platform' : `Member #${cleanRefCode}`,
-          referralCode: cleanRefCode,
-          code: cleanRefCode
-        };
-      } else {
-        throw new Error(`Invalid invitation code "${cleanRefCode}". Only verified invitation codes from registered members are accepted.`);
-      }
+      throw new Error(`Invalid invitation code "${cleanRefCode}". An invitation code from an active verified member or platform partner is required to register.`);
     }
 
     const generatedUserCode = Math.floor(100000 + Math.random() * 900000).toString();
@@ -926,17 +919,41 @@ export async function handleLocalApi(endpoint, options = {}) {
 
   // 15. /vip-tiers
   if (endpoint === '/vip-tiers') {
+    if (method === 'POST') {
+      const newTier = {
+        ...body,
+        id: body.id || `tier_${String(body.name || 'custom').toLowerCase().replace(/[^a-z0-9]/g, '')}_${Date.now()}`,
+        name: body.name || 'Custom VIP Tier',
+        platform: body.platform || body.name || 'Custom',
+        minBalance: Number(body.minBalance || 0),
+        maxBalance: Number(body.maxBalance || 99999),
+        commissionRate: Number(body.commissionRate || 5),
+        dailyTasks: Number(body.dailyTasks || 25),
+        description: body.description || ''
+      };
+      db.vipTiers = [...(db.vipTiers || INITIAL_VIP_TIERS), newTier];
+      saveLocalDatabase(db);
+      emitLocalEvent('vip_tiers_updated', { tiers: db.vipTiers });
+      return newTier;
+    }
     return db.vipTiers || INITIAL_VIP_TIERS;
   }
   if (endpoint.startsWith('/vip-tiers/') && method === 'PUT') {
     const id = endpoint.replace('/vip-tiers/', '');
-    const idx = db.vipTiers.findIndex((v) => v.id === id);
+    const idx = (db.vipTiers || []).findIndex((v) => v.id === id || v.name === id);
     if (idx !== -1) {
       db.vipTiers[idx] = { ...db.vipTiers[idx], ...body };
       saveLocalDatabase(db);
       emitLocalEvent('vip_tiers_updated', { tiers: db.vipTiers });
       return db.vipTiers[idx];
     }
+  }
+  if (endpoint.startsWith('/vip-tiers/') && method === 'DELETE') {
+    const id = endpoint.replace('/vip-tiers/', '');
+    db.vipTiers = (db.vipTiers || []).filter((v) => v.id !== id && v.name !== id);
+    saveLocalDatabase(db);
+    emitLocalEvent('vip_tiers_updated', { tiers: db.vipTiers });
+    return { success: true };
   }
 
   // 16. /activity
@@ -967,7 +984,12 @@ export async function handleLocalApi(endpoint, options = {}) {
   // 17b. /settings/gateway
   if (endpoint === '/settings/gateway' || endpoint === '/settings/deposit-accounts') {
     if (method === 'GET') {
-      return db.systemDepositAccounts || {
+      let savedLocal = null;
+      try {
+        const item = localStorage.getItem('websynx_system_deposit_accounts');
+        if (item) savedLocal = JSON.parse(item);
+      } catch (e) {}
+      return db.systemDepositAccounts || savedLocal || {
         trc20Address: 'TNoaH87yqPKmZ7r6Tx98JkL10qV2xR8v1q',
         erc20Address: '0x71C94156b53982e0C63810a972c72b04B46bF022',
         bep20Address: '0x71C94156b53982e0C63810a972c72b04B46bF022',
@@ -981,7 +1003,9 @@ export async function handleLocalApi(endpoint, options = {}) {
     if (method === 'PUT') {
       db.systemDepositAccounts = { ...(db.systemDepositAccounts || {}), ...body };
       saveLocalDatabase(db);
-      localStorage.setItem('websynx_system_deposit_accounts', JSON.stringify(db.systemDepositAccounts));
+      try {
+        localStorage.setItem('websynx_system_deposit_accounts', JSON.stringify(db.systemDepositAccounts));
+      } catch (e) {}
       emitLocalEvent('gateway_settings_updated', { settings: db.systemDepositAccounts });
       return db.systemDepositAccounts;
     }

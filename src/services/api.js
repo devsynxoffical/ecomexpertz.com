@@ -82,8 +82,59 @@ export const api = {
     return cloudRes || { message: 'User deleted', id };
   },
 
-  getGatewaySettings: async () => handleLocalApi('/settings/gateway'),
-  updateGatewaySettings: async (settings) => handleLocalApi('/settings/gateway', { method: 'PUT', body: JSON.stringify(settings) }),
+  getGatewaySettings: async () => {
+    try {
+      const cloud = await supabaseService.getGatewaySettings();
+      if (cloud && Object.keys(cloud).length > 0) {
+        try {
+          localStorage.setItem('websynx_system_deposit_accounts', JSON.stringify(cloud));
+        } catch (e) {}
+        return cloud;
+      }
+    } catch (err) {
+      console.warn('Supabase getGatewaySettings fallback:', err?.message);
+    }
+    try {
+      const saved = localStorage.getItem('websynx_system_deposit_accounts');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && Object.keys(parsed).length > 0) return parsed;
+      }
+    } catch (e) {}
+    try {
+      const res = await fetch('/api/settings/gateway');
+      if (res.ok) {
+        const data = await res.json();
+        if (data && Object.keys(data).length > 0) {
+          return data;
+        }
+      }
+    } catch (e) {}
+    return handleLocalApi('/settings/gateway');
+  },
+
+  updateGatewaySettings: async (settings) => {
+    try {
+      localStorage.setItem('websynx_system_deposit_accounts', JSON.stringify(settings));
+    } catch (e) {}
+    let cloudRes = null;
+    try {
+      cloudRes = await supabaseService.updateGatewaySettings(settings);
+    } catch (err) {
+      console.warn('Supabase updateGatewaySettings fallback:', err?.message);
+    }
+    try {
+      await fetch('/api/settings/gateway', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings)
+      });
+    } catch (e) {}
+    try {
+      await handleLocalApi('/settings/gateway', { method: 'PUT', body: JSON.stringify(settings) });
+    } catch (e) {}
+    return cloudRes || settings;
+  },
 
   checkAccountStatus: async (id) => {
     try {
@@ -209,12 +260,14 @@ export const api = {
     return handleLocalApi(`/tasks/${id}`, { method: 'DELETE' });
   },
 
-  submitTask: async (taskId, userId) => {
+  submitTask: async (taskIdOrTask, userId, optionalTask = null) => {
+    const taskId = typeof taskIdOrTask === 'object' ? taskIdOrTask.id : taskIdOrTask;
+    const taskDetails = typeof taskIdOrTask === 'object' ? taskIdOrTask : optionalTask;
     try {
-      return await supabaseService.submitTask(taskId, userId);
+      return await supabaseService.submitTask(taskId, userId, taskDetails);
     } catch (err) {
       console.warn('Supabase submitTask fallback:', err.message);
-      return handleLocalApi('/tasks/submit', { method: 'POST', body: JSON.stringify({ taskId, userId }) });
+      return handleLocalApi('/tasks/submit', { method: 'POST', body: JSON.stringify({ taskId, userId, task: taskDetails }) });
     }
   },
 
@@ -411,11 +464,26 @@ export const api = {
     return handleLocalApi('/vip-tiers');
   },
 
+  createVipTier: async (tierData) => {
+    try {
+      const res = await supabaseService.createVipTier(tierData);
+      if (res) return res;
+    } catch (e) {}
+    return handleLocalApi('/vip-tiers', { method: 'POST', body: JSON.stringify(tierData) });
+  },
+
   updateVipTier: async (id, updates) => {
     try {
       await supabaseService.updateVipTier(id, updates);
     } catch (e) {}
     return handleLocalApi(`/vip-tiers/${id}`, { method: 'PUT', body: JSON.stringify(updates) });
+  },
+
+  deleteVipTier: async (id) => {
+    try {
+      await supabaseService.deleteVipTier(id);
+    } catch (e) {}
+    return handleLocalApi(`/vip-tiers/${id}`, { method: 'DELETE' });
   },
 
   // Activity & System

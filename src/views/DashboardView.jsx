@@ -41,6 +41,7 @@ import {
 } from 'lucide-react';
 import { openProductUrl, getProductUrl, getProductImage } from '../utils/productUrl';
 import { sanitizeReferralCode } from '../services/supabaseService';
+import { get25CampaignSlots } from '../utils/campaignSlots';
 import {
   EbayLogo,
   WalmartLogo,
@@ -56,6 +57,29 @@ import {
 import PlatformTasksView from './PlatformTasksView';
 import { api } from '../services/api';
 import { INITIAL_TASKS } from '../data/mockData';
+
+export const formatRecordDate = (dateVal) => {
+  if (!dateVal) return 'Recent';
+  try {
+    const d = new Date(dateVal);
+    if (!isNaN(d.getTime())) {
+      const datePart = d.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric'
+      });
+      if (typeof dateVal === 'string' && (dateVal.includes('T') || dateVal.includes(':'))) {
+        const timePart = d.toLocaleTimeString('en-US', {
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+        return `${datePart} • ${timePart}`;
+      }
+      return datePart;
+    }
+  } catch (e) {}
+  return String(dateVal);
+};
 
 export default function DashboardView() {
   const { dashboardTab, activePlatform, setDashboardTab } = useApp();
@@ -107,11 +131,20 @@ function TabHome() {
   const [copiedInvite, setCopiedInvite] = useState(false);
   const [showNotifModal, setShowNotifModal] = useState(false);
 
-  const ebayTasks = tasks.filter(t => t.platform === 'eBay').slice(0, 6);
-  const walmartTasks = tasks.filter(t => t.platform === 'Walmart').slice(0, 6);
-  const temuTasks = tasks.filter(t => t.platform === 'Temu').slice(0, 6);
-
-  const pendingRecord = (records || []).find(r => r && r.status === 'Pending');
+  const ebayTasks = (tasks || []).filter(t => (t.platform || '').toLowerCase() === 'ebay').slice(0, 6);
+  const walmartTasks = (tasks || []).filter(t => (t.platform || '').toLowerCase() === 'walmart').slice(0, 6);
+  const temuTasks = (tasks || []).filter(t => (t.platform || '').toLowerCase() === 'temu').slice(0, 6);
+  const pendingRecord = (records || []).find(r => {
+    if (!r) return false;
+    const isPending = (r.status || '').toLowerCase() === 'pending';
+    if (!isPending) return false;
+    if (!user || !user.id || user.isGuest) return false;
+    return (
+      r.userId === user.id ||
+      r.user_id === user.id ||
+      (user.name && (r.userName === user.name || r.user_name === user.name))
+    );
+  });
 
   const isGuest = !user || !user.id || user.isGuest || user.name === 'Guest User';
   const isLoggedIn = !isGuest;
@@ -131,19 +164,54 @@ function TabHome() {
   };
 
   const completedCount = Number(user?.dailyCompleted ?? user?.completedTasks ?? 0);
-  let assignedQueue = Array.isArray(user?.assignedTasks) && user.assignedTasks.length > 0 ? user.assignedTasks : [];
+  let assignedQueue = Array.isArray(user?.assignedTasks) && user.assignedTasks.length > 0 ? [...user.assignedTasks] : [];
   if (assignedQueue.length === 0 && user?.id) {
     try {
       const cached = localStorage.getItem(`websynx_user_assigned_tasks_${user.id}`);
       if (cached) {
         const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed) && parsed.length > 0) assignedQueue = parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) assignedQueue = [...parsed];
       }
     } catch (e) {}
   }
   if (assignedQueue.length === 0 && (user?.assignedPackage || Number(user?.pendingTasks || user?.pending_tasks || 0) > 0)) {
-    const pool = (tasks && tasks.length >= 25 ? tasks : INITIAL_TASKS);
-    assignedQueue = pool.slice(0, 25);
+    assignedQueue = get25CampaignSlots(tasks);
+  }
+  if (assignedQueue.length > 0) {
+    const baseCatalogueSlots = get25CampaignSlots(tasks);
+    assignedQueue = assignedQueue.map((item, idx) => {
+      const slotNum = Number(item.slotNumber ?? item.slot_number ?? item.learningStep ?? item.learning_step ?? (idx + 1));
+      const catalogItem = (tasks || []).find(t => String(t.id) === String(item.id)) ||
+                          baseCatalogueSlots.find(s => s.slotNumber === slotNum) ||
+                          item;
+      const p = item.price !== undefined ? parseFloat(item.price) : (catalogItem.price !== undefined ? parseFloat(catalogItem.price) : 10);
+      const c = parseFloat(item.commissionRate ?? item.commission_rate ?? catalogItem.commissionRate ?? catalogItem.commission_rate ?? 4) || 4;
+      const dep = item.requiredDeposit !== undefined
+        ? parseFloat(item.requiredDeposit)
+        : (item.required_deposit !== undefined
+          ? parseFloat(item.required_deposit)
+          : (parseFloat(catalogItem.requiredDeposit ?? catalogItem.required_deposit) || 0));
+      const yieldAmt = parseFloat(((p * c) / 100).toFixed(2));
+      return {
+        ...catalogItem,
+        ...item,
+        id: item.id || catalogItem.id,
+        slotNumber: slotNum,
+        learningStep: slotNum,
+        price: p,
+        commissionRate: c,
+        commission_rate: c,
+        yieldRate: `${c}%`,
+        yield_rate: `${c}%`,
+        yieldAmount: yieldAmt,
+        yield_amount: yieldAmt,
+        requiredDeposit: dep,
+        required_deposit: dep,
+        adminCustomized: Boolean(item.adminCustomized || dep > 0),
+        image: item.image || item.imageUrl || catalogItem.image || catalogItem.imageUrl,
+        imageUrl: item.image || item.imageUrl || catalogItem.image || catalogItem.imageUrl
+      };
+    });
   }
   const totalQuota = assignedQueue.length || 25;
   const isAssigned = (user?.taskPackageStatus === 'assigned' || !!user?.assignedPackage || Number(user?.pendingTasks || user?.pending_tasks || 0) > 0) && assignedQueue.length > 0;
@@ -212,9 +280,13 @@ function TabHome() {
               </div>
             )}
 
-            <h2>{isLoggedIn ? 'Welcome back,' : 'Welcome to Ecomxstocks,'}</h2>
+            <h2 style={{ color: '#ffffff', opacity: 0.95, textShadow: '0 1px 2px rgba(0,0,0,0.2)' }}>
+              {isLoggedIn ? 'Welcome back,' : 'Welcome to Ecomxstocks,'}
+            </h2>
             <div className="greeting-name-row">
-              <span className="greeting-name">{isLoggedIn ? (user?.name || 'User') : 'Guest'}</span>
+              <span className="greeting-name" style={{ color: '#ffffff', textShadow: '0 1px 2px rgba(0,0,0,0.2)' }}>
+                {isLoggedIn ? (user?.name || 'User') : 'Guest'}
+              </span>
               <span className="greeting-wave">👋</span>
             </div>
           </div>
@@ -649,8 +721,8 @@ function TabHome() {
               <Clock size={16} color="#10b981" />
             </div>
             <div className="alert-strip-info">
-              <strong>{pendingRecord.type || 'Transaction'}</strong>
-              <span className="alert-strip-date">{pendingRecord.date || 'Recent'}</span>
+              <strong>{pendingRecord.type || pendingRecord.category || 'Deposit'}</strong>
+              <span className="alert-strip-date">{formatRecordDate(pendingRecord.date)}</span>
             </div>
           </div>
           <div className="alert-strip-right">
@@ -695,7 +767,7 @@ function TabHome() {
                     setSelectedTask(assignedQueue[completedCount]);
                     setModalType('task');
                   } else {
-                    openPlatformTasks('eBay');
+                    openPlatformTasks(activeTier.name || 'eBay');
                   }
                 }}
                 style={{
@@ -750,7 +822,7 @@ function TabHome() {
             <button
               type="button"
               className="btn-primary"
-              onClick={() => openPlatformTasks('eBay')}
+              onClick={() => openPlatformTasks(activeTier.name || 'eBay')}
               style={{
                 background: '#ffffff',
                 color: '#b45309',
@@ -791,7 +863,7 @@ function TabHome() {
             <button
               type="button"
               className="btn-primary"
-              onClick={() => openPlatformTasks('eBay')}
+              onClick={() => openPlatformTasks(activeTier.name || 'eBay')}
               style={{
                 background: '#ffffff',
                 color: '#047857',
@@ -826,9 +898,7 @@ function TabHome() {
         <div className="horizontal-tasks-scroll">
           {ebayTasks.map((task) => {
             const taskPrice = Number(task.price) || 0;
-            const rawDep = Number(task.requiredDeposit || task.required_deposit || 0);
-            const explicitDep = task.adminCustomized === true || (!task.isLearning && rawDep > 0) ? rawDep : 0;
-            const minRequired = explicitDep > 0 ? explicitDep : 0;
+            const minRequired = Number(task.requiredDeposit || task.required_deposit || 0);
             const userBal = Number(user?.balance) || 0;
             const isRestricted = minRequired > 0 && userBal < minRequired;
             return (
@@ -903,9 +973,7 @@ function TabHome() {
         <div className="horizontal-tasks-scroll">
           {walmartTasks.map((task) => {
             const taskPrice = Number(task.price) || 0;
-            const rawDep = Number(task.requiredDeposit || task.required_deposit || 0);
-            const explicitDep = task.adminCustomized === true || (!task.isLearning && rawDep > 0) ? rawDep : 0;
-            const minRequired = explicitDep > 0 ? explicitDep : 0;
+            const minRequired = Number(task.requiredDeposit || task.required_deposit || 0);
             const userBal = Number(user?.balance) || 0;
             const isRestricted = minRequired > 0 && userBal < minRequired;
             return (
@@ -980,9 +1048,7 @@ function TabHome() {
         <div className="horizontal-tasks-scroll">
           {temuTasks.map((task) => {
             const taskPrice = Number(task.price) || 0;
-            const rawDep = Number(task.requiredDeposit || task.required_deposit || 0);
-            const explicitDep = task.adminCustomized === true || (!task.isLearning && rawDep > 0) ? rawDep : 0;
-            const minRequired = explicitDep > 0 ? explicitDep : 0;
+            const minRequired = Number(task.requiredDeposit || task.required_deposit || 0);
             const userBal = Number(user?.balance) || 0;
             const isRestricted = minRequired > 0 && userBal < minRequired;
             return (
@@ -1277,41 +1343,32 @@ function TabMenu() {
   } = useApp();
 
   const tiersList = Array.isArray(vipTiers) && vipTiers.length > 0 ? vipTiers : INITIAL_VIP_TIERS;
-  const effectiveAmt = getEffectiveDepositOrBalance ? getEffectiveDepositOrBalance(user) : Math.max(Number(user?.totalDeposit || 0), Number(user?.balance || 0));
+  const effectiveAmt = getEffectiveDepositOrBalance ? getEffectiveDepositOrBalance(user) : Number(user?.balance || 0);
   const activeTier = userActiveTier || (getUserActiveTier ? getUserActiveTier(tiersList, user) : tiersList[0]);
 
-  // Extract the 3 tiers
-  const ebayTier = tiersList.find(t => (t.name || t.platform || '').toLowerCase() === 'ebay') || tiersList[0] || { minBalance: 0, maxBalance: 499, commissionRate: 4 };
-  const walmartTier = tiersList.find(t => (t.name || t.platform || '').toLowerCase() === 'walmart') || tiersList[1] || { minBalance: 500, maxBalance: 899, commissionRate: 8 };
-  const temuTier = tiersList.find(t => (t.name || t.platform || '').toLowerCase() === 'temu') || tiersList[2] || { minBalance: 900, maxBalance: 99999, commissionRate: 12 };
-
-  // Calculate status for each tier
-  const ebayStatus = getTierProgressAndStatus ? getTierProgressAndStatus(ebayTier, tiersList, user) : { isUnlocked: effectiveAmt <= (ebayTier.maxBalance || 499), isSurpassed: effectiveAmt > (ebayTier.maxBalance || 499) };
-  const walmartStatus = getTierProgressAndStatus ? getTierProgressAndStatus(walmartTier, tiersList, user) : { isUnlocked: effectiveAmt >= (walmartTier.minBalance || 500) && effectiveAmt <= (walmartTier.maxBalance || 899), isSurpassed: effectiveAmt > (walmartTier.maxBalance || 899), status: effectiveAmt < (walmartTier.minBalance || 500) ? 'locked_below' : 'active' };
-  const temuStatus = getTierProgressAndStatus ? getTierProgressAndStatus(temuTier, tiersList, user) : { isUnlocked: effectiveAmt >= (temuTier.minBalance || 900), isSurpassed: false, status: effectiveAmt < (temuTier.minBalance || 900) ? 'locked_below' : 'active' };
+  // Sort tiers by min balance
+  const sortedTiers = [...tiersList].sort((a, b) => Number(a.minBalance ?? a.min_balance ?? 0) - Number(b.minBalance ?? b.min_balance ?? 0));
 
   // Dynamic progress to next tier
-  let nextTierTarget = Number(walmartTier.minBalance || 500);
-  let nextTierName = 'Walmart';
+  const curIdx = sortedTiers.findIndex(t => (t.id && activeTier.id && t.id === activeTier.id) || (t.name || '').toLowerCase() === (activeTier.name || '').toLowerCase());
+  let nextTierTarget = 500;
+  let nextTierName = 'Next Tier';
   let progressPercent = 0;
   let progressCaption = '';
 
-  if (activeTier.name === 'eBay') {
-    nextTierTarget = Number(walmartTier.minBalance || 500);
-    nextTierName = 'Walmart';
-    progressPercent = Math.min(100, Math.round((effectiveAmt / nextTierTarget) * 100));
-    progressCaption = `$${Math.max(0, nextTierTarget - effectiveAmt).toFixed(0)} more deposit to unlock Walmart`;
-  } else if (activeTier.name === 'Walmart') {
-    nextTierTarget = Number(temuTier.minBalance || 900);
-    nextTierName = 'Temu';
-    const walmartMin = Number(walmartTier.minBalance || 500);
-    progressPercent = Math.min(100, Math.round(((effectiveAmt - walmartMin) / (nextTierTarget - walmartMin)) * 100));
-    progressCaption = `$${Math.max(0, nextTierTarget - effectiveAmt).toFixed(0)} more deposit to unlock Temu (12%)`;
+  if (curIdx !== -1 && curIdx < sortedTiers.length - 1) {
+    const nextT = sortedTiers[curIdx + 1];
+    nextTierTarget = Number(nextT.minBalance ?? nextT.min_balance ?? 500);
+    nextTierName = nextT.name;
+    const curMin = Number(activeTier.minBalance ?? activeTier.min_balance ?? 0);
+    const span = Math.max(1, nextTierTarget - curMin);
+    progressPercent = Math.min(100, Math.max(0, Math.round(((effectiveAmt - curMin) / span) * 100)));
+    progressCaption = `$${Math.max(0, nextTierTarget - effectiveAmt).toFixed(0)} more deposit to unlock ${nextTierName} (${nextT.commissionRate || nextT.commission_rate || 8}%)`;
   } else {
-    nextTierTarget = Number(temuTier.minBalance || 900);
-    nextTierName = 'Max VIP';
+    nextTierTarget = Number(activeTier.minBalance ?? activeTier.min_balance ?? 900);
+    nextTierName = activeTier.name;
     progressPercent = 100;
-    progressCaption = 'Maximum VIP Tier reached • Highest 12% yield unlocked';
+    progressCaption = `Maximum ${activeTier.name} VIP Tier reached • Highest yield unlocked`;
   }
 
   const handleStartTasks = (platform) => {
@@ -1334,9 +1391,10 @@ function TabMenu() {
       );
       handleStartTasks(activeTier.name);
     } else {
+      const minVal = tier.minBalance ?? tier.min_balance ?? 0;
       addNotification(
         `${tier.name} Locked`,
-        `${tier.name} requires minimum $${tier.minBalance} USDT. Deposit now to unlock!`
+        `${tier.name} requires minimum $${minVal} USDT. Deposit now to unlock!`
       );
       setModalType('deposit');
     }
@@ -1351,8 +1409,8 @@ function TabMenu() {
       {/* TOP TIER PROGRESS BANNER */}
       <div className="tier-progress-banner mt-3 cursor-pointer" onClick={() => handleStartTasks(activeTier.name)}>
         <div className="tier-banner-left">
-          <div className={`tier-icon-circle ${activeTier.name.toLowerCase()}-bg`}>
-            <span className="ebay-text">{activeTier.name.toLowerCase()}</span>
+          <div className={`tier-icon-circle ${(activeTier.name || 'ebay').toLowerCase()}-bg`}>
+            <span className="ebay-text">{(activeTier.name || 'VIP').toLowerCase()}</span>
           </div>
           <div className="tier-banner-info">
             <div className="tier-name-row">
@@ -1366,7 +1424,7 @@ function TabMenu() {
         </div>
         <div className="tier-banner-right">
           <span className="tier-progress-num">
-            {activeTier.name === 'Temu' ? 'VIP MAX' : `$${effectiveAmt.toFixed(0)} / $${nextTierTarget}`}
+            {curIdx === sortedTiers.length - 1 ? 'VIP MAX' : `$${effectiveAmt.toFixed(0)} / $${nextTierTarget}`}
           </span>
           <div className="tier-mini-bar">
             <div className="tier-mini-fill" style={{ width: `${Math.max(5, Math.min(100, progressPercent))}%` }}></div>
@@ -1374,167 +1432,80 @@ function TabMenu() {
         </div>
       </div>
 
-      {/* 3 VIP TIERS CARDS */}
+      {/* DYNAMIC VIP TIERS CARDS GRID */}
       <div className="tier-cards-grid mt-6">
-        {/* Tier 1: eBay (0 - 499) */}
-        <div className={`vip-tier-card ebay-card ${ebayStatus.isUnlocked ? 'active-tier' : 'surpassed-locked'}`}>
-          <div className="vip-card-header">
-            {ebayStatus.isUnlocked ? (
-              <div className="vip-active-chip">
-                <Zap size={13} />
-                <span>Active</span>
-              </div>
-            ) : (
-              <div className="vip-locked-chip" style={{ background: 'rgba(0,0,0,0.4)' }}>
-                <Lock size={13} />
-                <span>Locked (Surpassed)</span>
-              </div>
-            )}
-            <div className="vip-commission-badge">{ebayTier.commissionRate || 4}%</div>
-          </div>
+        {sortedTiers.map(tier => {
+          const status = getTierProgressAndStatus ? getTierProgressAndStatus(tier, sortedTiers, user) : { isUnlocked: true };
+          const minB = Number(tier.minBalance ?? tier.min_balance ?? 0);
+          const maxB = Number(tier.maxBalance ?? tier.max_balance ?? 99999);
+          const comm = tier.commissionRate ?? tier.commission_rate ?? 4;
+          const platLower = (tier.platform || tier.name || 'ebay').toLowerCase().replace(/\s+/g, '');
 
-          <div className="vip-platform-name">
-            <span className="platform-logo-big ebay">ebay</span>
-            <h3>eBay</h3>
-            <span className="vip-price-range">${ebayTier.minBalance ?? 0} - ${ebayTier.maxBalance ?? 499}</span>
-          </div>
-
-          <div className="vip-card-desc">
-            <p>
-              {ebayStatus.isSurpassed
-                ? 'Your deposit has crossed $499! eBay is now locked and Walmart is your active earning platform.'
-                : 'Review eBay product listings and earn entry-level commissions. Great for getting started.'}
-            </p>
-          </div>
-
-          {ebayStatus.isUnlocked ? (
-            <button
-              className="vip-action-btn active-btn"
-              onClick={() => handleStartTasks('eBay')}
+          return (
+            <div
+              key={tier.id || tier.name}
+              className={`vip-tier-card ${platLower}-card ${status.isUnlocked ? 'active-tier' : status.isSurpassed ? 'surpassed-locked' : 'locked'}`}
             >
-              <Zap size={16} />
-              <span>Start Tasks</span>
-              <ChevronRight size={16} />
-            </button>
-          ) : (
-            <button
-              className="vip-action-btn locked-btn"
-              onClick={() => handleLockedTierClick(ebayTier, ebayStatus)}
-              title="Deposit has crossed $499. eBay is locked. Click to switch to Walmart."
-            >
-              <Lock size={16} />
-              <span>Locked (Proceed to Walmart)</span>
-            </button>
-          )}
-        </div>
-
-        {/* Tier 2: Walmart (500 - 899) */}
-        <div className={`vip-tier-card walmart-card ${walmartStatus.isUnlocked ? 'active-tier unlocked' : 'locked'}`}>
-          <div className="vip-card-header">
-            {walmartStatus.isUnlocked ? (
-              <div className="vip-active-chip">
-                <Zap size={13} />
-                <span>Active</span>
+              <div className="vip-card-header">
+                {status.isUnlocked ? (
+                  <div className="vip-active-chip">
+                    <Zap size={13} />
+                    <span>Active</span>
+                  </div>
+                ) : (
+                  <div className="vip-locked-chip" style={{ background: status.isSurpassed ? 'rgba(0,0,0,0.4)' : undefined }}>
+                    <Lock size={13} />
+                    <span>{status.isSurpassed ? 'Locked (Surpassed)' : 'Locked'}</span>
+                  </div>
+                )}
+                <div className="vip-commission-badge">{comm}%</div>
               </div>
-            ) : (
-              <div className="vip-locked-chip">
-                <Lock size={13} />
-                <span>{walmartStatus.isSurpassed ? 'Locked (Surpassed)' : 'Locked'}</span>
+
+              <div className="vip-platform-name">
+                <span className={`platform-logo-big ${platLower}`}>{tier.name.slice(0, 4).toUpperCase()}</span>
+                <h3>{tier.name}</h3>
+                <span className="vip-price-range">
+                  ${minB}{maxB < 99999 ? ` - $${maxB}` : '+'}
+                </span>
               </div>
-            )}
-            <div className="vip-commission-badge">{walmartTier.commissionRate || 8}%</div>
-          </div>
 
-          <div className="vip-platform-name">
-            <span className="platform-logo-big walmart">W</span>
-            <h3>Walmart</h3>
-            <span className="vip-price-range">${walmartTier.minBalance ?? 500} - ${walmartTier.maxBalance ?? 899}</span>
-          </div>
-
-          <div className="vip-card-desc">
-            <p>
-              {walmartStatus.isUnlocked
-                ? 'High-commission wholesale listings on Walmart. Automatically unlocked when deposit crosses $499!'
-                : walmartStatus.isSurpassed
-                ? 'Your deposit has crossed $899! Walmart is locked and Temu (12%) is now unlocked.'
-                : `Rate wholesale listings on Walmart. Unlocks automatically as soon as deposit reaches $${walmartTier.minBalance || 500}.`}
-            </p>
-          </div>
-
-          {walmartStatus.isUnlocked ? (
-            <button
-              className="vip-action-btn active-btn"
-              onClick={() => handleStartTasks('Walmart')}
-            >
-              <Zap size={16} />
-              <span>Start Tasks</span>
-              <ChevronRight size={16} />
-            </button>
-          ) : (
-            <button
-              className="vip-action-btn locked-btn"
-              onClick={() => handleLockedTierClick(walmartTier, walmartStatus)}
-            >
-              <Lock size={16} />
-              <span>
-                {walmartStatus.isSurpassed
-                  ? 'Locked (Proceed to Temu)'
-                  : `Locked (Deposit $${walmartTier.minBalance || 500} to Unlock)`}
-              </span>
-            </button>
-          )}
-        </div>
-
-        {/* Tier 3: Temu (900+) */}
-        <div className={`vip-tier-card temu-card ${temuStatus.isUnlocked ? 'active-tier unlocked' : 'locked'}`}>
-          <div className="vip-card-header">
-            {temuStatus.isUnlocked ? (
-              <div className="vip-active-chip">
-                <Zap size={13} />
-                <span>Active</span>
+              <div className="vip-card-desc">
+                <p>
+                  {status.isSurpassed
+                    ? `Your deposit has surpassed $${maxB}! ${tier.name} is locked and you have qualified for the next VIP tier.`
+                    : status.isUnlocked
+                    ? (tier.description || `Active ${tier.name} tasks with ${comm}% commission yield. Start completing tasks now!`)
+                    : (tier.description || `Unlocks automatically as soon as deposit reaches $${minB}. Deposit now to earn ${comm}% yield!`)}
+                </p>
               </div>
-            ) : (
-              <div className="vip-locked-chip">
-                <Lock size={13} />
-                <span>Locked</span>
-              </div>
-            )}
-            <div className="vip-commission-badge">{temuTier.commissionRate || 12}%</div>
-          </div>
 
-          <div className="vip-platform-name">
-            <span className="platform-logo-big temu">TEMU</span>
-            <h3>Temu</h3>
-            <span className="vip-price-range">${temuTier.minBalance ?? 900}+</span>
-          </div>
-
-          <div className="vip-card-desc">
-            <p>
-              {temuStatus.isUnlocked
-                ? 'VIP Exclusive tasks with maximum 12% commission yield. Unlocked with $900+ deposit!'
-                : `Premium review tasks with highest earning potential. Unlocks when deposit reaches $${temuTier.minBalance || 900}.`}
-            </p>
-          </div>
-
-          {temuStatus.isUnlocked ? (
-            <button
-              className="vip-action-btn active-btn"
-              onClick={() => handleStartTasks('Temu')}
-            >
-              <Zap size={16} />
-              <span>Start Tasks</span>
-              <ChevronRight size={16} />
-            </button>
-          ) : (
-            <button
-              className="vip-action-btn locked-btn"
-              onClick={() => handleLockedTierClick(temuTier, temuStatus)}
-            >
-              <Lock size={16} />
-              <span>Locked (Deposit ${temuTier.minBalance || 900} to Unlock)</span>
-            </button>
-          )}
-        </div>
+              {status.isUnlocked ? (
+                <button
+                  type="button"
+                  className="vip-action-btn active-btn"
+                  onClick={() => handleStartTasks(tier.name)}
+                >
+                  <Zap size={16} />
+                  <span>Start Tasks</span>
+                  <ChevronRight size={16} />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="vip-action-btn locked-btn"
+                  onClick={() => handleLockedTierClick(tier, status)}
+                >
+                  <Lock size={16} />
+                  <span>
+                    {status.isSurpassed
+                      ? `Locked (Proceed to ${activeTier.name})`
+                      : `Locked (Deposit $${minB} to Unlock)`}
+                  </span>
+                </button>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -1558,17 +1529,27 @@ function TabRecords() {
   const setStatusFilter = setRecordsStatusFilter || (() => {});
   const [search, setSearch] = useState('');
 
-  // Filter records belonging to the active user (or general records)
-  const myRecords = (records || []).filter(r => r && (!r.userId || (user && r.userId === user.id)));
+  // Filter records belonging to the active user
+  const myRecords = (records || []).filter(r => {
+    if (!r) return false;
+    if (!user || !user.id || user.isGuest) return false;
+    return (
+      r.userId === user.id ||
+      r.user_id === user.id ||
+      (user.name && (r.userName === user.name || r.user_name === user.name))
+    );
+  });
 
   const filtered = myRecords.filter(rec => {
     if (!rec) return false;
+    const cat = (rec.category || '').toLowerCase();
+    const typ = (rec.type || '').toLowerCase();
     if (subTab === 'Transactions') {
-      if (rec.category !== 'Deposit' && rec.category !== 'Withdrawal' && rec.category !== 'Adjustment') return false;
+      if (cat !== 'deposit' && cat !== 'withdrawal' && cat !== 'adjustment' && !typ.includes('deposit') && !typ.includes('withdraw')) return false;
     } else if (subTab === 'Ad Tasks') {
-      if (rec.category !== 'Ad Tasks') return false;
+      if (cat !== 'ad tasks' && cat !== 'tasks' && cat !== 'task') return false;
     } else if (subTab === 'Referrals') {
-      if (rec.category !== 'Referral' && !rec.type?.includes('Referral') && !rec.type?.includes('Bonus')) return false;
+      if (cat !== 'referral' && !typ.includes('referral') && !typ.includes('bonus')) return false;
     }
 
     if (statusFilter !== 'All' && rec.status !== statusFilter) return false;
@@ -1704,7 +1685,7 @@ function TabRecords() {
                     <span className="record-cat-tag">{rec.category}</span>
                   </div>
                   <div className="record-subline">
-                    <span>{rec.date}</span>
+                    <span>{formatRecordDate(rec.date)}</span>
                     <span className="dot-sep">·</span>
                     <span className="record-code">{rec.code}</span>
                     <span className="dot-sep">·</span>
@@ -1908,6 +1889,7 @@ function TabSupport() {
 function TabMine() {
   const {
     user,
+    records,
     userTeam,
     setModalType,
     setDashboardTab,
@@ -1922,6 +1904,18 @@ function TabMine() {
   const isGuest = !user || !user.id || user.isGuest || user.name === 'Guest User';
   const ownRefCode = isGuest ? '' : sanitizeReferralCode(user?.referralCode || user?.referral_code || user?.code);
   const referralLink = `${window.location.origin}/?ref=${ownRefCode}`;
+
+  const pendingRecord = (records || []).find(r => {
+    if (!r) return false;
+    const isPending = (r.status || '').toLowerCase() === 'pending';
+    if (!isPending) return false;
+    if (!user || !user.id || isGuest) return false;
+    return (
+      r.userId === user.id ||
+      r.user_id === user.id ||
+      (user.name && (r.userName === user.name || r.user_name === user.name))
+    );
+  });
 
   const handleCopyCode = () => {
     if (isGuest || !ownRefCode) {
@@ -1982,7 +1976,7 @@ function TabMine() {
             </div>
             <div className="profile-user-details">
               <div className="name-and-vip">
-                <h3 className="profile-name">{user?.name || 'Guest User'}</h3>
+                <h3 className="profile-name" style={{ color: '#ffffff' }}>{user?.name || 'Guest User'}</h3>
                 {!isGuest && (
                   <span className={`vip-tag-small ${(user?.vipLevel || 'ebay').toLowerCase()}`} style={{ marginLeft: '4px', verticalAlign: 'middle' }}>
                     {user?.vipLevel === 'eBay' && '🔴 eBay'}
@@ -2053,6 +2047,25 @@ function TabMine() {
             </div>
           </div>
         </div>
+
+        {/* RECENT ACTIVITY ALERT STRIP matching Screenshot 3 */}
+        {pendingRecord && (
+          <div className="recent-activity-alert-strip mt-4 animate-fade-in">
+            <div className="alert-strip-left">
+              <div className="clock-icon-circle">
+                <Clock size={16} color="#10b981" />
+              </div>
+              <div className="alert-strip-info">
+                <strong>{pendingRecord.type || pendingRecord.category || 'Deposit'}</strong>
+                <span className="alert-strip-date">{formatRecordDate(pendingRecord.date)}</span>
+              </div>
+            </div>
+            <div className="alert-strip-right">
+              <span className="alert-strip-amount">+{(Number(pendingRecord.amount) || 0).toFixed(2)}</span>
+              <span className="alert-strip-status pending">{(pendingRecord.status || 'Pending').toLowerCase()}</span>
+            </div>
+          </div>
+        )}
 
         {/* SUBMENU ACCORDIONS / DETAIL VIEWS */}
         {activeSubMenu === 'team' && (
