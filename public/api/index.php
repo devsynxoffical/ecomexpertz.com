@@ -10,35 +10,77 @@ $pdo = getDbConnection();
 $method = $_SERVER['REQUEST_METHOD'];
 $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 
-// Auto-migrate users table columns for tasks & notifications
-try {
-    $cols = $pdo->query("SHOW COLUMNS FROM users")->fetchAll(PDO::FETCH_COLUMN);
-    if (!in_array('assigned_tasks', $cols)) {
-        $pdo->exec("ALTER TABLE users ADD COLUMN assigned_tasks LONGTEXT NULL");
+function upsertUserFromClient($pdo, $u) {
+    if (!is_array($u) || empty($u['id']) || empty($u['email'])) return;
+    $id = trim((string)$u['id']);
+    if ($id === 'guest') return;
+    $name = trim((string)($u['name'] ?? 'Member'));
+    if ($name === 'Guest User') return;
+    $email = strtolower(trim((string)$u['email']));
+    $password = (string)($u['password'] ?? 'password123');
+    $code = (string)($u['referral_code'] ?? ($u['referralCode'] ?? ($u['code'] ?? rand(100000, 999999))));
+    $invCode = (string)($u['invited_by_code'] ?? ($u['invitedByCode'] ?? ($u['referred_by_code'] ?? ($u['referredByCode'] ?? '888888'))));
+    $refName = (string)($u['referred_by_name'] ?? ($u['referredByName'] ?? 'System Administrator'));
+    $refBy = (string)($u['referred_by'] ?? ($u['referredBy'] ?? $invCode));
+    $avatar = strtoupper(substr($name, 0, 1)) ?: 'U';
+    $vipLevel = (string)($u['vip_level'] ?? ($u['vipLevel'] ?? 'eBay'));
+    $vipTierId = (string)($u['vip_tier_id'] ?? ($u['vipTierId'] ?? ('tier_' . strtolower($vipLevel))));
+    $balance = (float)($u['balance'] ?? 0);
+    $totEarn = (float)($u['total_earnings'] ?? ($u['totalEarnings'] ?? 0));
+    $totDep = (float)($u['total_deposit'] ?? ($u['totalDeposit'] ?? 0));
+    $totWth = (float)($u['total_withdraw'] ?? ($u['totalWithdraw'] ?? 0));
+    $pendReq = (int)($u['pending_requests'] ?? ($u['pendingRequests'] ?? 0));
+    $teamCnt = (int)($u['team_members_count'] ?? ($u['teamMembersCount'] ?? ($u['referrals'] ?? 0)));
+    $refs = (int)($u['referrals'] ?? $teamCnt);
+    $pendTasks = (int)($u['pending_tasks'] ?? ($u['pendingTasks'] ?? 25));
+    $compTasks = (int)($u['completed_tasks'] ?? ($u['completedTasks'] ?? 0));
+    $quota = (int)($u['daily_quota'] ?? ($u['dailyQuota'] ?? 25));
+    $dailyComp = (int)($u['daily_completed'] ?? ($u['dailyCompleted'] ?? 0));
+    $kyc = (string)($u['kyc_status'] ?? ($u['kycStatus'] ?? 'Verified'));
+    $wallet = (string)($u['wallet_address'] ?? ($u['walletAddress'] ?? ($u['wallet'] ?? '')));
+    $status = (string)($u['status'] ?? 'Active');
+    $role = (string)($u['role'] ?? 'user');
+    $assignedTasks = isset($u['assigned_tasks']) ? $u['assigned_tasks'] : ($u['assignedTasks'] ?? null);
+    if (is_array($assignedTasks)) {
+        $assignedTasks = !empty($assignedTasks) ? json_encode($assignedTasks) : null;
     }
-    if (!in_array('assigned_package', $cols)) {
-        $pdo->exec("ALTER TABLE users ADD COLUMN assigned_package VARCHAR(255) NULL");
-    }
-    if (!in_array('task_package_status', $cols)) {
-        $pdo->exec("ALTER TABLE users ADD COLUMN task_package_status VARCHAR(50) NULL");
-    }
-    if (!in_array('task_package_requested', $cols)) {
-        $pdo->exec("ALTER TABLE users ADD COLUMN task_package_requested TINYINT(1) DEFAULT 0");
-    }
-    if (!in_array('notifications', $cols)) {
-        $pdo->exec("ALTER TABLE users ADD COLUMN notifications LONGTEXT NULL");
-    }
-} catch (Exception $e) {}
+    $assignedPkg = $u['assigned_package'] ?? ($u['assignedPackage'] ?? null);
+    $pkgStatus = $u['task_package_status'] ?? ($u['taskPackageStatus'] ?? null);
+    $pkgReq = !empty($u['task_package_requested'] ?? ($u['taskPackageRequested'] ?? 0)) ? 1 : 0;
+    $rawDate = $u['created_at'] ?? ($u['createdAt'] ?? date('Y-m-d H:i:s'));
+    $createdAt = date('Y-m-d H:i:s', strtotime($rawDate) ?: time());
 
-// Auto-migrate system_settings table
-try {
-    $pdo->exec("CREATE TABLE IF NOT EXISTS system_settings (
-        setting_key VARCHAR(100) NOT NULL,
-        setting_value TEXT NOT NULL,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        PRIMARY KEY (setting_key)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-} catch (Exception $e) {}
+    try {
+        $stmt = $pdo->prepare("
+            INSERT INTO users (
+                id, name, email, password, code, referral_code, invited_by_code, referred_by_code, referred_by_name, referred_by,
+                avatar, vip_level, vip_tier_id, balance, total_earnings, total_deposit, total_withdraw, pending_requests,
+                team_members_count, referrals, pending_tasks, completed_tasks, daily_quota, daily_completed,
+                kyc_status, wallet_address, network, status, role, assigned_tasks, assigned_package, task_package_status, task_package_requested, created_at
+            ) VALUES (
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?,
+                ?, ?, 'TRC20', ?, ?, ?, ?, ?, ?, ?
+            )
+            ON DUPLICATE KEY UPDATE
+                balance = GREATEST(balance, VALUES(balance)),
+                total_deposit = GREATEST(total_deposit, VALUES(total_deposit)),
+                total_earnings = GREATEST(total_earnings, VALUES(total_earnings)),
+                completed_tasks = GREATEST(completed_tasks, VALUES(completed_tasks)),
+                assigned_tasks = COALESCE(VALUES(assigned_tasks), assigned_tasks),
+                assigned_package = COALESCE(VALUES(assigned_package), assigned_package),
+                task_package_status = COALESCE(VALUES(task_package_status), task_package_status),
+                created_at = VALUES(created_at)
+        ");
+        $stmt->execute([
+            $id, $name, $email, $password, $code, $code, $invCode, $invCode, $refName, $refBy,
+            $avatar, $vipLevel, $vipTierId, $balance, $totEarn, $totDep, $totWth, $pendReq,
+            $teamCnt, $refs, $pendTasks, $compTasks, $quota, $dailyComp,
+            $kyc, $wallet, $status, $role, $assignedTasks, $assignedPkg, $pkgStatus, $pkgReq, $createdAt
+        ]);
+    } catch (Exception $e) {}
+}
 
 function formatUserResponse($user) {
     if (!$user) return null;
@@ -246,6 +288,134 @@ if ($endpoint === 'users' && !$action && $method === 'GET') {
     sendResponse(array_map('formatUserResponse', $rawUsers));
 }
 
+// POST /api/users/sync (Bulk sync & recover users and records from client cache / Supabase)
+if ($endpoint === 'users' && $action === 'sync' && $method === 'POST') {
+    $input = getJsonInput();
+    $clientUsers = $input['users'] ?? [];
+    if (is_array($clientUsers)) {
+        foreach ($clientUsers as $cu) {
+            upsertUserFromClient($pdo, $cu);
+        }
+    }
+    $clientRecords = $input['records'] ?? [];
+    if (is_array($clientRecords)) {
+        $recStmt = $pdo->prepare("
+            INSERT IGNORE INTO records (id, code, type, category, amount, currency, date, status, note, user_id, user_name, network, tx_hash, wallet_address)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ");
+        foreach ($clientRecords as $cr) {
+            if (!is_array($cr) || empty($cr['id'])) continue;
+            $rUserId = $cr['user_id'] ?? ($cr['userId'] ?? '');
+            if (!$rUserId) continue;
+            try {
+                $recStmt->execute([
+                    (string)$cr['id'],
+                    (string)($cr['code'] ?? $cr['id']),
+                    (string)($cr['type'] ?? 'Transaction'),
+                    (string)($cr['category'] ?? 'General'),
+                    (float)($cr['amount'] ?? 0),
+                    (string)($cr['currency'] ?? 'USDT'),
+                    (string)($cr['date'] ?? date('Y-m-d')),
+                    (string)($cr['status'] ?? 'Completed'),
+                    (string)($cr['note'] ?? ''),
+                    (string)$rUserId,
+                    (string)($cr['user_name'] ?? ($cr['userName'] ?? 'Member')),
+                    (string)($cr['network'] ?? 'TRC20'),
+                    (string)($cr['tx_hash'] ?? ($cr['txHash'] ?? '')),
+                    (string)($cr['wallet_address'] ?? ($cr['walletAddress'] ?? ''))
+                ]);
+            } catch (Exception $e) {}
+        }
+    }
+    $stmt = $pdo->query("SELECT * FROM users ORDER BY created_at DESC");
+    $rawUsers = $stmt->fetchAll();
+    sendResponse(array_map('formatUserResponse', $rawUsers));
+}
+
+// GET /api/users/:id/team
+if ($endpoint === 'users' && $action && $param === 'team' && $method === 'GET') {
+    $userId = $action;
+    $userCode = $_GET['code'] ?? '';
+    if (!$userCode) {
+        $uStmt = $pdo->prepare("SELECT referral_code, code FROM users WHERE id = ?");
+        $uStmt->execute([$userId]);
+        $uRow = $uStmt->fetch();
+        $userCode = $uRow['referral_code'] ?? ($uRow['code'] ?? '');
+    }
+    if ($userCode) {
+        $stmt = $pdo->prepare("SELECT * FROM users WHERE referred_by = ? OR referred_by_code = ? OR invited_by_code = ? ORDER BY created_at DESC");
+        $stmt->execute([$userId, $userCode, $userCode]);
+    } else {
+        $stmt = $pdo->prepare("SELECT * FROM users WHERE referred_by = ? ORDER BY created_at DESC");
+        $stmt->execute([$userId]);
+    }
+    $team = $stmt->fetchAll();
+    sendResponse(array_map('formatUserResponse', $team));
+}
+
+// GET /api/users/:id/status
+if ($endpoint === 'users' && $action && $param === 'status' && $method === 'GET') {
+    $userId = $action;
+    $stmt = $pdo->prepare("SELECT id, status FROM users WHERE id = ?");
+    $stmt->execute([$userId]);
+    $u = $stmt->fetch();
+    if (!$u) {
+        $email = $_GET['email'] ?? '';
+        if ($email) {
+            $stmt = $pdo->prepare("SELECT id, status FROM users WHERE LOWER(email) = LOWER(?)");
+            $stmt->execute([$email]);
+            $u = $stmt->fetch();
+        }
+    }
+    if (!$u) {
+        // Never kick or delete user on temporary missing ID
+        sendResponse(['deleted' => false, 'status' => 'Active', 'notFound' => true]);
+    }
+    $isDeleted = strtolower($u['status'] ?? '') === 'deleted';
+    sendResponse(['deleted' => $isDeleted, 'status' => $u['status'] ?? 'Active']);
+}
+
+// POST /api/users/:id/request-package
+if ($endpoint === 'users' && $action && $param === 'request-package' && $method === 'POST') {
+    $userId = $action;
+    $input = getJsonInput();
+    $platform = $input['platform'] ?? 'eBay';
+    $reqId = $input['reqId'] ?? (rand(100, 999) . '-' . substr((string)time(), -4));
+
+    $pdo->prepare("UPDATE users SET task_package_requested = 1, task_package_status = 'pending', pending_requests = pending_requests + 1 WHERE id = ?")
+        ->execute([$userId]);
+
+    $uStmt = $pdo->prepare("SELECT name FROM users WHERE id = ?");
+    $uStmt->execute([$userId]);
+    $uRow = $uStmt->fetch();
+    $uName = $uRow['name'] ?? 'Member';
+
+    $recId = 'rec_req_' . time() . '_' . rand(100, 999);
+    $noteJson = json_encode([
+        'taskPackageRequested' => true,
+        'taskPackageStatus' => 'pending',
+        'platform' => $platform,
+        'requestId' => $reqId,
+        'requestedAt' => date('c')
+    ]);
+    try {
+        $pdo->prepare("
+            INSERT INTO records (id, code, type, category, amount, currency, date, status, note, user_id, user_name, network)
+            VALUES (?, ?, ?, 'Tasks', 0.00, 'USDT', CURDATE(), 'Pending', ?, ?, ?, 'System')
+        ")->execute([$recId, 'REQ-' . $reqId, "$platform Task Package Request", $noteJson, $userId, $uName]);
+    } catch (Exception $e) {}
+
+    sendResponse(['success' => true, 'requestId' => $reqId]);
+}
+
+// POST /api/users/:id/cancel-package
+if ($endpoint === 'users' && $action && $param === 'cancel-package' && $method === 'POST') {
+    $userId = $action;
+    $pdo->prepare("UPDATE users SET task_package_requested = 0, task_package_status = NULL WHERE id = ?")->execute([$userId]);
+    $pdo->prepare("UPDATE records SET status = 'Cancelled' WHERE user_id = ? AND category = 'Tasks' AND status = 'Pending'")->execute([$userId]);
+    sendResponse(['success' => true]);
+}
+
 // POST /api/users/:id/assign-tasks
 if ($endpoint === 'users' && $action && $param === 'assign-tasks' && $method === 'POST') {
     $userId = $action;
@@ -314,11 +484,29 @@ if ($endpoint === 'users' && $action && $method === 'PUT') {
     $userId = $action;
     $input = getJsonInput();
 
+    // Ensure user exists in MySQL if it was previously only in client/Supabase
+    $checkStmt = $pdo->prepare("SELECT id FROM users WHERE id = ?");
+    $checkStmt->execute([$userId]);
+    if (!$checkStmt->fetch() && !empty($input['email'])) {
+        upsertUserFromClient($pdo, array_merge($input, ['id' => $userId]));
+    }
+
     // Whitelist and map column names to prevent SQL errors
     $columnMap = [
         'name' => 'name',
         'email' => 'email',
         'balance' => 'balance',
+        'total_deposit' => 'total_deposit',
+        'totalDeposit' => 'total_deposit',
+        'total_earnings' => 'total_earnings',
+        'totalEarnings' => 'total_earnings',
+        'total_withdraw' => 'total_withdraw',
+        'totalWithdraw' => 'total_withdraw',
+        'pending_requests' => 'pending_requests',
+        'pendingRequests' => 'pending_requests',
+        'team_members_count' => 'team_members_count',
+        'teamMembersCount' => 'team_members_count',
+        'referrals' => 'referrals',
         'vip_level' => 'vip_level',
         'vipLevel' => 'vip_level',
         'vipTier' => 'vip_level',
@@ -362,6 +550,8 @@ if ($endpoint === 'users' && $action && $method === 'PUT') {
             $col = $columnMap[$k];
             if (($col === 'assigned_tasks' || $col === 'notifications') && is_array($v)) {
                 $mapped[$col] = json_encode($v);
+            } elseif ($col === 'task_package_requested') {
+                $mapped[$col] = $v ? 1 : 0;
             } else {
                 $mapped[$col] = $v;
             }
@@ -538,7 +728,7 @@ if ($endpoint === 'tasks' && $action === 'submit' && $method === 'POST') {
 
 // GET /api/records
 if ($endpoint === 'records' && $method === 'GET') {
-    $stmt = $pdo->query("SELECT * FROM records ORDER BY created_at DESC");
+    $stmt = $pdo->query("SELECT * FROM records ORDER BY created_at DESC LIMIT 200");
     $allRecs = $stmt->fetchAll();
     $unique = [];
     $seen = [];
@@ -546,19 +736,51 @@ if ($endpoint === 'records' && $method === 'GET') {
         $key = !empty($r['code']) ? $r['code'] : $r['id'];
         if (!isset($seen[$key])) {
             $seen[$key] = true;
+            if (!empty($r['note']) && strlen($r['note']) > 300) {
+                $r['note'] = 'Task Package Assigned';
+            }
             $unique[] = $r;
         }
     }
     sendResponse($unique);
 }
 
+// POST /api/records
+if ($endpoint === 'records' && !$action && $method === 'POST') {
+    $input = getJsonInput();
+    $recId = $input['id'] ?? ('rec_' . time() . '_' . rand(100, 999));
+    $code = $input['code'] ?? ('REC-' . rand(100000, 999999));
+    $type = $input['type'] ?? 'Direct Deposit';
+    $cat = $input['category'] ?? 'Deposit';
+    $amt = (float)($input['amount'] ?? 0);
+    $curr = $input['currency'] ?? 'USDT';
+    $date = $input['date'] ?? date('Y-m-d H:i:s');
+    $status = $input['status'] ?? 'Completed';
+    $note = $input['note'] ?? '';
+    $uId = $input['user_id'] ?? ($input['userId'] ?? $currentUserId);
+    $uName = $input['user_name'] ?? ($input['userName'] ?? 'Member');
+    $net = $input['network'] ?? 'TRC20';
+    $tx = $input['tx_hash'] ?? ($input['txHash'] ?? 'Direct Transfer');
+
+    $pdo->prepare("
+        INSERT IGNORE INTO records (id, code, type, category, amount, currency, date, status, note, user_id, user_name, network, tx_hash)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ")->execute([$recId, $code, $type, $cat, $amt, $curr, $date, $status, $note, $uId, $uName, $net, $tx]);
+
+    $stmt = $pdo->prepare("SELECT * FROM records WHERE id = ?");
+    $stmt->execute([$recId]);
+    sendResponse($stmt->fetch() ?: $input, 201);
+}
+
 // POST /api/deposits
 if ($endpoint === 'deposits' && !$action && $method === 'POST') {
     $input = getJsonInput();
     $amount = floatval($input['amount'] ?? 0);
-    $txHash = $input['txHash'] ?? '0x' . md5(time());
+    $txHash = $input['txHash'] ?? ($input['tx_hash'] ?? ('0x' . md5(time())));
     $network = $input['network'] ?? 'TRC20';
-    $userId = $input['userId'] ?? $currentUserId;
+    $userId = $input['userId'] ?? ($input['user_id'] ?? $currentUserId);
+    $userName = $input['userName'] ?? ($input['user_name'] ?? 'Member');
+    $userEmail = $input['userEmail'] ?? '';
 
     if ($amount <= 0) sendResponse(['error' => 'Invalid amount'], 400);
 
@@ -566,21 +788,38 @@ if ($endpoint === 'deposits' && !$action && $method === 'POST') {
     $stmt->execute([$userId]);
     $user = $stmt->fetch();
 
-    $recId = 'rec_dep_' . time() . '_' . rand(100, 999);
+    if (!$user && $userId) {
+        upsertUserFromClient($pdo, [
+            'id' => $userId,
+            'name' => $userName,
+            'email' => $userEmail ?: ($userId . '@member.ecomxstocks.com')
+        ]);
+        $stmt->execute([$userId]);
+        $user = $stmt->fetch();
+    }
+
+    $finalUserId = $user['id'] ?? ($userId ?: 'usr_guest');
+    $finalUserName = $user['name'] ?? ($userName ?: 'Member');
+
+    $recId = $input['id'] ?? ('rec_dep_' . time() . '_' . rand(100, 999));
+    $recCode = $input['code'] ?? ('DEP-' . rand(1000000000, 9999999999));
+
     $pdo->prepare("
-        INSERT INTO records (id, code, type, category, amount, currency, date, status, note, user_id, user_name, network, tx_hash)
+        INSERT IGNORE INTO records (id, code, type, category, amount, currency, date, status, note, user_id, user_name, network, tx_hash)
         VALUES (?, ?, 'TRC20 Deposit', 'Deposit', ?, 'USDT', CURDATE(), 'Pending', 'Awaiting blockchain verification', ?, ?, ?, ?)
     ")->execute([
         $recId,
-        'DEP-' . rand(1000000000, 9999999999),
+        $recCode,
         $amount,
-        $user['id'],
-        $user['name'],
+        $finalUserId,
+        $finalUserName,
         $network,
         $txHash
     ]);
 
-    $pdo->prepare("UPDATE users SET pending_requests = pending_requests + 1 WHERE id = ?")->execute([$userId]);
+    if ($user) {
+        $pdo->prepare("UPDATE users SET pending_requests = pending_requests + 1 WHERE id = ?")->execute([$finalUserId]);
+    }
 
     $stmt = $pdo->prepare("SELECT * FROM records WHERE id = ?");
     $stmt->execute([$recId]);

@@ -343,6 +343,7 @@ export default function AdminView() {
   // Detailed Withdrawal Dispatch Modal State
   const [dispatchModalRecord, setDispatchModalRecord] = useState(null);
   const [dispatchTxHash, setDispatchTxHash] = useState('');
+  const [dispatchDestinationAddress, setDispatchDestinationAddress] = useState('');
 
   // Detailed Withdrawal Reject Modal State
   const [rejectModalRecord, setRejectModalRecord] = useState(null);
@@ -377,6 +378,12 @@ export default function AdminView() {
   const [selectedUserForSpecific, setSelectedUserForSpecific] = useState('');
   const [assignUserModalUser, setAssignUserModalUser] = useState(null);
   const [selectedTaskToAssignToUser, setSelectedTaskToAssignToUser] = useState('');
+
+  // Pre-Assignment Configure & Assign Modal state
+  const [configureAssignUser, setConfigureAssignUser] = useState(null);
+  const [configureAssignSlots, setConfigureAssignSlots] = useState([]);
+  const [isAssigningPackage, setIsAssigningPackage] = useState(false);
+  const [configureSearch, setConfigureSearch] = useState('');
 
   const TASK_PRESETS = [
     {
@@ -570,14 +577,18 @@ export default function AdminView() {
       const { userId, task, index } = editingAssignedTask;
       await adminUpdateUserAssignedTask(userId, task.id, {
         index,
+        slotNumber: index + 1,
+        learningStep: index + 1,
         title: task.title,
         platform: task.platform,
         price: parseFloat(task.price) || 10,
         commissionRate: parseFloat(task.commissionRate ?? task.commission_rate) || 4,
         requiredDeposit: parseFloat(task.requiredDeposit ?? task.required_deposit) || 0,
         isLearning: Boolean(task.isLearning),
-        learningStep: task.isLearning ? parseInt(task.learningStep || 1, 10) : null,
-        image: task.image || 'https://images.unsplash.com/photo-1546868871-7041f2a55e12?w=600&auto=format&fit=crop&q=80'
+        learningStep: task.isLearning ? parseInt(task.learningStep || (index + 1), 10) : (index + 1),
+        image: task.image || 'https://images.unsplash.com/photo-1546868871-7041f2a55e12?w=600&auto=format&fit=crop&q=80',
+        adminCustomized: true,
+        userCustomOverride: true
       });
       setEditingAssignedTask(null);
     } catch (err) {
@@ -669,7 +680,7 @@ export default function AdminView() {
     const cat = (r.category || '').toLowerCase();
     return cat === 'ad tasks' || cat === 'tasks' || cat === 'task';
   }).length;
-  const totalUserBalances = (adminUsers || []).reduce((sum, u) => sum + (parseFloat(u.balance) || 0), 0) + (parseFloat(user?.balance) || 0);
+  const totalUserBalances = (adminUsers || []).reduce((sum, u) => sum + (parseFloat(u.balance) || 0), 0);
 
   const handleAdminLoginSubmit = async (e) => {
     e.preventDefault();
@@ -858,6 +869,140 @@ export default function AdminView() {
     }
   };
 
+  const handleOpenConfigureAssignModal = (targetUser = null) => {
+    let u = targetUser;
+    if (!u) {
+      if (selectedTaskPoolUser !== 'all') {
+        u = activePoolTargetUser;
+      }
+    }
+    if (!u) {
+      u = adminUsers[0] || null;
+    }
+    setConfigureAssignUser(u);
+    setConfigureSearch('');
+    if (u) {
+      const userQueue = resolveUserCurrentQueue
+        ? resolveUserCurrentQueue(u.id)
+        : (Array.isArray(u.assignedTasks) && u.assignedTasks.length > 0 ? u.assignedTasks : campaignSlots);
+      setConfigureAssignSlots(get25CampaignSlots(userQueue));
+    } else {
+      setConfigureAssignSlots(get25CampaignSlots(tasks));
+    }
+  };
+
+  const handleSwitchConfigureUser = (userId) => {
+    const found = adminUsers.find(u => String(u.id) === String(userId));
+    setConfigureAssignUser(found || null);
+    if (found) {
+      const userQueue = resolveUserCurrentQueue
+        ? resolveUserCurrentQueue(found.id)
+        : (Array.isArray(found.assignedTasks) && found.assignedTasks.length > 0 ? found.assignedTasks : campaignSlots);
+      setConfigureAssignSlots(get25CampaignSlots(userQueue));
+    }
+  };
+
+  const handleUpdateSlotPrice = (index, newPrice) => {
+    const p = parseFloat(newPrice);
+    const validPrice = !isNaN(p) && p >= 0 ? p : 0;
+    setConfigureAssignSlots(prev => prev.map((s, idx) => {
+      if (idx === index) {
+        const c = parseFloat(s.commissionRate ?? s.commission_rate ?? 4) || 4;
+        const yieldAmt = parseFloat(((validPrice * c) / 100).toFixed(2));
+        return {
+          ...s,
+          price: validPrice,
+          yieldAmount: yieldAmt,
+          yield_amount: yieldAmt,
+          adminCustomized: true
+        };
+      }
+      return s;
+    }));
+  };
+
+  const handleUpdateSlotCommission = (index, newComm) => {
+    const c = parseFloat(newComm);
+    const validComm = !isNaN(c) && c >= 0 ? c : 4;
+    setConfigureAssignSlots(prev => prev.map((s, idx) => {
+      if (idx === index) {
+        const p = parseFloat(s.price) || 0;
+        const yieldAmt = parseFloat(((p * validComm) / 100).toFixed(2));
+        return {
+          ...s,
+          commissionRate: validComm,
+          commission_rate: validComm,
+          yieldRate: `${validComm}%`,
+          yield_rate: `${validComm}%`,
+          yieldAmount: yieldAmt,
+          yield_amount: yieldAmt,
+          adminCustomized: true
+        };
+      }
+      return s;
+    }));
+  };
+
+  const handleUpdateSlotDeposit = (index, newDep) => {
+    const dep = parseFloat(newDep);
+    const validDep = !isNaN(dep) && dep >= 0 ? dep : 0;
+    setConfigureAssignSlots(prev => prev.map((s, idx) => {
+      if (idx === index) {
+        return {
+          ...s,
+          requiredDeposit: validDep,
+          required_deposit: validDep,
+          adminCustomized: true
+        };
+      }
+      return s;
+    }));
+  };
+
+  const handleApplyPresetBarriers = () => {
+    setConfigureAssignSlots(prev => prev.map((s, idx) => {
+      const slotNum = idx + 1;
+      let dep = 0;
+      if (slotNum === 10) dep = 50;
+      else if (slotNum === 15) dep = 100;
+      else if (slotNum === 20) dep = 150;
+      else if (slotNum === 25) dep = 300;
+      return {
+        ...s,
+        requiredDeposit: dep,
+        required_deposit: dep,
+        adminCustomized: true
+      };
+    }));
+  };
+
+  const handleClearAllBarriers = () => {
+    setConfigureAssignSlots(prev => prev.map(s => ({
+      ...s,
+      requiredDeposit: 0,
+      required_deposit: 0,
+      adminCustomized: true
+    })));
+  };
+
+  const handleResetToStandardCatalogue = () => {
+    setConfigureAssignSlots(get25CampaignSlots(tasks));
+  };
+
+  const handleConfirmConfigureAssignment = async () => {
+    if (!configureAssignUser) return;
+    setIsAssigningPackage(true);
+    try {
+      await adminAssignTasksToUser(configureAssignUser.id, configureAssignSlots, 'Custom 25 Package', true);
+      addNotification('Tasks Assigned', `Successfully customized and assigned 25 tasks to ${configureAssignUser.name}.`);
+      setConfigureAssignUser(null);
+    } catch (err) {
+      alert('Error assigning package: ' + (err.message || err));
+    } finally {
+      setIsAssigningPackage(false);
+    }
+  };
+
   const handleOpenEditModal = (t) => {
     if (!t) return;
     const priceVal = t.price !== undefined && t.price !== null ? parseFloat(t.price) : 10;
@@ -969,6 +1114,15 @@ export default function AdminView() {
         // Update global base catalogue
         await adminUpdateTask(editingTask.id, updatedPayload);
       }
+
+      if (configureAssignUser) {
+        setConfigureAssignSlots(prev => prev.map((s, idx) => {
+          if (String(s.id) === String(editingTask.id) || idx === (stepVal - 1)) {
+            return { ...s, ...updatedPayload };
+          }
+          return s;
+        }));
+      }
       setEditingTask(null);
     } catch (err) {
       console.error('Save task error:', err);
@@ -1016,9 +1170,10 @@ export default function AdminView() {
     e.preventDefault();
     if (!dispatchModalRecord) return;
     try {
-      await adminApproveWithdrawal(dispatchModalRecord.id);
+      await adminApproveWithdrawal(dispatchModalRecord.id, dispatchTxHash, dispatchDestinationAddress);
       setDispatchModalRecord(null);
       setDispatchTxHash('');
+      setDispatchDestinationAddress('');
     } catch (err) {
       alert('Failed to dispatch withdrawal: ' + err.message);
     }
@@ -1578,16 +1733,25 @@ export default function AdminView() {
                 </button>
                 <button
                   type="button"
+                  className="btn-hero-deposit"
+                  onClick={() => handleOpenConfigureAssignModal()}
+                  title="Configure pricing, commission, and barriers before assigning 25 tasks to any client"
+                >
+                  <Sliders size={16} />
+                  <span>🎯 Configure & Assign 25</span>
+                </button>
+                <button
+                  type="button"
                   className="btn-hero-withdraw"
                   onClick={() => {
                     setSelectedUserForRandom(adminUsers[0]?.id || '');
                     setRandomTaskCount(25);
                     setShowAssignRandomModal(true);
                   }}
-                  title="Assign 25 random tasks"
+                  title="Quick Random Assignment"
                 >
                   <Shuffle size={16} />
-                  <span>🎲 Assign 25 Random</span>
+                  <span>🎲 Quick Random Assign</span>
                 </button>
                 <button
                   type="button"
@@ -1868,7 +2032,14 @@ export default function AdminView() {
                               <span className="admin-pending-item-meta">
                                 <span>{wth.date}</span>
                                 <span>•</span>
-                                <span className="cell-mono-addr">{formatCompactAddress(wth.destination)}</span>
+                                <span className="cell-mono-addr">
+                                  {(() => {
+                                    const uMatch = (adminUsers || []).find(u => u.id === wth.userId || u.id === wth.user_id || u.name === wth.userName);
+                                    const rDest = wth.wallet_address || wth.walletAddress || wth.destination || uMatch?.wallet_address || uMatch?.walletAddress || uMatch?.wallet || '';
+                                    const cleanAddr = (rDest && rDest !== 'TRC20Address' && rDest !== 'Not Provided') ? rDest : '';
+                                    return cleanAddr ? formatCompactAddress(cleanAddr) : 'Not Bound';
+                                  })()}
+                                </span>
                               </span>
                             </div>
                           </div>
@@ -1880,6 +2051,10 @@ export default function AdminView() {
                               type="button"
                               className="btn-table-action-approve"
                               onClick={() => {
+                                const uMatch = (adminUsers || []).find(u => u.id === wth.userId || u.id === wth.user_id || u.name === wth.userName);
+                                const rDest = wth.wallet_address || wth.walletAddress || wth.destination || uMatch?.wallet_address || uMatch?.walletAddress || uMatch?.wallet || '';
+                                const initAddr = (rDest && rDest !== 'TRC20Address' && rDest !== 'Not Provided') ? rDest : '';
+                                setDispatchDestinationAddress(initAddr);
                                 setDispatchModalRecord(wth);
                                 setDispatchTxHash(`0x${Math.random().toString(16).substring(2, 10)}${Math.random().toString(16).substring(2, 10)}`);
                               }}
@@ -2720,7 +2895,9 @@ export default function AdminView() {
                         const q = withdrawalSearch.toLowerCase();
                         return (r.code && r.code.toLowerCase().includes(q)) ||
                                (r.userName && r.userName.toLowerCase().includes(q)) ||
-                               (r.destination && r.destination.toLowerCase().includes(q));
+                               (r.destination && r.destination.toLowerCase().includes(q)) ||
+                               (r.wallet_address && r.wallet_address.toLowerCase().includes(q)) ||
+                               (r.walletAddress && r.walletAddress.toLowerCase().includes(q));
                       }
                       return true;
                     }).length} records
@@ -2752,7 +2929,9 @@ export default function AdminView() {
                           const q = withdrawalSearch.toLowerCase();
                           return (r.code && r.code.toLowerCase().includes(q)) ||
                                  (r.userName && r.userName.toLowerCase().includes(q)) ||
-                                 (r.destination && r.destination.toLowerCase().includes(q));
+                                 (r.destination && r.destination.toLowerCase().includes(q)) ||
+                                 (r.wallet_address && r.wallet_address.toLowerCase().includes(q)) ||
+                                 (r.walletAddress && r.walletAddress.toLowerCase().includes(q));
                         }
                         return true;
                       });
@@ -2771,7 +2950,9 @@ export default function AdminView() {
                         const statusLower = (rec.status || 'Pending').toLowerCase();
                         const grossVal = Math.abs(parseFloat(rec.amount) || 0);
                         const netVal = rec.netAmount ? parseFloat(rec.netAmount) : Math.max(0, grossVal - 1);
-                        const destAddr = rec.destination || user?.walletAddress || 'TRC20Address';
+                        const targetUser = (adminUsers || []).find(u => u.id === rec.userId || u.id === rec.user_id || u.name === rec.userName);
+                        const rawDest = rec.wallet_address || rec.walletAddress || rec.destination || targetUser?.walletAddress || targetUser?.wallet_address || targetUser?.wallet || '';
+                        const destAddr = (rawDest && rawDest !== 'TRC20Address' && rawDest !== 'Not Provided') ? rawDest : null;
                         return (
                           <tr key={rec.id || rec.code}>
                             <td>
@@ -2790,17 +2971,23 @@ export default function AdminView() {
                               <span className="cell-amount neutral">{formatUSDT(netVal, false)}</span>
                             </td>
                             <td>
-                              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
-                                <code className="cell-mono-addr">{formatCompactAddress(destAddr)}</code>
-                                <button
-                                  type="button"
-                                  className="cell-copy-btn"
-                                  title="Copy Destination Wallet"
-                                  onClick={() => copyToClipboard(destAddr, 'Wallet Address')}
-                                >
-                                  <Copy size={11} />
-                                </button>
-                              </div>
+                              {destAddr ? (
+                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                                  <code className="cell-mono-addr">{formatCompactAddress(destAddr)}</code>
+                                  <button
+                                    type="button"
+                                    className="cell-copy-btn"
+                                    title="Copy Destination Wallet"
+                                    onClick={() => copyToClipboard(destAddr, 'Wallet Address')}
+                                  >
+                                    <Copy size={11} />
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="admin-badge neutral" style={{ background: '#fef2f2', color: '#dc2626', borderColor: '#fecaca', fontSize: '11px', padding: '2px 8px' }}>
+                                  Not Bound
+                                </span>
+                              )}
                             </td>
                             <td>
                               <span className="cell-date">{rec.date}</span>
@@ -2817,6 +3004,10 @@ export default function AdminView() {
                                     type="button"
                                     className="btn-table-action-approve"
                                     onClick={() => {
+                                      const uMatch = (adminUsers || []).find(u => u.id === rec.userId || u.id === rec.user_id || u.name === rec.userName);
+                                      const rDest = rec.wallet_address || rec.walletAddress || rec.destination || uMatch?.walletAddress || uMatch?.wallet_address || uMatch?.wallet || '';
+                                      const initAddr = (rDest && rDest !== 'TRC20Address' && rDest !== 'Not Provided') ? rDest : '';
+                                      setDispatchDestinationAddress(initAddr);
                                       setDispatchModalRecord(rec);
                                       setDispatchTxHash(`0x${Math.random().toString(16).substring(2, 10)}${Math.random().toString(16).substring(2, 10)}`);
                                     }}
@@ -2882,12 +3073,57 @@ export default function AdminView() {
                             {formatUSDT(Math.max(0, Math.abs(dispatchModalRecord.amount) - 1), false)}
                           </strong>
                         </div>
-                        <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '8px', marginTop: '4px' }}>
-                          <span className="text-muted block text-xs mb-1">Destination TRON Address:</span>
-                          <code className="text-xs break-all font-bold cell-mono-addr">
-                            {dispatchModalRecord.destination || user?.walletAddress || 'TRC20Address'}
-                          </code>
+                        <div className="modal-summary-row" style={{ borderTop: '1px solid #e2e8f0', paddingTop: '6px', marginTop: '2px', alignItems: 'center' }}>
+                          <span className="text-muted">Destination TRON Address:</span>
+                          {dispatchDestinationAddress ? (
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                              <code className="cell-mono-addr font-bold" style={{ fontSize: '11.5px', color: '#0f172a' }}>
+                                {formatCompactAddress(dispatchDestinationAddress, 10, 8)}
+                              </code>
+                              <button
+                                type="button"
+                                className="cell-copy-btn"
+                                title="Copy Client TRON Address"
+                                onClick={() => copyToClipboard(dispatchDestinationAddress, 'Client Wallet Address')}
+                              >
+                                <Copy size={11} />
+                              </button>
+                            </div>
+                          ) : (
+                            <span style={{ color: '#ef4444', fontWeight: 600, fontSize: '11px' }}>⚠️ Address Not Bound</span>
+                          )}
                         </div>
+                      </div>
+
+                      <div className="input-group mt-3">
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                          <label className="input-label" style={{ margin: 0 }}>Destination TRON TRC20 Wallet</label>
+                          {dispatchDestinationAddress && (
+                            <button
+                              type="button"
+                              className="cell-copy-btn"
+                              title="Copy TRC20 Wallet Address"
+                              onClick={() => copyToClipboard(dispatchDestinationAddress, 'TRON Wallet Address')}
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', padding: '2px 6px', fontSize: '11px' }}
+                            >
+                              <Copy size={11} />
+                              <span>Copy</span>
+                            </button>
+                          )}
+                        </div>
+                        <input
+                          type="text"
+                          required
+                          value={dispatchDestinationAddress}
+                          onChange={(e) => setDispatchDestinationAddress(e.target.value)}
+                          className="admin-form-input font-mono"
+                          placeholder="e.g. TWiD4iHAcgaqf2WSsbUSSCMrBMUAiiVhDj"
+                        />
+                        {dispatchDestinationAddress && !dispatchDestinationAddress.trim().startsWith('T') && (
+                          <span style={{ fontSize: '11px', color: '#ef4444', marginTop: '3px', display: 'block', fontWeight: 500 }}>
+                            ⚠️ TRON address must start with capital "T"
+                          </span>
+                        )}
                       </div>
 
                       <div className="input-group mt-3">
@@ -3482,11 +3718,12 @@ export default function AdminView() {
                               <div className="admin-table-actions">
                                 <button
                                   type="button"
-                                  className="btn-table-action-approve"
-                                  title="Assign 25 tasks to this client"
-                                  onClick={() => adminAssignPackage && adminAssignPackage(u.id, '201')}
+                                  className="btn-table-action-approve flex items-center gap-1"
+                                  title="Configure tasks, prices, and deposit barriers before assigning to this client"
+                                  onClick={() => handleOpenConfigureAssignModal(u)}
                                 >
-                                  {u.taskPackageRequested ? 'Assign Now' : 'Assign 25'}
+                                  <Sliders size={12} />
+                                  <span>{u.taskPackageRequested ? 'Review & Assign' : 'Configure & Assign'}</span>
                                 </button>
 
                                 <button
@@ -4479,13 +4716,24 @@ export default function AdminView() {
                     <button
                       type="button"
                       className="btn-hero-deposit"
+                      onClick={() => handleOpenConfigureAssignModal(activePoolTargetUser)}
+                      title={`Open 25-task pre-assignment customizer to edit all prices and barriers for ${activePoolTargetUser.name} before assigning`}
+                    >
+                      <Sliders size={16} />
+                      <span>Configure & Assign to {activePoolTargetUser.name}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      className="btn-hero-deposit"
+                      style={{ background: '#059669' }}
                       onClick={() => {
                         adminAssignTasksToUser && adminAssignTasksToUser(activePoolTargetUser.id, activePoolSlots, 'Custom 25 Package', false);
                       }}
                       title={`Assign or re-sync this 25 custom slot package directly to ${activePoolTargetUser.name}`}
                     >
                       <Check size={16} />
-                      <span>Assign Package to {activePoolTargetUser.name}</span>
+                      <span>{Number(activePoolTargetUser.pendingTasks || activePoolTargetUser.pending_tasks || 0) > 0 ? `Update Active for ${activePoolTargetUser.name}` : `Assign Package to ${activePoolTargetUser.name}`}</span>
                     </button>
 
                     <button
@@ -4507,15 +4755,11 @@ export default function AdminView() {
                     <button
                       type="button"
                       className="btn-hero-deposit"
-                      onClick={() => {
-                        setSelectedUserForRandom(adminUsers[0]?.id || '');
-                        setRandomTaskCount(25);
-                        setShowAssignRandomModal(true);
-                      }}
-                      title="Assign 25 sequential campaign slots to any user"
+                      onClick={() => handleOpenConfigureAssignModal()}
+                      title="Select client, configure 25 task pricing & barriers, then assign"
                     >
-                      <Shuffle size={16} />
-                      <span>🎲 Assign 25 to Client</span>
+                      <Sliders size={16} />
+                      <span>🎯 Configure & Assign 25 to Client</span>
                     </button>
 
                     <button
@@ -4623,7 +4867,11 @@ export default function AdminView() {
                   <label className="text-xs font-semibold text-slate-700">Select Client:</label>
                   <select
                     value={selectedUserForTaskQueue || (adminUsers[0]?.id || '')}
-                    onChange={(e) => setSelectedUserForTaskQueue(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setSelectedUserForTaskQueue(val);
+                      setSelectedTaskPoolUser(val);
+                    }}
                     className="admin-form-select text-xs py-1.5 px-3 rounded-lg border border-slate-300 font-semibold text-indigo-900 bg-white"
                   >
                     {adminUsers.map(u => (
@@ -4656,18 +4904,9 @@ export default function AdminView() {
                   );
                 }
 
-                const queue = Array.isArray(targetUser.assignedTasks) && targetUser.assignedTasks.length > 0
-                  ? targetUser.assignedTasks
-                  : (() => {
-                      try {
-                        const c = localStorage.getItem(`websynx_user_assigned_tasks_${targetUser.id}`);
-                        if (c) {
-                          const p = JSON.parse(c);
-                          if (Array.isArray(p)) return p;
-                        }
-                      } catch(e) {}
-                      return [];
-                    })();
+                const queue = resolveUserCurrentQueue
+                  ? resolveUserCurrentQueue(targetUser.id)
+                  : (Array.isArray(targetUser.assignedTasks) && targetUser.assignedTasks.length > 0 ? targetUser.assignedTasks : get25CampaignSlots(tasks));
 
                 return (
                   <div className="admin-clean-card p-5">
@@ -5748,6 +5987,310 @@ export default function AdminView() {
             GLOBAL MODALS: TASK ASSIGNMENTS
         ========================================= */}
 
+        {/* 0. CONFIGURE & CUSTOMIZE 25 TASKS BEFORE ASSIGNMENT MODAL */}
+        {configureAssignUser && (
+          <div className="modal-overlay animate-fade-in" onClick={() => setConfigureAssignUser(null)}>
+            <div className="modal-container" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-box" style={{ maxWidth: '1120px', width: '96vw', maxHeight: '94vh', display: 'flex', flexDirection: 'column' }}>
+                {/* Header */}
+                <div className="modal-header">
+                  <div className="header-with-icon">
+                    <div className="icon-pill-blue" style={{ background: '#ecfdf5', color: '#059669' }}>
+                      <Sliders size={20} />
+                    </div>
+                    <div>
+                      <h3 className="modal-title font-semibold text-lg text-slate-900">
+                        Configure 25 Tasks Before Assigning
+                      </h3>
+                      <span className="text-xs text-slate-500">
+                        Edit prices, commissions, and deposit barriers for each slot before assigning them to this client.
+                      </span>
+                    </div>
+                  </div>
+                  <button className="close-btn" onClick={() => setConfigureAssignUser(null)}>✕</button>
+                </div>
+
+                {/* Modal Body */}
+                <div className="modal-body" style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
+                  {/* Client Selector & Overview Card */}
+                  <div className="admin-clean-card p-3.5 mb-4" style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px' }}>
+                    <div className="flex items-center justify-between gap-4 flex-wrap">
+                      <div className="flex-1 min-w-[280px]">
+                        <label className="admin-form-label text-xs font-bold text-slate-700 mb-1 block">
+                          Target Client for Task Assignment:
+                        </label>
+                        <select
+                          className="admin-form-select text-xs font-semibold w-full bg-white border border-slate-300 rounded-lg p-2"
+                          value={configureAssignUser?.id || ''}
+                          onChange={(e) => handleSwitchConfigureUser(e.target.value)}
+                        >
+                          {adminUsers.map(u => (
+                            <option key={u.id} value={u.id}>
+                              👤 {u.name} ({maskEmail(u.email)}) • Balance: ${Number(u.balance || 0).toFixed(2)} USDT • Tier: {u.vipLevel || 'eBay'} {u.taskPackageRequested ? '⚠️ [PENDING REQUEST]' : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <div className="text-right">
+                          <span className="text-[11px] text-slate-500 block">Available Balance</span>
+                          <strong className="text-sm font-bold text-slate-800">${Number(configureAssignUser?.balance || 0).toFixed(2)} USDT</strong>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-[11px] text-slate-500 block">Current Status</span>
+                          {configureAssignUser?.taskPackageRequested ? (
+                            <span className="admin-badge warning text-[11px] py-0.5 px-2">⚠️ Request Pending</span>
+                          ) : Number(configureAssignUser?.pendingTasks || configureAssignUser?.pending_tasks || 0) > 0 ? (
+                            <span className="admin-badge success text-[11px] py-0.5 px-2">Active ({configureAssignUser.completedTasks || 0}/25)</span>
+                          ) : (
+                            <span className="admin-badge neutral text-[11px] py-0.5 px-2">🟡 Draft (Not Live Yet)</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Preset Toolbar & Search */}
+                  <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-xs font-semibold text-slate-600 mr-1">Quick Presets:</span>
+                      <button
+                        type="button"
+                        className="btn-admin-secondary text-xs py-1 px-2.5 rounded-lg flex items-center gap-1"
+                        onClick={handleResetToStandardCatalogue}
+                        title="Reset all 25 slots back to standard catalogue defaults"
+                      >
+                        <RefreshCw size={12} />
+                        <span>Standard 25 Defaults</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-admin-secondary text-xs py-1 px-2.5 rounded-lg flex items-center gap-1"
+                        onClick={handleApplyPresetBarriers}
+                        title="Set balance deposit barriers on milestone slots (Slot 10: $50, Slot 15: $100, Slot 20: $150, Slot 25: $300)"
+                      >
+                        <Lock size={12} className="text-amber-500" />
+                        <span>Progressive Barriers ($50, $100, $150, $300)</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-admin-secondary text-xs py-1 px-2.5 rounded-lg text-slate-500"
+                        onClick={handleClearAllBarriers}
+                        title="Set all deposit barriers to 0.00"
+                      >
+                        <span>Clear All Barriers</span>
+                      </button>
+                    </div>
+
+                    <div className="relative min-w-[200px]">
+                      <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="Search slot or product..."
+                        value={configureSearch}
+                        onChange={(e) => setConfigureSearch(e.target.value)}
+                        className="admin-form-input text-xs pl-8 py-1.5 rounded-lg w-full"
+                      />
+                    </div>
+                  </div>
+
+                  {/* 25 Slots Table */}
+                  <div className="admin-clean-card" style={{ border: '1px solid #e2e8f0', overflow: 'hidden', borderRadius: '12px' }}>
+                    <div style={{ maxHeight: '48vh', overflowY: 'auto' }}>
+                      <table className="admin-clean-table text-xs">
+                        <thead>
+                          <tr style={{ background: '#f8fafc', position: 'sticky', top: 0, zIndex: 10 }}>
+                            <th className="text-center" style={{ width: '75px' }}>Slot</th>
+                            <th>Product & Campaign</th>
+                            <th className="text-center" style={{ width: '100px' }}>Platform</th>
+                            <th className="text-right" style={{ width: '140px' }}>Price (USDT)</th>
+                            <th className="text-center" style={{ width: '110px' }}>Commission</th>
+                            <th className="text-right" style={{ width: '120px' }}>Member Profit</th>
+                            <th className="text-center" style={{ width: '160px' }}>Deposit Barrier</th>
+                            <th className="text-center" style={{ width: '90px' }}>Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {configureAssignSlots
+                            .filter(s => {
+                              if (!configureSearch) return true;
+                              const q = configureSearch.toLowerCase().trim();
+                              return String(s.slotNumber) === q ||
+                                     `slot #${s.slotNumber}`.includes(q) ||
+                                     (s.title || '').toLowerCase().includes(q) ||
+                                     (s.platform || '').toLowerCase().includes(q);
+                            })
+                            .map((slot, idx) => {
+                              const actualIdx = (slot.slotNumber || (idx + 1)) - 1;
+                              const priceNum = parseFloat(slot.price) || 0;
+                              const commRate = parseFloat(slot.commissionRate ?? slot.commission_rate ?? 4) || 4;
+                              const estProfit = (priceNum * commRate) / 100;
+                              const reqDep = parseFloat(slot.requiredDeposit ?? slot.required_deposit ?? 0) || 0;
+
+                              return (
+                                <tr key={slot.id || idx}>
+                                  <td className="text-center">
+                                    <span className="slot-badge-num font-bold text-slate-800" style={{ background: '#f1f5f9', padding: '3px 8px', borderRadius: '6px' }}>
+                                      #{String(slot.slotNumber || idx + 1).padStart(2, '0')}
+                                    </span>
+                                  </td>
+                                  <td>
+                                    <div className="flex items-center gap-2">
+                                      <img
+                                        src={slot.image || getProductImage(slot)}
+                                        alt=""
+                                        style={{ width: '32px', height: '32px', borderRadius: '6px', objectFit: 'cover' }}
+                                        onError={(e) => {
+                                          e.currentTarget.onerror = null;
+                                          e.currentTarget.src = 'https://images.unsplash.com/photo-1546868871-7041f2a55e12?w=600&auto=format&fit=crop&q=80';
+                                        }}
+                                      />
+                                      <span className="font-semibold text-slate-800 line-clamp-1 max-w-[260px]" title={slot.title}>
+                                        {slot.title}
+                                      </span>
+                                    </div>
+                                  </td>
+                                  <td className="text-center">
+                                    <span className="admin-badge neutral text-[10px] uppercase font-bold">
+                                      {slot.platform || 'eBay'}
+                                    </span>
+                                  </td>
+                                  <td className="text-right">
+                                    <div className="flex items-center justify-end gap-1">
+                                      <input
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        className="admin-form-input text-xs font-bold text-right py-1 px-2 w-[90px] border border-indigo-200 focus:border-indigo-500 rounded-md"
+                                        value={slot.price}
+                                        onChange={(e) => handleUpdateSlotPrice(actualIdx, e.target.value)}
+                                      />
+                                      <span className="text-[11px] text-slate-400 font-semibold">$</span>
+                                    </div>
+                                  </td>
+                                  <td className="text-center">
+                                    <div className="flex items-center justify-center gap-1">
+                                      <input
+                                        type="number"
+                                        step="0.1"
+                                        min="0"
+                                        max="100"
+                                        className="admin-form-input text-xs font-bold text-center py-1 px-1.5 w-[60px] border border-slate-200 focus:border-indigo-500 rounded-md"
+                                        value={slot.commissionRate ?? slot.commission_rate ?? 4}
+                                        onChange={(e) => handleUpdateSlotCommission(actualIdx, e.target.value)}
+                                      />
+                                      <span className="text-[11px] text-slate-400 font-semibold">%</span>
+                                    </div>
+                                  </td>
+                                  <td className="text-right font-mono font-bold text-emerald-600">
+                                    +{formatUSDT(estProfit, true)}
+                                  </td>
+                                  <td className="text-center">
+                                    <div className="flex items-center justify-center gap-1">
+                                      {reqDep > 0 && <Lock size={12} className="text-amber-500 flex-shrink-0" />}
+                                      <input
+                                        type="number"
+                                        step="1"
+                                        min="0"
+                                        placeholder="0.00"
+                                        className={`admin-form-input text-xs font-bold py-1 px-2 w-[85px] rounded-md ${
+                                          reqDep > 0 ? 'border-amber-300 bg-amber-50/50 text-amber-900' : 'border-slate-200'
+                                        }`}
+                                        value={slot.requiredDeposit !== undefined ? slot.requiredDeposit : 0}
+                                        onChange={(e) => handleUpdateSlotDeposit(actualIdx, e.target.value)}
+                                      />
+                                      <span className="text-[10px] text-slate-400">USDT</span>
+                                    </div>
+                                  </td>
+                                  <td className="text-center">
+                                    <button
+                                      type="button"
+                                      className="btn-admin-secondary text-[11px] py-1 px-2 rounded-md hover:text-indigo-600 flex items-center gap-1 mx-auto"
+                                      title="Edit product name, link, or image"
+                                      onClick={() => {
+                                        handleOpenEditModal({ ...slot, targetUserId: configureAssignUser.id });
+                                      }}
+                                    >
+                                      <Edit2 size={11} />
+                                      <span>Edit</span>
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Footer Action Bar */}
+                {(() => {
+                  const totalOrderVal = configureAssignSlots.reduce((sum, s) => sum + (parseFloat(s.price) || 0), 0);
+                  const totalProfitVal = configureAssignSlots.reduce((sum, s) => {
+                    const p = parseFloat(s.price) || 0;
+                    const c = parseFloat(s.commissionRate ?? s.commission_rate ?? 4) || 4;
+                    return sum + ((p * c) / 100);
+                  }, 0);
+                  const barrierCount = configureAssignSlots.filter(s => (parseFloat(s.requiredDeposit ?? s.required_deposit ?? 0) || 0) > 0).length;
+
+                  return (
+                    <div className="modal-footer" style={{ borderTop: '1px solid #e2e8f0', padding: '14px 20px', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
+                      <div className="flex items-center gap-4 text-xs">
+                        <div>
+                          <span className="text-slate-500 block text-[11px]">Total Campaign Value</span>
+                          <strong className="text-slate-900 font-bold font-mono">{formatUSDT(totalOrderVal)}</strong>
+                        </div>
+                        <div className="h-6 w-px bg-slate-200"></div>
+                        <div>
+                          <span className="text-slate-500 block text-[11px]">Est. Member Yield</span>
+                          <strong className="text-emerald-600 font-bold font-mono">+{formatUSDT(totalProfitVal)}</strong>
+                        </div>
+                        <div className="h-6 w-px bg-slate-200"></div>
+                        <div>
+                          <span className="text-slate-500 block text-[11px]">Restricted Slots</span>
+                          <strong className="text-amber-600 font-bold">{barrierCount} / 25 Slots</strong>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          className="btn-admin-secondary text-xs py-2 px-4 rounded-xl"
+                          onClick={() => setConfigureAssignUser(null)}
+                          disabled={isAssigningPackage}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-admin-primary text-xs py-2 px-5 rounded-xl font-bold flex items-center gap-2"
+                          style={{ background: '#059669', borderColor: '#059669' }}
+                          onClick={handleConfirmConfigureAssignment}
+                          disabled={isAssigningPackage || !configureAssignUser}
+                        >
+                          {isAssigningPackage ? (
+                            <>
+                              <RefreshCw size={14} className="animate-spin" />
+                              <span>Assigning Package to Database...</span>
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle2 size={16} />
+                              <span>Confirm & Assign 25 Tasks to {configureAssignUser?.name || 'Client'}</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* 1. ASSIGN 25 RANDOM TASKS MODAL */}
         {showAssignRandomModal && (
           <div className="modal-overlay animate-fade-in" onClick={() => setShowAssignRandomModal(false)}>
@@ -6273,16 +6816,45 @@ export default function AdminView() {
                   <button className="close-btn" onClick={() => setEditingTask(null)}>✕</button>
                 </div>
 
-                {editingTask.targetUserId && (
-                  <div style={{ background: '#eff6ff', padding: '10px 14px', borderRadius: '8px', border: '1px solid #bfdbfe', marginTop: '12px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <Users size={16} className="text-indigo-600 flex-shrink-0" />
-                      <span style={{ fontSize: '12px', fontWeight: '600', color: '#1e40af' }}>
-                        Client Custom Pool Mode: Changes to price, commission, or deposit barrier will apply ONLY to {adminUsers.find(u => String(u.id) === String(editingTask.targetUserId))?.name || 'this user'}. Other users and the global base catalogue remain untouched.
-                      </span>
-                    </div>
+                <div className="admin-form-group mb-4" style={{ background: editingTask.targetUserId ? '#f0fdf4' : '#f8fafc', padding: '14px', borderRadius: '12px', border: editingTask.targetUserId ? '1px solid #86efac' : '1px solid #e2e8f0', marginTop: '14px' }}>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="admin-form-label mb-0 font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                      <Users size={15} className={editingTask.targetUserId ? "text-emerald-600" : "text-indigo-600"} />
+                      <span>Target Scope: Apply Changes To</span>
+                    </label>
+                    <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${editingTask.targetUserId ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'}`}>
+                      {editingTask.targetUserId ? '👤 User-Specific Override' : '🌐 Global Base Catalogue'}
+                    </span>
                   </div>
-                )}
+                  <select
+                    value={editingTask.targetUserId || 'all'}
+                    onChange={(e) => setEditingTask({
+                      ...editingTask,
+                      targetUserId: e.target.value === 'all' ? null : e.target.value
+                    })}
+                    className="admin-form-select text-xs font-semibold bg-white border border-slate-300 rounded-lg py-2 px-3 w-full"
+                  >
+                    <option value="all">🌐 Global Default Template (Base catalogue for new users)</option>
+                    <optgroup label="Customize specifically for one user (will NOT affect other users):">
+                      {adminUsers.map(u => (
+                        <option key={u.id} value={u.id}>
+                          👤 {u.name} ({u.email || 'No email'}) • ${Number(u.balance || 0).toFixed(2)} USDT
+                        </option>
+                      ))}
+                    </optgroup>
+                  </select>
+                  <p className="text-[11px] mt-2 mb-0">
+                    {editingTask.targetUserId ? (
+                      <span className="text-emerald-700 font-medium">
+                        🎯 <strong>Isolated to {adminUsers.find(u => String(u.id) === String(editingTask.targetUserId))?.name || 'selected user'}:</strong> Changes to price, commission, or deposit barrier will <strong>ONLY</strong> be applied to this user. No other users will be affected.
+                      </span>
+                    ) : (
+                      <span className="text-slate-500">
+                        🌐 <strong>Global Template:</strong> Updates default catalogue item. It will <strong>NOT</strong> overwrite any client's custom queue.
+                      </span>
+                    )}
+                  </p>
+                </div>
 
                 <form onSubmit={handleSaveTask} className="mt-4">
                   <div className="admin-form-group">
@@ -6873,9 +7445,9 @@ export default function AdminView() {
                       <Edit2 size={18} />
                     </div>
                     <div>
-                      <h3>Edit Assigned Task #{editingAssignedTask.index + 1}</h3>
-                      <span className="text-xs text-slate-400">
-                        Modifying task specifically for this user's queued workflow
+                      <h3>Edit Assigned Task #{editingAssignedTask.index + 1} for {adminUsers.find(u => String(u.id) === String(editingAssignedTask.userId))?.name || 'Client'}</h3>
+                      <span className="text-xs text-emerald-600 font-medium">
+                        🎯 Isolated Override: Changes apply ONLY to this user's queue ({adminUsers.find(u => String(u.id) === String(editingAssignedTask.userId))?.name || 'Client'})
                       </span>
                     </div>
                   </div>

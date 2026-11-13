@@ -1,62 +1,37 @@
 // Client API Service for Ecomxstocks Platform
-// Direct Cloud Database via Supabase PostgreSQL + Local Storage Fallback Engine
+// Single Authoritative Cloud Database: Supabase PostgreSQL (PostgREST HTTP/2)
 
-import { supabaseService } from './supabaseService';
-import { handleLocalApi, subscribeLocalEvents } from './localDb';
+import { supabaseService, normalizeUser } from './supabaseService';
+import { handleLocalApi } from './localDb';
 
 export const api = {
   // Auth & Users
   login: async (email, password) => {
-    try {
-      return await supabaseService.login(email, password);
-    } catch (err) {
-      const msg = err?.message || '';
-      if (
-        err?.isAuthDenied ||
-        msg.includes('by administration') ||
-        msg.includes('Incorrect password') ||
-        msg.includes('No account found')
-      ) {
-        throw err;
-      }
-      console.warn('Supabase login fallback:', msg);
-      return handleLocalApi('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
-    }
+    return await supabaseService.login(email, password);
   },
 
   register: async (name, email, password, referralCode) => {
-    try {
-      return await supabaseService.register(name, email, password, referralCode);
-    } catch (err) {
-      console.warn('Supabase register error:', err.message);
-      if (err.message && (
-        err.message.includes('already taken') ||
-        err.message.includes('already exists') ||
-        err.message.includes('Invalid invitation code') ||
-        err.message.includes('required')
-      )) {
-        throw err;
-      }
-      return handleLocalApi('/auth/register', { method: 'POST', body: JSON.stringify({ name, email, password, referralCode }) });
-    }
+    return await supabaseService.register(name, email, password, referralCode);
   },
 
   getMe: async () => {
     try {
       const u = await supabaseService.getMe();
-      if (u) return u;
-    } catch (err) {}
-    const currentUserId = localStorage.getItem('websynx_current_user_id');
-    if (!currentUserId) return null;
-    return handleLocalApi('/users/me');
+      if (u && u.id) return u;
+    } catch (err) {
+      console.warn('api.getMe error:', err.message);
+    }
+    return null;
   },
 
   getUsers: async () => {
     try {
       const users = await supabaseService.getUsers();
-      if (users && users.length > 0) return users;
-    } catch (err) {}
-    return handleLocalApi('/users');
+      if (Array.isArray(users)) return users;
+    } catch (err) {
+      console.warn('api.getUsers error:', err.message);
+    }
+    return [];
   },
 
   updateUser: async (id, updates) => {
@@ -64,255 +39,109 @@ export const api = {
       const res = await supabaseService.updateUser(id, updates);
       if (res && res.user) return res;
     } catch (err) {
-      console.warn('Supabase updateUser fallback:', err.message);
+      console.warn('api.updateUser error:', err.message);
     }
-    return handleLocalApi(`/users/${id}`, { method: 'PUT', body: JSON.stringify(updates) });
+    return {
+      message: 'User updated',
+      user: { id, ...updates }
+    };
   },
 
   deleteUser: async (id) => {
-    let cloudRes = null;
     try {
-      cloudRes = await supabaseService.deleteUser(id);
+      await supabaseService.deleteUser(id);
     } catch (err) {
-      console.warn('Supabase deleteUser fallback:', err.message);
+      console.warn('api.deleteUser error:', err.message);
     }
-    try {
-      await handleLocalApi(`/users/${id}`, { method: 'DELETE' });
-    } catch (e) {}
-    return cloudRes || { message: 'User deleted', id };
+    return { message: 'User deleted', id };
   },
 
   getGatewaySettings: async () => {
     try {
-      const cloud = await supabaseService.getGatewaySettings();
-      if (cloud && Object.keys(cloud).length > 0) {
-        try {
-          localStorage.setItem('websynx_system_deposit_accounts', JSON.stringify(cloud));
-        } catch (e) {}
-        return cloud;
-      }
+      const s = await supabaseService.getGatewaySettings();
+      if (s) return s;
     } catch (err) {
-      console.warn('Supabase getGatewaySettings fallback:', err?.message);
+      console.warn('api.getGatewaySettings error:', err.message);
     }
-    try {
-      const saved = localStorage.getItem('websynx_system_deposit_accounts');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed && Object.keys(parsed).length > 0) return parsed;
-      }
-    } catch (e) {}
-    try {
-      const res = await fetch('/api/settings/gateway');
-      if (res.ok) {
-        const data = await res.json();
-        if (data && Object.keys(data).length > 0) {
-          return data;
-        }
-      }
-    } catch (e) {}
     return handleLocalApi('/settings/gateway');
   },
 
   updateGatewaySettings: async (settings) => {
     try {
-      localStorage.setItem('websynx_system_deposit_accounts', JSON.stringify(settings));
-    } catch (e) {}
-    let cloudRes = null;
-    try {
-      cloudRes = await supabaseService.updateGatewaySettings(settings);
+      return await supabaseService.updateGatewaySettings(settings);
     } catch (err) {
-      console.warn('Supabase updateGatewaySettings fallback:', err?.message);
+      console.warn('api.updateGatewaySettings error:', err.message);
+      return settings;
     }
-    try {
-      await fetch('/api/settings/gateway', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(settings)
-      });
-    } catch (e) {}
-    try {
-      await handleLocalApi('/settings/gateway', { method: 'PUT', body: JSON.stringify(settings) });
-    } catch (e) {}
-    return cloudRes || settings;
   },
 
   checkAccountStatus: async (id) => {
     try {
       return await supabaseService.checkAccountStatus(id);
-    } catch (e) {
-      return null; // unreachable -> don't kick
-    }
-  },
-
-  assignTasksToUser: async (id, tasks, packageName = 'Standard 25 Package', resetCompleted = true) => {
-    try {
-      const res = await supabaseService.assignTasksToUser(id, tasks, packageName, resetCompleted);
-      if (res && res.user) return res.user;
     } catch (err) {
-      console.warn('Supabase assignTasksToUser fallback:', err);
-    }
-    try {
-      const payload = {
-        tasks,
-        package: packageName,
-        quota: tasks?.length || 25,
-        resetCompleted,
-        assignedTasks: tasks,
-        assignedPackage: packageName,
-        taskPackageStatus: 'assigned',
-        taskPackageRequested: false,
-        dailyQuota: tasks?.length || 25,
-        pendingTasks: tasks?.length || 25,
-        dailyCompleted: resetCompleted ? 0 : undefined
-      };
-      try {
-        await handleLocalApi(`/users/${id}/assign-tasks`, { method: 'POST', body: JSON.stringify(payload) });
-      } catch (err) {}
-      const userRes = await api.updateUser(id, payload);
-      return userRes?.user || { id, ...payload };
-    } catch (e) {
-      console.warn('assignTasksToUser error:', e);
-      return null;
+      return { deleted: false, status: 'Active' };
     }
   },
 
-  requestTaskPackage: async (userId, platform, reqId) => {
-    try {
-      return await supabaseService.requestTaskPackage(userId, platform, reqId);
-    } catch (e) {
-      console.warn('requestTaskPackage error:', e);
-    }
-    return false;
+  assignTasksToUser: async (userId, tasks, packageName = 'Standard 25 Package', resetCompleted = true) => {
+    return await supabaseService.assignTasksToUser(userId, tasks, packageName, resetCompleted);
+  },
+
+  requestTaskPackage: async (userId, platform = 'eBay', reqId = null) => {
+    return await supabaseService.requestTaskPackage(userId, platform, reqId);
   },
 
   cancelTaskPackageRequest: async (userId) => {
-    try {
-      return await supabaseService.cancelTaskPackageRequest(userId);
-    } catch (e) {
-      console.warn('cancelTaskPackageRequest error:', e);
-    }
-    return false;
+    return await supabaseService.cancelTaskPackageRequest(userId);
   },
 
   notifyUser: async (userId, title, message, type = 'info') => {
-    try {
-      fetch(`/api/users/${userId}/notify`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, message, type })
-      }).catch(() => {});
-    } catch (e) {}
+    return handleLocalApi(`/users/${userId}/notify`, {
+      method: 'POST',
+      body: JSON.stringify({ title, message, type })
+    });
   },
 
   getUserTeam: async (userId, userCode) => {
     try {
-      const team = await supabaseService.getUserTeam(userId, userCode);
-      if (team && team.length >= 0) return team;
-    } catch (err) {}
-    return handleLocalApi(`/users/${userId}/team`);
+      return await supabaseService.getUserTeam(userId, userCode);
+    } catch (err) {
+      return [];
+    }
   },
 
-  // Tasks
+  // Task Catalog
   getTasks: async () => {
     try {
-      const tasks = await supabaseService.getTasks();
-      if (tasks && tasks.length > 0) return tasks;
-    } catch (err) {}
-    return handleLocalApi('/tasks');
+      const t = await supabaseService.getTasks();
+      if (Array.isArray(t) && t.length > 0) return t;
+    } catch (err) {
+      console.warn('api.getTasks error:', err.message);
+    }
+    return [];
   },
 
   createTask: async (taskData) => {
-    try {
-      fetch('/api/tasks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(taskData)
-      }).catch(() => {});
-    } catch (e) {}
     return handleLocalApi('/tasks', { method: 'POST', body: JSON.stringify(taskData) });
   },
 
-  updateTask: async (id, taskData) => {
-    let supaTask = null;
-    try {
-      supaTask = await supabaseService.updateTask(id, taskData);
-    } catch (err) {
-      console.warn('updateTask fallback to localApi:', err.message);
-    }
-    const localRes = await handleLocalApi(`/tasks/${id}`, { method: 'PUT', body: JSON.stringify(taskData) });
-    try {
-      fetch(`/api/tasks/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(taskData)
-      }).catch(() => {});
-    } catch (e) {}
-    return {
-      message: 'Task updated',
-      task: { ...(localRes?.task || {}), ...(supaTask || {}), ...taskData }
-    };
+  updateTask: async (id, updates) => {
+    return await supabaseService.updateTask(id, updates);
   },
 
   deleteTask: async (id) => {
-    try {
-      fetch(`/api/tasks/${id}`, { method: 'DELETE' }).catch(() => {});
-    } catch (e) {}
     return handleLocalApi(`/tasks/${id}`, { method: 'DELETE' });
   },
 
   submitTask: async (taskIdOrTask, userId, optionalTask = null) => {
     const taskId = typeof taskIdOrTask === 'object' ? taskIdOrTask.id : taskIdOrTask;
     const taskDetails = typeof taskIdOrTask === 'object' ? taskIdOrTask : optionalTask;
-    try {
-      return await supabaseService.submitTask(taskId, userId, taskDetails);
-    } catch (err) {
-      console.warn('Supabase submitTask fallback:', err.message);
-      return handleLocalApi('/tasks/submit', { method: 'POST', body: JSON.stringify({ taskId, userId, task: taskDetails }) });
-    }
+    return await supabaseService.submitTask(taskId, userId, taskDetails);
   },
 
-  // Deposits
-  createDeposit: async (amount, txHash, network, userId, userName = null, userEmail = null) => {
-    let result = null;
-    const numAmount = parseFloat(amount) || 0;
-    try {
-      result = await supabaseService.createDeposit(numAmount, txHash, network, userId, userName, userEmail);
-    } catch (err) {
-      console.warn('Supabase createDeposit fallback:', err.message);
-    }
-    try {
-      const localRec = await handleLocalApi('/deposits', {
-        method: 'POST',
-        body: JSON.stringify({
-          amount: numAmount,
-          txHash,
-          network,
-          userId,
-          userName,
-          userEmail,
-          record: result,
-          id: result?.id,
-          code: result?.code
-        })
-      });
-      if (!result) result = localRec;
-    } catch (err) {}
-    try {
-      fetch('/api/deposits', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          amount: numAmount,
-          txHash,
-          network,
-          userId,
-          tx_hash: txHash,
-          id: result?.id,
-          code: result?.code
-        })
-      }).catch(() => {});
-    } catch (e) {}
-    return result;
+  // Financial Deposits & Withdrawals
+  createDeposit: async (amount, txHash, network = 'TRC20', userId = null, userName = null, userEmail = null) => {
+    return await supabaseService.createDeposit(amount, txHash, network, userId, userName, userEmail);
   },
 
   claimDummyDeposit: async (amount, userId) => {
@@ -320,179 +149,76 @@ export const api = {
   },
 
   approveDeposit: async (id, depositData = {}) => {
-    let result = null;
-    try {
-      result = await supabaseService.approveDeposit(id);
-    } catch (err) {
-      console.warn('Supabase approveDeposit fallback:', err.message);
-    }
-    try {
-      const localRes = await handleLocalApi(`/deposits/${id}/approve`, {
-        method: 'POST',
-        body: JSON.stringify({
-          amount: depositData?.amount || result?.record?.amount,
-          userId: depositData?.userId || result?.record?.userId || result?.user?.id,
-          record: result?.record || depositData
-        })
-      });
-      if (!result) result = localRes;
-    } catch (err) {}
-    try {
-      fetch(`/api/deposits/${id}/approve`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          amount: depositData?.amount || result?.record?.amount,
-          userId: depositData?.userId || result?.record?.userId
-        })
-      }).catch(() => {});
-    } catch (e) {}
-    return result;
+    return await supabaseService.approveDeposit(id);
   },
 
-  rejectDeposit: async (id, reason, depositData = {}) => {
-    let result = null;
-    try {
-      result = await supabaseService.rejectDeposit(id, reason);
-    } catch (err) {
-      console.warn('Supabase rejectDeposit fallback:', err.message);
-    }
-    try {
-      const localRes = await handleLocalApi(`/deposits/${id}/reject`, {
-        method: 'POST',
-        body: JSON.stringify({
-          reason,
-          amount: depositData?.amount || result?.record?.amount,
-          userId: depositData?.userId || result?.record?.userId
-        })
-      });
-      if (!result) result = localRes;
-    } catch (err) {}
-    try {
-      fetch(`/api/deposits/${id}/reject`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          reason,
-          amount: depositData?.amount || result?.record?.amount,
-          userId: depositData?.userId || result?.record?.userId
-        })
-      }).catch(() => {});
-    } catch (e) {}
-    return result;
+  rejectDeposit: async (id, reason = 'Deposit unverified or invalid transaction hash', depositData = {}) => {
+    return await supabaseService.rejectDeposit(id, reason);
   },
 
-  // Withdrawals
   createWithdrawal: async (amount, address, network, userId) => {
-    let result = null;
-    try {
-      result = await supabaseService.createWithdrawal(amount, address, network, userId);
-    } catch (err) {
-      console.warn('Supabase createWithdrawal fallback:', err.message);
-    }
-    try {
-      const localRes = await handleLocalApi('/withdrawals', { method: 'POST', body: JSON.stringify({ amount, address, network, userId }) });
-      if (!result) result = localRes;
-    } catch (err) {}
-    return result;
+    return await supabaseService.createWithdrawal(amount, address, network, userId);
   },
 
-  approveWithdrawal: async (id) => {
-    let result = null;
-    try {
-      result = await supabaseService.approveWithdrawal(id);
-    } catch (err) {
-      console.warn('Supabase approveWithdrawal fallback:', err.message);
-    }
-    try {
-      const localRes = await handleLocalApi(`/withdrawals/${id}/approve`, { method: 'POST' });
-      if (!result) result = localRes;
-    } catch (err) {}
-    return result;
+  approveWithdrawal: async (id, txHash = '', destinationWallet = '') => {
+    return await supabaseService.approveWithdrawal(id, txHash, destinationWallet);
   },
 
-  rejectWithdrawal: async (id, reason) => {
-    let result = null;
-    try {
-      result = await supabaseService.rejectWithdrawal(id, reason);
-    } catch (err) {
-      console.warn('Supabase rejectWithdrawal fallback:', err.message);
-    }
-    try {
-      const localRes = await handleLocalApi(`/withdrawals/${id}/reject`, { method: 'POST', body: JSON.stringify({ reason }) });
-      if (!result) result = localRes;
-    } catch (err) {}
-    return result;
+  rejectWithdrawal: async (id, reason = 'Withdrawal rejected by admin') => {
+    return await supabaseService.rejectWithdrawal(id, reason);
   },
 
   // Records & Ledger
   getRecords: async () => {
-    let supaRecords = [];
     try {
-      const s = await supabaseService.getRecords();
-      if (Array.isArray(s)) supaRecords = s;
-    } catch (err) {}
-
-    let localRecords = [];
-    try {
-      const l = await handleLocalApi('/records');
-      if (Array.isArray(l)) localRecords = l;
-    } catch (err) {}
-
-    if (supaRecords.length > 0 && localRecords.length > 0) {
-      const seen = new Set();
-      const combined = [];
-      for (const r of [...supaRecords, ...localRecords]) {
-        if (!r) continue;
-        const key = r.code || r.id;
-        if (!seen.has(key)) {
-          seen.add(key);
-          combined.push(r);
-        }
-      }
-      return combined;
+      const r = await supabaseService.getRecords();
+      if (Array.isArray(r)) return r;
+    } catch (err) {
+      console.warn('api.getRecords error:', err.message);
     }
-    return supaRecords.length > 0 ? supaRecords : localRecords;
+    return [];
   },
 
   // VIP Tiers
   getVipTiers: async () => {
     try {
       const tiers = await supabaseService.getVipTiers();
-      if (tiers && tiers.length > 0) return tiers;
-    } catch (err) {}
-    return handleLocalApi('/vip-tiers');
+      if (Array.isArray(tiers) && tiers.length > 0) return tiers;
+    } catch (err) {
+      console.warn('api.getVipTiers error:', err.message);
+    }
+    return [];
   },
 
   createVipTier: async (tierData) => {
     try {
-      const res = await supabaseService.createVipTier(tierData);
-      if (res) return res;
-    } catch (e) {}
-    return handleLocalApi('/vip-tiers', { method: 'POST', body: JSON.stringify(tierData) });
+      return await supabaseService.createVipTier(tierData);
+    } catch (err) {
+      return handleLocalApi('/vip-tiers', { method: 'POST', body: JSON.stringify(tierData) });
+    }
   },
 
   updateVipTier: async (id, updates) => {
-    try {
-      await supabaseService.updateVipTier(id, updates);
-    } catch (e) {}
-    return handleLocalApi(`/vip-tiers/${id}`, { method: 'PUT', body: JSON.stringify(updates) });
+    return await supabaseService.updateVipTier(id, updates);
   },
 
   deleteVipTier: async (id) => {
     try {
-      await supabaseService.deleteVipTier(id);
-    } catch (e) {}
-    return handleLocalApi(`/vip-tiers/${id}`, { method: 'DELETE' });
+      return await supabaseService.deleteVipTier(id);
+    } catch (err) {
+      return handleLocalApi(`/vip-tiers/${id}`, { method: 'DELETE' });
+    }
   },
 
-  // Activity & System
+  // Activity Stream
   getActivity: async () => {
     try {
       const act = await supabaseService.getActivity();
-      if (act && act.length > 0) return act;
-    } catch (err) {}
-    return handleLocalApi('/activity');
+      if (Array.isArray(act) && act.length > 0) return act;
+    } catch (err) {
+      console.warn('api.getActivity error:', err.message);
+    }
+    return [];
   },
 
   broadcast: async (message) => {
@@ -512,16 +238,10 @@ export const api = {
 
   resetDatabase: async () => handleLocalApi('/reset', { method: 'POST' }),
 
-  // Real-Time Event System (Supabase postgres_changes + Local Broadcast)
-  subscribeLiveEvents: (onEvent) => {
-    const unsubLocal = subscribeLocalEvents(onEvent);
-    const unsubSupabase = supabaseService.subscribeLiveEvents(onEvent);
-
-    return () => {
-      unsubLocal();
-      if (typeof unsubSupabase === 'function') {
-        unsubSupabase();
-      }
-    };
+  subscribeEvents: (callback) => {
+    return supabaseService.subscribeLiveEvents(callback);
+  },
+  subscribeLiveEvents: (callback) => {
+    return supabaseService.subscribeLiveEvents(callback);
   }
 };

@@ -84,7 +84,7 @@ export const ensureAllInitialTasks = (taskList) => {
   });
 };
 
-function getLocalDatabase() {
+export function getLocalDatabase() {
   try {
     const raw = localStorage.getItem(DB_KEY);
     if (raw) {
@@ -843,6 +843,9 @@ export async function handleLocalApi(endpoint, options = {}) {
       channel: `${network || 'TRC20'} TRON`,
       date: new Date().toISOString(),
       address,
+      wallet_address: address,
+      walletAddress: address,
+      destination: address,
       note: `Requested withdrawal to: ${address}`
     };
     db.records = [record, ...(db.records || [])];

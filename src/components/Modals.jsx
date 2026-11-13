@@ -339,11 +339,18 @@ function DepositModal({ onClose }) {
 // 2. USDT TRC20 WITHDRAWAL MODAL
 function WithdrawModal({ onClose }) {
   const { user, submitWithdrawal, setDashboardTab } = useApp();
-  const [address, setAddress] = useState(user.walletAddress || '');
+  const rawSavedWallet = (user?.walletAddress || user?.wallet_address || user?.wallet || '').trim();
+  const userSavedWallet = (rawSavedWallet && rawSavedWallet !== 'TRC20Address' && rawSavedWallet !== 'Not Provided') ? rawSavedWallet : '';
+  const [address, setAddress] = useState(userSavedWallet);
   const [amount, setAmount] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submittedCode, setSubmittedCode] = useState(null);
+
+  const completedTasks = Number(user?.dailyCompleted ?? user?.completedTasks ?? user?.daily_completed ?? user?.completed_tasks ?? 0);
+  const requiredTasks = Number(user?.dailyQuota ?? user?.daily_quota ?? 25);
+  const isTaskRequirementMet = completedTasks >= requiredTasks;
+  const remainingTasks = Math.max(0, requiredTasks - completedTasks);
 
   const numAmount = parseFloat(amount) || 0;
   const fee = 1.00; // 1 USDT network fee
@@ -357,6 +364,11 @@ function WithdrawModal({ onClose }) {
     e.preventDefault();
     setError('');
 
+    if (!isTaskRequirementMet) {
+      setError(`Withdrawal Locked: You have completed ${completedTasks}/${requiredTasks} promotional tasks. You must finish all ${requiredTasks} tasks to submit a withdrawal.`);
+      return;
+    }
+
     if (numAmount < 10) {
       setError('Minimum withdrawal amount is 10.00 USDT');
       return;
@@ -367,15 +379,28 @@ function WithdrawModal({ onClose }) {
       return;
     }
 
-    if (!address.startsWith('T') || address.length < 20) {
-      setError('Please provide a valid TRON TRC20 address starting with "T"');
+    let trimmedAddress = (address || '').trim();
+    if (!trimmedAddress) {
+      setError('Please provide your Destination TRON TRC20 Wallet Address.');
+      return;
+    }
+    if (trimmedAddress.startsWith('t')) {
+      trimmedAddress = 'T' + trimmedAddress.slice(1);
+      setAddress(trimmedAddress);
+    }
+    if (!trimmedAddress.startsWith('T')) {
+      setError('Please provide a valid TRON TRC20 address starting with capital "T" (e.g. TWiD4iHAcgaqf2WSsbUSSCMrBMUAiiVhDj)');
+      return;
+    }
+    if (trimmedAddress.length < 15) {
+      setError('TRON TRC20 wallet address is too short. Please provide a complete valid address.');
       return;
     }
 
     setIsSubmitting(true);
     setTimeout(async () => {
       try {
-        const rec = await submitWithdrawal(numAmount, address, 'TRC20');
+        const rec = await submitWithdrawal(numAmount, trimmedAddress, 'TRC20');
         setIsSubmitting(false);
         setSubmittedCode(rec?.code || `WTH-${Date.now()}`);
       } catch (err) {
@@ -446,6 +471,36 @@ function WithdrawModal({ onClose }) {
         </div>
       </div>
 
+      {!isTaskRequirementMet && (
+        <div className="alert-box-warning mt-3" style={{ background: '#fef3c7', border: '1px solid #f59e0b', borderRadius: '12px', padding: '12px 14px', color: '#92400e' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600, fontSize: '13.5px' }}>
+            <Lock size={16} color="#d97706" />
+            <span>Withdrawal Locked: Incomplete Task Package</span>
+          </div>
+          <p style={{ fontSize: '12px', marginTop: '4px', marginBottom: '8px', lineHeight: '1.4' }}>
+            Merchant compliance mandates that all {requiredTasks} tasks in your promotional sequence must be completed before balance withdrawals can be processed.
+          </p>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
+            <span>Promotion Progress:</span>
+            <strong>{completedTasks} / {requiredTasks} Completed ({remainingTasks} remaining)</strong>
+          </div>
+          <div style={{ width: '100%', height: '6px', background: '#fde68a', borderRadius: '4px', overflow: 'hidden' }}>
+            <div style={{ width: `${Math.min(100, (completedTasks / requiredTasks) * 100)}%`, height: '100%', background: '#d97706', borderRadius: '4px', transition: 'width 0.3s ease' }} />
+          </div>
+          <button
+            type="button"
+            className="btn-primary w-full mt-3"
+            style={{ fontSize: '12.5px', padding: '8px 12px', background: '#d97706', border: 'none', color: '#fff', borderRadius: '8px', fontWeight: 600, cursor: 'pointer' }}
+            onClick={() => {
+              onClose();
+              setDashboardTab('tasks');
+            }}
+          >
+            ⚡ Complete Remaining Tasks ({remainingTasks} left)
+          </button>
+        </div>
+      )}
+
       {error && (
         <div className="error-banner mt-3 animate-fade-in">
           <AlertCircle size={15} />
@@ -455,18 +510,42 @@ function WithdrawModal({ onClose }) {
 
       <form onSubmit={handleSubmit} className="withdraw-form mt-3">
         <div className="input-group">
-          <label className="input-label">Destination TRON TRC20 Wallet Address</label>
+          <div className="label-with-action">
+            <label className="input-label">Destination TRON TRC20 Wallet Address</label>
+            {userSavedWallet && userSavedWallet !== address && (
+              <button
+                type="button"
+                className="max-btn"
+                onClick={() => {
+                  setAddress(userSavedWallet);
+                  setError('');
+                }}
+                style={{ color: '#2563eb', fontWeight: 600, fontSize: '11.5px' }}
+              >
+                Use Saved Wallet
+              </button>
+            )}
+          </div>
           <div className="input-icon-field-wrap">
             <Wallet size={16} className="input-field-left-icon" />
             <input
               type="text"
-              placeholder="T..."
+              placeholder="e.g. TWiD4iHAcgaqf2WSsbUSSCMrBMUAiiVhDj"
               value={address}
-              onChange={(e) => setAddress(e.target.value)}
+              onChange={(e) => {
+                setAddress(e.target.value);
+                if (error) setError('');
+              }}
               className="text-input-field with-icon"
+              style={error && (!address.trim().startsWith('T') && !address.trim().startsWith('t') || address.trim().length < 15) ? { borderColor: '#ef4444', background: '#fef2f2' } : {}}
               required
             />
           </div>
+          {address && !address.trim().startsWith('T') && !address.trim().startsWith('t') && (
+            <span style={{ fontSize: '11.5px', color: '#ef4444', marginTop: '4px', display: 'block', fontWeight: 500 }}>
+              ⚠️ TRON TRC20 addresses must start with capital letter <strong>"T"</strong> (e.g. TWiD4... or TNoaH...)
+            </span>
+          )}
         </div>
 
         <div className="input-group mt-3">
@@ -511,9 +590,14 @@ function WithdrawModal({ onClose }) {
         <button
           type="submit"
           className="btn-danger w-full mt-4"
-          disabled={isSubmitting || user.balance <= 0}
+          disabled={isSubmitting || user.balance <= 0 || !isTaskRequirementMet}
+          style={!isTaskRequirementMet ? { opacity: 0.6, cursor: 'not-allowed', background: '#94a3b8' } : {}}
         >
-          {isSubmitting ? 'Authorizing Request...' : 'Confirm & Request Withdrawal'}
+          {isSubmitting
+            ? 'Authorizing Request...'
+            : !isTaskRequirementMet
+              ? `🔒 Locked: Complete ${remainingTasks} More Task${remainingTasks > 1 ? 's' : ''}`
+              : 'Confirm & Request Withdrawal'}
         </button>
       </form>
     </div>
@@ -596,14 +680,14 @@ function TaskExecutionModal({ task, onClose }) {
   const [step, setStep] = useState('ready'); // 'ready' -> 'processing' -> 'success'
 
   // Commission calculation: prioritize task's own commissionRate
-  const taskCommRate = parseFloat(currentTask?.commissionRate ?? currentTask?.commission_rate ?? (currentTask?.yieldRate ? parseFloat(currentTask.yieldRate) : (currentTask?.yield_rate ? parseFloat(currentTask.yield_rate) : 4))) || 4.0;
-  const calculatedCommission = currentTask ? parseFloat((((Number(currentTask.price) || 0) * taskCommRate) / 100).toFixed(2)) : 0;
+  const taskCommRate = parseFloat(effectiveTask?.commissionRate ?? effectiveTask?.commission_rate ?? (effectiveTask?.yieldRate ? parseFloat(effectiveTask.yieldRate) : (effectiveTask?.yield_rate ? parseFloat(effectiveTask.yield_rate) : 4))) || 4.0;
+  const calculatedCommission = effectiveTask ? parseFloat((((Number(effectiveTask.price) || 0) * taskCommRate) / 100).toFixed(2)) : 0;
   const completedCount = Number(user?.dailyCompleted ?? user?.completedTasks ?? 0);
   const isLockedSequential = currentTaskIndex > completedCount;
   const isAlreadyDone = currentTaskIndex >= 0 && currentTaskIndex < completedCount;
   const nextTaskIndex = currentTaskIndex >= 0 && currentTaskIndex < queue.length - 1 ? currentTaskIndex + 1 : 0;
   const nextTask = queue[nextTaskIndex] || null;
-  const currentTaskNumber = currentTaskIndex >= 0 ? currentTaskIndex + 1 : (currentTask?.learningStep || 1);
+  const currentTaskNumber = currentTaskIndex >= 0 ? currentTaskIndex + 1 : (effectiveTask?.learningStep || 1);
 
   const handleGoToNextTask = (targetTask = nextTask) => {
     if (!targetTask) {
@@ -646,7 +730,7 @@ function TaskExecutionModal({ task, onClose }) {
     const int3 = setTimeout(async () => {
       setProgress(100);
       try {
-        const earned = await completeTask(currentTask);
+        const earned = await completeTask(effectiveTask);
         const finalEarned = typeof earned === 'number' ? earned : (parseFloat(earned) || calculatedCommission);
         setEarnedCommission(finalEarned);
         setStep('success');
@@ -672,7 +756,7 @@ function TaskExecutionModal({ task, onClose }) {
     };
   };
 
-  if (!currentTask) return null;
+  if (!effectiveTask) return null;
 
   return (
     <div className="modal-box task-modal mallstocks-order-modal">
@@ -687,7 +771,7 @@ function TaskExecutionModal({ task, onClose }) {
           >
             <ChevronLeft size={22} strokeWidth={2.4} />
           </button>
-          <h3 className="mallstocks-header-title">{currentTask.platform || 'Ali Express'}</h3>
+          <h3 className="mallstocks-header-title">{effectiveTask.platform || 'Ali Express'}</h3>
           <button
             type="button"
             className="mallstocks-close-btn"
@@ -714,7 +798,7 @@ function TaskExecutionModal({ task, onClose }) {
               <RefreshCw size={40} className="spin-icon text-purple-600" />
             </div>
             <h4 className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-1">
-              Grabbing Order from {currentTask.platform} Merchant...
+              Grabbing Order from {effectiveTask.platform || 'Merchant'} Merchant...
             </h4>
             <p className="text-xs text-slate-500 max-w-xs mx-auto mb-4">
               Synchronizing merchant rank, recording verified review, and releasing commission to balance.
@@ -810,7 +894,7 @@ function TaskExecutionModal({ task, onClose }) {
               {/* Row 2 */}
               <div className="mallstocks-stat-box">
                 <div className="mallstocks-stat-val">
-                  {(Number(currentTask.price) || 0).toFixed(2)} USDT
+                  {(Number(effectiveTask.price) || 0).toFixed(2)} USDT
                 </div>
                 <div className="mallstocks-stat-label">Order amount</div>
               </div>
@@ -841,27 +925,27 @@ function TaskExecutionModal({ task, onClose }) {
               <div className="mallstocks-product-mini">
                 <div className="mallstocks-thumb-wrap">
                   <img
-                    src={getProductImage(currentTask)}
-                    alt={currentTask.title}
+                    src={getProductImage(effectiveTask)}
+                    alt={effectiveTask.title}
                     className="mallstocks-thumb"
                     onError={(e) => {
                       e.currentTarget.onerror = null;
-                      e.currentTarget.src = getProductImage(currentTask);
+                      e.currentTarget.src = getProductImage(effectiveTask);
                     }}
                   />
-                  <span className={`mallstocks-platform-tag ${(currentTask.platform || 'ebay').toLowerCase().replace(/\s+/g, '')}`}>
-                    {currentTask.platform || 'eBay'}
+                  <span className={`mallstocks-platform-tag ${(effectiveTask.platform || 'ebay').toLowerCase().replace(/\s+/g, '')}`}>
+                    {effectiveTask.platform || 'eBay'}
                   </span>
                 </div>
                 <div className="mallstocks-product-details">
                   <div className="mallstocks-task-step-tag">
                     Task #{currentTaskNumber} of {queue.length || 25}
                   </div>
-                  <h4 className="mallstocks-product-title" title={currentTask.title}>
-                    {currentTask.title}
+                  <h4 className="mallstocks-product-title" title={effectiveTask.title}>
+                    {effectiveTask.title}
                   </h4>
                   <div className="mallstocks-pricing-chips">
-                    <span className="price-chip">Order: ${(Number(currentTask.price) || 0).toFixed(2)} USDT</span>
+                    <span className="price-chip">Order: ${(Number(effectiveTask.price) || 0).toFixed(2)} USDT</span>
                     <span className="profit-chip">+{taskCommRate}% (+${calculatedCommission.toFixed(2)} USDT)</span>
                   </div>
                 </div>
@@ -870,10 +954,10 @@ function TaskExecutionModal({ task, onClose }) {
               <button
                 type="button"
                 className="mallstocks-external-link-btn"
-                onClick={(e) => openProductUrl(currentTask, e)}
+                onClick={(e) => openProductUrl(effectiveTask, e)}
               >
                 <ExternalLink size={13} />
-                <span>Open Live Listing on {currentTask.platform} (New Tab)</span>
+                <span>Open Live Listing on {effectiveTask.platform || 'Merchant'} (New Tab)</span>
               </button>
             </div>
 

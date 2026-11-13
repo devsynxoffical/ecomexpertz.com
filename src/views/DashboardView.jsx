@@ -1896,10 +1896,15 @@ function TabMine() {
     logoutAccount,
     addNotification,
     refreshUserBalance,
-    isRefreshingBalance
+    isRefreshingBalance,
+    bindWalletAddress
   } = useApp();
   const [copiedCode, setCopiedCode] = useState(false);
   const [activeSubMenu, setActiveSubMenu] = useState(null); // 'profile' | 'team' | 'wallet' | 'settings' | null
+  const [editingWallet, setEditingWallet] = useState(false);
+  const [walletInput, setWalletInput] = useState('');
+  const [walletMsg, setWalletMsg] = useState({ text: '', type: '' });
+  const [isSavingWallet, setIsSavingWallet] = useState(false);
 
   const isGuest = !user || !user.id || user.isGuest || user.name === 'Guest User';
   const ownRefCode = isGuest ? '' : sanitizeReferralCode(user?.referralCode || user?.referral_code || user?.code);
@@ -2149,12 +2154,113 @@ function TabMine() {
           <div className="mine-card-panel mt-4 animate-fade-in">
             <div className="panel-header">
               <h4>Wallet & Asset Management</h4>
-              <button className="close-panel-btn" onClick={() => setActiveSubMenu(null)}>✕</button>
+              <button className="close-panel-btn" onClick={() => { setActiveSubMenu(null); setEditingWallet(false); setWalletMsg({ text: '', type: '' }); }}>✕</button>
             </div>
+            
+            {walletMsg.text && (
+              <div className={`alert-box-${walletMsg.type === 'error' ? 'warning' : 'success'} mt-3`} style={{ padding: '8px 12px', borderRadius: '8px', fontSize: '12px' }}>
+                <span>{walletMsg.text}</span>
+              </div>
+            )}
+
             <div className="wallet-details mt-3">
-              <div className="wallet-row">
-                <span>Registered TRC20 Address:</span>
-                <code>{user.walletAddress}</code>
+              <div className="wallet-row" style={{ alignItems: 'flex-start', flexDirection: 'column', gap: '6px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                  <span style={{ fontWeight: 600, color: '#475569', fontSize: '12px' }}>Registered TRC20 Address:</span>
+                  {!editingWallet && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setWalletInput(user?.walletAddress || user?.wallet_address || '');
+                        setEditingWallet(true);
+                        setWalletMsg({ text: '', type: '' });
+                      }}
+                      style={{ background: 'none', border: 'none', color: '#2563eb', fontWeight: 600, fontSize: '11.5px', cursor: 'pointer', padding: 0 }}
+                    >
+                      ✏️ {user?.walletAddress ? 'Change Wallet' : 'Bind Wallet'}
+                    </button>
+                  )}
+                </div>
+
+                {!editingWallet ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', marginTop: '2px' }}>
+                    <code style={{ fontSize: '12px', wordBreak: 'break-all', flex: 1, background: '#f8fafc', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                      {user?.walletAddress || user?.wallet_address || 'Not Bound Yet'}
+                    </code>
+                    {(user?.walletAddress || user?.wallet_address) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(user.walletAddress || user.wallet_address);
+                          setWalletMsg({ text: 'Copied wallet address to clipboard!', type: 'success' });
+                          setTimeout(() => setWalletMsg({ text: '', type: '' }), 2500);
+                        }}
+                        style={{ border: '1px solid #cbd5e1', background: '#fff', borderRadius: '6px', padding: '6px 8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px' }}
+                      >
+                        <Copy size={12} />
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <form
+                    onSubmit={async (e) => {
+                      e.preventDefault();
+                      setWalletMsg({ text: '', type: '' });
+                      let clean = (walletInput || '').trim();
+                      if (!clean) {
+                        setWalletMsg({ text: 'Please enter a TRON TRC20 wallet address.', type: 'error' });
+                        return;
+                      }
+                      if (clean.startsWith('t')) clean = 'T' + clean.slice(1);
+                      if (!clean.startsWith('T')) {
+                        setWalletMsg({ text: 'TRON TRC20 addresses must start with capital "T" (e.g. TWiD4iHAcgaqf2WSsbUSSCMrBMUAiiVhDj)', type: 'error' });
+                        return;
+                      }
+                      if (clean.length < 15) {
+                        setWalletMsg({ text: 'Wallet address is too short. Please provide a valid address.', type: 'error' });
+                        return;
+                      }
+                      setIsSavingWallet(true);
+                      try {
+                        await bindWalletAddress(clean);
+                        setEditingWallet(false);
+                        setWalletMsg({ text: 'TRON TRC20 wallet address bound successfully!', type: 'success' });
+                        setTimeout(() => setWalletMsg({ text: '', type: '' }), 3000);
+                      } catch (err) {
+                        setWalletMsg({ text: err.message || 'Failed to bind wallet', type: 'error' });
+                      } finally {
+                        setIsSavingWallet(false);
+                      }
+                    }}
+                    style={{ width: '100%', marginTop: '4px' }}
+                  >
+                    <input
+                      type="text"
+                      value={walletInput}
+                      onChange={(e) => setWalletInput(e.target.value)}
+                      placeholder="e.g. TWiD4iHAcgaqf2WSsbUSSCMrBMUAiiVhDj"
+                      className="text-input-field font-mono"
+                      style={{ width: '100%', fontSize: '12px', padding: '8px 10px' }}
+                      required
+                    />
+                    <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                      <button
+                        type="button"
+                        onClick={() => { setEditingWallet(false); setWalletMsg({ text: '', type: '' }); }}
+                        style={{ flex: 1, padding: '7px', fontSize: '12px', background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '6px', cursor: 'pointer', fontWeight: 500 }}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={isSavingWallet}
+                        style={{ flex: 2, padding: '7px', fontSize: '12px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}
+                      >
+                        {isSavingWallet ? 'Saving...' : 'Save & Bind Address'}
+                      </button>
+                    </div>
+                  </form>
+                )}
               </div>
               <div className="wallet-row mt-2">
                 <span>Network:</span>

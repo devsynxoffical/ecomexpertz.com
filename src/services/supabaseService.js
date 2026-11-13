@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { supabase, isSupabaseCircuitOpen } from './supabase';
 import {
   INITIAL_USER,
   INITIAL_VIP_TIERS,
@@ -109,10 +109,12 @@ export function applyTaskRecordsToUser(norm, taskRecords = []) {
   );
 
   if (userRecs.length > 0) {
-    const latestAssignment = userRecs.find(r =>
+    const assignmentRecs = userRecs.filter(r =>
       r.type && (r.type.includes('Assigned') || r.type.includes('Package Assigned')) &&
       r.status !== 'Cancelled'
-    );
+    ).sort((a, b) => new Date(b.created_at || b.date || 0) - new Date(a.created_at || a.date || 0));
+    const latestAssignment = assignmentRecs[0] || null;
+
     const latestRequest = userRecs.find(r =>
       r.type && r.type.includes('Request') && r.status === 'Pending'
     );
@@ -155,9 +157,15 @@ export function applyTaskRecordsToUser(norm, taskRecords = []) {
             };
           });
           norm.assignedTaskIds = norm.assignedTasks.map(t => t.id);
+          try {
+            localStorage.setItem(`websynx_user_assigned_tasks_${norm.id}`, JSON.stringify(norm.assignedTasks));
+          } catch (e) {}
         } else if (Array.isArray(parsed.taskIds) && parsed.taskIds.length > 0) {
           norm.assignedTasks = INITIAL_TASKS.filter(t => parsed.taskIds.includes(t.id)).map(normalizeTask);
           norm.assignedTaskIds = parsed.taskIds;
+          try {
+            localStorage.setItem(`websynx_user_assigned_tasks_${norm.id}`, JSON.stringify(norm.assignedTasks));
+          } catch (e) {}
         }
       }
     } else if (latestRequest) {
@@ -433,7 +441,11 @@ export const supabaseService = {
 
     const newUserId = `usr_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
     const generatedCode = Math.floor(100000 + Math.random() * 900000).toString();
-    const wallet = 'T' + cleanName.replace(/[^a-zA-Z]/g, '').substring(0, 4).toUpperCase() + Math.floor(100000 + Math.random() * 900000) + 'Tx11';
+    const walletChars = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+    let wallet = 'T' + cleanName.replace(/[^a-zA-Z0-9]/g, '').substring(0, 3).toUpperCase();
+    while (wallet.length < 34) {
+      wallet += walletChars.charAt(Math.floor(Math.random() * walletChars.length));
+    }
 
     const newUser = {
       id: newUserId,
@@ -618,7 +630,8 @@ export const supabaseService = {
       .select('*')
       .order('created_at', { ascending: false });
 
-    if (error || !data || data.length === 0) return INITIAL_ADMIN_USERS.map(normalizeUser);
+    if (error) throw error;
+    if (!data || data.length === 0) return null;
 
     let taskRecords = [];
     try {
@@ -750,10 +763,14 @@ export const supabaseService = {
 
   // 5a. Check account status (for forced logout of blocked / deleted users)
   checkAccountStatus: async (id) => {
-    const { data, error } = await supabase.from('users').select('id,status').eq('id', id).maybeSingle();
-    if (error) throw error;
-    if (!data) return { deleted: true };
-    return { deleted: false, status: data.status || 'Active' };
+    try {
+      const { data, error } = await supabase.from('users').select('id,status').eq('id', id).maybeSingle();
+      if (error || !data) return { deleted: false, status: 'Active' };
+      const isDeleted = String(data.status || '').toLowerCase() === 'deleted';
+      return { deleted: isDeleted, status: data.status || 'Active' };
+    } catch (e) {
+      return { deleted: false, status: 'Active' };
+    }
   },
 
   // 5b. Delete User (permanent)
@@ -776,9 +793,13 @@ export const supabaseService = {
     const { data, error } = await supabase
       .from('tasks')
       .select('*')
-      .order('price', { ascending: true });
+      .order('id', { ascending: true });
 
-    if (error || !data || data.length === 0) return (INITIAL_TASKS || []).map(normalizeTask);
+    if (error) {
+      console.warn('Supabase getTasks error:', error.message);
+      throw error;
+    }
+    if (!data || data.length === 0) return null;
     return data.map(normalizeTask);
   },
 
@@ -834,10 +855,17 @@ export const supabaseService = {
       }
 
       if (result) {
-        return normalizeTask(result);
+        const normResult = normalizeTask(result);
+        try {
+          const cached = JSON.parse(localStorage.getItem('websynx_tasks') || '[]');
+          const updatedCached = cached.map(t => String(t.id) === String(id) ? { ...t, ...normResult } : t);
+          localStorage.setItem('websynx_tasks', JSON.stringify(updatedCached));
+        } catch (e) {}
+        return normResult;
       }
     } catch (err) {
-      console.warn('Supabase updateTask fallback:', err.message);
+      console.error('Supabase updateTask error:', err.message);
+      throw err;
     }
     return null;
   },
@@ -958,12 +986,13 @@ export const supabaseService = {
       status: 'Active'
     }).eq('id', user.id);
 
-    // 2. Mark any pending task requests for this user as Completed
-    await supabase.from('records')
-      .update({ status: 'Completed' })
-      .eq('user_id', user.id)
-      .eq('category', 'Tasks')
-      .eq('status', 'Pending');
+    // 2. Remove any previous Task Package records for this user so records table stays lean
+    try {
+      await supabase.from('records')
+        .delete()
+        .eq('user_id', user.id)
+        .ilike('type', '%Package%');
+    } catch (e) {}
 
     // 3. Insert persistent assignment record into Supabase records table
     const pkgCode = `PKG-${Date.now().toString().slice(-6)}`;
@@ -1019,11 +1048,15 @@ export const supabaseService = {
       status: 'Completed',
       note: JSON.stringify(noteObj),
       user_id: user.id,
-      user_name: user.name,
+      user_name: user.name || user.email || 'Merchant',
       network: 'System'
     };
 
-    await supabase.from('records').insert([newRec]);
+    const { error: insErr } = await supabase.from('records').insert([newRec]);
+    if (insErr) {
+      console.error('Failed to insert assignment record in Supabase:', insErr);
+      throw new Error(insErr.message || 'Failed to save task package in database');
+    }
 
     try {
       localStorage.setItem(`websynx_user_assigned_tasks_${user.id}`, JSON.stringify(finalTasks));
@@ -1113,23 +1146,42 @@ export const supabaseService = {
     const { data, error } = await supabase
       .from('records')
       .select('*')
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(200);
 
-    if (error || !data || data.length === 0) return INITIAL_RECORDS;
+    if (error) throw error;
+    if (!data || data.length === 0) return null;
     const seen = new Set();
     const unique = [];
     for (const r of data) {
       const key = r.code || r.id;
       if (!seen.has(key)) {
         seen.add(key);
+        let cleanNote = r.note || '';
+        if (typeof cleanNote === 'string' && cleanNote.length > 300 && cleanNote.startsWith('{')) {
+          try {
+            const parsed = JSON.parse(cleanNote);
+            cleanNote = parsed.assignedPackage
+              ? `Assigned ${parsed.assignedPackage} (${parsed.dailyQuota || 25} tasks)`
+              : 'Task Package Assigned';
+          } catch (e) {
+            cleanNote = 'Task Package Assigned';
+          }
+        }
+        const rawWallet = r.wallet_address || r.walletAddress || r.destination || '';
+        const cleanWallet = (rawWallet && rawWallet !== 'TRC20Address' && rawWallet !== 'Not Provided') ? rawWallet : '';
         unique.push({
           ...r,
+          note: cleanNote,
           userName: r.userName || r.user_name || 'Member',
           user_name: r.user_name || r.userName || 'Member',
           userId: r.userId || r.user_id,
           user_id: r.user_id || r.userId,
           txHash: r.txHash || r.tx_hash || 'Direct Deposit',
           tx_hash: r.tx_hash || r.txHash || 'Direct Deposit',
+          walletAddress: cleanWallet,
+          wallet_address: cleanWallet,
+          destination: cleanWallet,
           amount: typeof r.amount === 'number' ? r.amount : parseFloat(r.amount) || 0
         });
       }
@@ -1182,18 +1234,35 @@ export const supabaseService = {
 
   // 10. Create Withdrawal
   createWithdrawal: async (amount, address, network, userId) => {
-    const { data: user } = await supabase.from('users').select('*').eq('id', userId).single();
-    const parsedAmt = parseFloat(amount);
+    let { data: user } = await supabase.from('users').select('*').eq('id', userId).maybeSingle();
+    if (!user) {
+      const { data: altUser } = await supabase.from('users').select('*').or(`code.eq.${userId},email.eq.${userId}`).maybeSingle();
+      user = altUser;
+    }
+    if (!user) {
+      throw new Error('User account not found');
+    }
 
-    if (!user || user.balance < parsedAmt) {
+    // MANDATORY TASK COMPLETION RESTRICTION:
+    // A user cannot withdraw until all tasks in their batch (e.g. 25 tasks) are fully completed
+    const completedTasks = Number(user.daily_completed ?? user.completed_tasks ?? 0);
+    const quota = Number(user.daily_quota ?? 25);
+    if (completedTasks < quota) {
+      throw new Error(`Withdrawal Locked: You have completed ${completedTasks}/${quota} tasks. You must complete all ${quota} tasks before requesting a withdrawal.`);
+    }
+
+    const parsedAmt = parseFloat(amount);
+    if (user.balance < parsedAmt) {
       throw new Error('Insufficient balance');
     }
 
+    const cleanAddress = (address || '').trim();
     const newBal = parseFloat((user.balance - parsedAmt).toFixed(2));
     await supabase.from('users').update({
       balance: newBal,
+      wallet_address: cleanAddress,
       pending_requests: (user.pending_requests || 0) + 1
-    }).eq('id', userId);
+    }).eq('id', user.id);
 
     const rec = {
       id: `rec_wth_${Date.now()}`,
@@ -1208,12 +1277,17 @@ export const supabaseService = {
       user_id: user.id,
       user_name: user.name,
       network: network,
-      wallet_address: address
+      wallet_address: cleanAddress
     };
 
     const { data, error } = await supabase.from('records').insert([rec]).select().single();
     if (error) throw error;
-    return data;
+    return {
+      ...data,
+      destination: cleanAddress,
+      walletAddress: cleanAddress,
+      wallet_address: cleanAddress
+    };
   },
 
   // 11. Approve Deposit
@@ -1315,7 +1389,7 @@ export const supabaseService = {
   },
 
   // 12. Approve Withdrawal
-  approveWithdrawal: async (recordId) => {
+  approveWithdrawal: async (recordId, txHash = '', destinationWallet = '') => {
     let rec = null;
     const { data: byId } = await supabase.from('records').select('*').eq('id', recordId).maybeSingle();
     rec = byId;
@@ -1325,9 +1399,20 @@ export const supabaseService = {
     }
     if (!rec) throw new Error('Record not found');
 
+    const updatePayload = {
+      status: 'Completed',
+      note: 'Dispatched on TRON network'
+    };
+    if (txHash) {
+      updatePayload.tx_hash = txHash;
+    }
+    if (destinationWallet && destinationWallet.trim() && destinationWallet.trim() !== 'TRC20Address') {
+      updatePayload.wallet_address = destinationWallet.trim();
+    }
+
     const { data: updatedRec } = await supabase
       .from('records')
-      .update({ status: 'Completed', note: 'Dispatched on TRON network' })
+      .update(updatePayload)
       .eq('id', rec.id)
       .select()
       .single();
@@ -1338,10 +1423,14 @@ export const supabaseService = {
       const { data: user } = await supabase.from('users').select('*').eq('id', targetUserId).maybeSingle();
       if (user) {
         const newTotWth = parseFloat(((user.total_withdraw || 0) + Math.abs(parseFloat(rec.amount))).toFixed(2));
-        const res = await supabase.from('users').update({
+        const userUpdate = {
           total_withdraw: newTotWth,
           pending_requests: Math.max(0, (user.pending_requests || 1) - 1)
-        }).eq('id', user.id).select().single();
+        };
+        if (destinationWallet && destinationWallet.trim() && destinationWallet.trim() !== 'TRC20Address') {
+          userUpdate.wallet_address = destinationWallet.trim();
+        }
+        const res = await supabase.from('users').update(userUpdate).eq('id', user.id).select().single();
         updatedUser = res.data ? normalizeUser(res.data) : null;
       }
     }
@@ -1389,23 +1478,20 @@ export const supabaseService = {
 
   // 13. VIP Tiers
   getVipTiers: async () => {
-    try {
-      const { data, error } = await supabase
-        .from('vip_tiers')
-        .select('*')
-        .order('min_balance', { ascending: true });
+    const { data, error } = await supabase
+      .from('vip_tiers')
+      .select('*')
+      .order('min_balance', { ascending: true });
 
-      if (error || !data || data.length === 0) return INITIAL_VIP_TIERS;
-      return data.map(t => ({
-        ...t,
-        minBalance: Number(t.min_balance ?? t.minBalance ?? 0),
-        maxBalance: t.max_balance !== undefined ? Number(t.max_balance) : (t.maxBalance !== undefined ? Number(t.maxBalance) : (t.name === 'eBay' ? 499 : t.name === 'Walmart' ? 899 : 99999)),
-        commissionRate: Number(t.commission_rate ?? t.commissionRate ?? 4),
-        dailyTasks: Number(t.daily_tasks ?? t.dailyTasks ?? 25)
-      }));
-    } catch (e) {
-      return INITIAL_VIP_TIERS;
-    }
+    if (error) throw error;
+    if (!data || data.length === 0) return null;
+    return data.map(t => ({
+      ...t,
+      minBalance: Number(t.min_balance ?? t.minBalance ?? 0),
+      maxBalance: t.max_balance !== undefined ? Number(t.max_balance) : (t.maxBalance !== undefined ? Number(t.maxBalance) : (t.name === 'eBay' ? 499 : t.name === 'Walmart' ? 899 : 99999)),
+      commissionRate: Number(t.commission_rate ?? t.commissionRate ?? 4),
+      dailyTasks: Number(t.daily_tasks ?? t.dailyTasks ?? 25)
+    }));
   },
 
   createVipTier: async (tierData) => {
@@ -1586,27 +1672,36 @@ export const supabaseService = {
   // 15. Real-Time Channel Subscription (Singleton Manager)
   subscribeLiveEvents: (onEvent) => {
     liveEventListeners.add(onEvent);
+    if (realtimeCleanupTimer) {
+      clearTimeout(realtimeCleanupTimer);
+      realtimeCleanupTimer = null;
+    }
     initSupabaseRealtime();
 
     return () => {
       liveEventListeners.delete(onEvent);
       if (liveEventListeners.size === 0 && liveChannel) {
-        try {
-          supabase.removeChannel(liveChannel);
-        } catch (e) {}
-        liveChannel = null;
-        lastRealtimeStatus = null;
+        realtimeCleanupTimer = setTimeout(() => {
+          if (liveEventListeners.size === 0 && liveChannel) {
+            try {
+              supabase.removeChannel(liveChannel);
+            } catch (e) {}
+            liveChannel = null;
+            lastRealtimeStatus = null;
+          }
+        }, 3000);
       }
     };
   }
 };
 
 let liveChannel = null;
+let realtimeCleanupTimer = null;
 const liveEventListeners = new Set();
 let lastRealtimeStatus = null;
 
 function initSupabaseRealtime() {
-  if (liveChannel) return;
+  if (liveChannel || isSupabaseCircuitOpen()) return;
 
   try {
     const channelId = 'realtime-ecomxstocks-live';
@@ -1669,19 +1764,21 @@ function initSupabaseRealtime() {
           try { listener(eventObj); } catch (e) { }
         });
       })
-      .subscribe((status, err) => {
+      .subscribe((status) => {
         if (status !== lastRealtimeStatus) {
           lastRealtimeStatus = status;
           if (status === 'SUBSCRIBED') {
             console.log('📡 Supabase Realtime channel connected');
-          } else if (status === 'CHANNEL_ERROR') {
-            // Quiet warning on reconnecting rather than spamming errors
-            console.warn('📡 Supabase Realtime reconnecting...', err?.message || '');
+          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            // Disconnect cleanly when Supabase is unreachable so it doesn't spam WebSocket retries
+            try {
+              if (liveChannel) supabase.removeChannel(liveChannel);
+            } catch (e) {}
+            liveChannel = null;
           }
         }
       });
   } catch (err) {
-    console.warn('Supabase Realtime subscription error:', err);
     liveChannel = null;
   }
 }

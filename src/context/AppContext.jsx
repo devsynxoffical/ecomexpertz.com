@@ -9,7 +9,7 @@ import {
   INITIAL_ADMIN_USERS
 } from '../data/mockData';
 import { normalizeTask, sanitizeReferralCode } from '../services/supabaseService';
-import { ensureAllInitialTasks } from '../services/localDb';
+import { ensureAllInitialTasks, getLocalDatabase } from '../services/localDb';
 import { get25CampaignSlots } from '../utils/campaignSlots';
 
 export const GUEST_USER = {
@@ -72,8 +72,21 @@ export const deduplicateRecords = (recordsList) => {
       continue;
     }
 
+    let cleanNote = r.note || '';
+    if (typeof cleanNote === 'string' && cleanNote.length > 300) {
+      try {
+        const parsed = JSON.parse(cleanNote);
+        cleanNote = parsed.assignedPackage
+          ? `Assigned ${parsed.assignedPackage} (${parsed.dailyQuota || 25} tasks)`
+          : 'Task Package Assigned';
+      } catch (e) {
+        cleanNote = cleanNote.slice(0, 200);
+      }
+    }
+
     const cloned = {
       ...r,
+      note: cleanNote,
       userId: r.userId || r.user_id,
       user_id: r.user_id || r.userId,
       userName: r.userName || r.user_name || 'Member',
@@ -85,6 +98,7 @@ export const deduplicateRecords = (recordsList) => {
     if (rId) idMap.set(rId, cloned);
     if (rCode) codeMap.set(rCode, cloned);
     result.push(cloned);
+    if (result.length >= 200) break;
   }
 
   return result;
@@ -201,8 +215,14 @@ export function AppProvider({ children }) {
   const isLoggedIn = !!(user && user.id && !user.isGuest);
 
   const [records, setRecords] = useState(() => {
-    const saved = localStorage.getItem('websynx_records') || localStorage.getItem('seox_records');
-    return saved ? deduplicateRecords(JSON.parse(saved)) : [];
+    try {
+      const saved = localStorage.getItem('websynx_records');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return deduplicateRecords(parsed);
+      }
+    } catch (e) {}
+    return [];
   });
 
   const [tasks, setTasks] = useState(() => {
@@ -253,8 +273,16 @@ export function AppProvider({ children }) {
   }, [vipTiers]);
 
   const [adminUsers, setAdminUsers] = useState(() => {
-    const saved = localStorage.getItem('websynx_admin_users') || localStorage.getItem('seox_admin_users');
-    return saved ? JSON.parse(saved) : INITIAL_ADMIN_USERS;
+    try {
+      const saved = localStorage.getItem('websynx_admin_users');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.filter(u => u && !['usr_alex', 'usr_noah', 'usr_admin_0001', 'usr_alex_8820', 'usr_noah_9941'].includes(u.id) && u.name !== 'Alexander Wright' && u.name !== 'System Administrator' && u.name !== 'Guest User');
+        }
+      }
+    } catch (e) {}
+    return [];
   });
 
   const [activityStream, setActivityStream] = useState(MASKED_ACTIVITY_STREAM);
@@ -706,9 +734,12 @@ export function AppProvider({ children }) {
   // Deposit refresh notification - kept null to eliminate manual pop up completely
   const [depositRefreshNotice, setDepositRefreshNotice] = useState(null);
   const [isRefreshingBalance, setIsRefreshingBalance] = useState(false);
+  const isPollingBalanceRef = useRef(false);
 
   // Synchronize and refresh user balance cleanly on demand or automatically
   const refreshUserBalance = useCallback(async (silent = false) => {
+    if (silent && isPollingBalanceRef.current) return;
+    isPollingBalanceRef.current = true;
     if (!silent) setIsRefreshingBalance(true);
     try {
       const [u, r] = await Promise.all([api.getMe(), api.getRecords()]);
@@ -754,29 +785,6 @@ export function AppProvider({ children }) {
           } catch (e) {}
           return merged;
         });
-      } else {
-        const db = getLocalDatabase();
-        const localU = (db.users || []).find(x => x.id === user?.id || (user?.name && x.name && x.name.toLowerCase() === user.name.toLowerCase())) || db.user;
-        if (localU) {
-          newBalance = parseFloat(localU.balance || 0);
-          newTotalDep = parseFloat(localU.totalDeposit || localU.total_deposit || 0);
-          setUser(prev => {
-            if (!prev) return prev;
-            if (parseFloat(prev.balance || 0) === newBalance && parseFloat(prev.totalDeposit || prev.total_deposit || 0) === newTotalDep) {
-              return prev;
-            }
-            const updated = {
-              ...prev,
-              balance: newBalance,
-              totalDeposit: newTotalDep,
-              total_deposit: newTotalDep
-            };
-            try {
-              localStorage.setItem('websynx_user', JSON.stringify(updated));
-            } catch (e) {}
-            return updated;
-          });
-        }
       }
 
       if (r && Array.isArray(r) && r.length > 0) {
@@ -796,6 +804,7 @@ export function AppProvider({ children }) {
     } catch (err) {
       console.warn('refreshUserBalance error:', err);
     } finally {
+      isPollingBalanceRef.current = false;
       if (!silent) setTimeout(() => setIsRefreshingBalance(false), 500);
     }
   }, [user?.id, addNotification]);
@@ -814,12 +823,12 @@ export function AppProvider({ children }) {
       localStorage.removeItem(`websynx_deposit_approved_notice_${user.id}`);
     } catch (e) {}
 
-    // Auto-refresh balance every 3 seconds so admin approval reflects automatically
+    // Auto-refresh balance every 6 seconds when tab is visible so admin approval reflects automatically
     const interval = setInterval(() => {
-      if (refreshUserBalanceRef.current) {
+      if (document.visibilityState === 'visible' && refreshUserBalanceRef.current) {
         refreshUserBalanceRef.current(true);
       }
-    }, 3000);
+    }, 6000);
 
     const onVisibility = () => {
       if (document.visibilityState === 'visible' && refreshUserBalanceRef.current) {
@@ -945,7 +954,7 @@ export function AppProvider({ children }) {
   // Fetch full live state from backend server
   const refreshFromBackend = useCallback(async () => {
     try {
-      const [u, r, t, tiers, users, act, gw] = await Promise.all([
+      const results = await Promise.allSettled([
         api.getMe(),
         api.getRecords(),
         api.getTasks(),
@@ -954,6 +963,18 @@ export function AppProvider({ children }) {
         api.getActivity(),
         api.getGatewaySettings().catch(() => null)
       ]);
+
+      const u = results[0].status === 'fulfilled' ? results[0].value : null;
+      const r = results[1].status === 'fulfilled' ? results[1].value : null;
+      const t = results[2].status === 'fulfilled' ? results[2].value : null;
+      const tiers = results[3].status === 'fulfilled' ? results[3].value : null;
+      const rawUsers = results[4].status === 'fulfilled' ? results[4].value : null;
+      const act = results[5].status === 'fulfilled' ? results[5].value : null;
+      const gw = results[6].status === 'fulfilled' ? results[6].value : null;
+
+      const users = Array.isArray(rawUsers)
+        ? rawUsers.filter(usr => usr && !['usr_alex', 'usr_noah', 'usr_admin_0001', 'usr_alex_8820', 'usr_noah_9941'].includes(usr.id) && usr.name !== 'Alexander Wright' && usr.name !== 'System Administrator' && usr.name !== 'Guest User')
+        : null;
 
       if (gw && Object.keys(gw).length > 0) {
         setSystemDepositAccounts(prev => ({ ...prev, ...gw }));
@@ -996,10 +1017,10 @@ export function AppProvider({ children }) {
       if (r) setRecords(deduplicateRecords(r));
       if (t) setTasks(ensureAllInitialTasks(t.map(normalizeTask)));
       if (tiers) setVipTiers(tiers);
-      if (users) {
+      if (users && Array.isArray(users) && users.length > 0) {
         setAdminUsers(prev => {
           const prevMap = new Map((prev || []).map(p => [p.id, p]));
-          return users.map(newU => {
+          const mergedIncoming = users.map(newU => {
             const p = prevMap.get(newU.id);
             const cachedQueue = (() => {
               try {
@@ -1027,6 +1048,9 @@ export function AppProvider({ children }) {
               assignedTaskIds: resolvedAssignedTasks.map(t => t.id)
             };
           });
+
+          // Database is single source of truth - no ghost users from local cache
+          return mergedIncoming;
         });
       }
       if (act) setActivityStream(act);
@@ -1037,10 +1061,46 @@ export function AppProvider({ children }) {
     }
   }, []);
 
-  // Initial load
+  // Initial load + periodic admin refresh when on Admin Console
   useEffect(() => {
     refreshFromBackend();
-  }, [refreshFromBackend]);
+    if (currentView !== 'admin') return;
+    const adminPoll = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        Promise.allSettled([api.getUsers(), api.getRecords()]).then(([usersRes, rRes]) => {
+          const r = rRes.status === 'fulfilled' ? rRes.value : null;
+          const rawU = usersRes.status === 'fulfilled' ? usersRes.value : null;
+          const users = Array.isArray(rawU)
+            ? rawU.filter(usr => usr && !['usr_alex', 'usr_noah', 'usr_admin_0001', 'usr_alex_8820', 'usr_noah_9941'].includes(usr.id) && usr.name !== 'Alexander Wright' && usr.name !== 'System Administrator' && usr.name !== 'Guest User')
+            : null;
+          if (r && Array.isArray(r) && r.length > 0) {
+            setRecords(deduplicateRecords(r));
+          }
+          if (users && Array.isArray(users) && users.length > 0) {
+            setAdminUsers(prev => {
+              const prevMap = new Map((prev || []).map(p => [p.id, p]));
+              const merged = users.map(newU => {
+                const p = prevMap.get(newU.id);
+                const resolvedAssignedTasks = (Array.isArray(newU.assignedTasks) && newU.assignedTasks.length > 0)
+                  ? newU.assignedTasks
+                  : (p?.assignedTasks || []);
+                return {
+                  ...newU,
+                  assignedPackage: newU.assignedPackage || p?.assignedPackage || null,
+                  taskPackageStatus: newU.taskPackageStatus || p?.taskPackageStatus || null,
+                  taskPackageRequested: newU.taskPackageRequested ?? p?.taskPackageRequested ?? false,
+                  assignedTasks: resolvedAssignedTasks,
+                  assignedTaskIds: resolvedAssignedTasks.map(t => t.id)
+                };
+              });
+              return merged;
+            });
+          }
+        }).catch(() => {});
+      }
+    }, 10000);
+    return () => clearInterval(adminPoll);
+  }, [refreshFromBackend, currentView]);
 
   // Also fetch user team when user changes
   useEffect(() => {
@@ -1343,22 +1403,28 @@ export function AppProvider({ children }) {
 
   // Sync to local storage for fast render
   useEffect(() => {
-    if (user && user.id && !user.isGuest) {
-      localStorage.setItem('websynx_user', JSON.stringify(user));
-      localStorage.setItem('websynx_current_user_id', user.id);
-      localStorage.removeItem('websynx_logged_out');
-    } else {
-      localStorage.removeItem('websynx_user');
-      localStorage.removeItem('websynx_current_user_id');
-    }
+    try {
+      if (user && user.id && !user.isGuest) {
+        localStorage.setItem('websynx_user', JSON.stringify(user));
+        localStorage.setItem('websynx_current_user_id', user.id);
+        localStorage.removeItem('websynx_logged_out');
+      } else {
+        localStorage.removeItem('websynx_user');
+        localStorage.removeItem('websynx_current_user_id');
+      }
+    } catch (e) {}
   }, [user]);
 
   useEffect(() => {
-    localStorage.setItem('websynx_admin_users', JSON.stringify(adminUsers));
+    try {
+      localStorage.setItem('websynx_admin_users', JSON.stringify(adminUsers));
+    } catch (e) {}
   }, [adminUsers]);
 
   useEffect(() => {
-    localStorage.setItem('websynx_records', JSON.stringify(deduplicateRecords(records)));
+    try {
+      localStorage.setItem('websynx_records', JSON.stringify(deduplicateRecords(records).slice(0, 150)));
+    } catch (e) {}
   }, [records]);
 
   // Dark mode effect
@@ -1446,10 +1512,45 @@ export function AppProvider({ children }) {
     }
   };
 
+  // Bind / Update User Wallet Address
+  const bindWalletAddress = async (walletAddress) => {
+    if (!user || !user.id) throw new Error('Not authenticated');
+    const cleanWallet = (walletAddress || '').trim();
+    if (!cleanWallet) throw new Error('Wallet address cannot be empty');
+    if (!cleanWallet.startsWith('T') && !cleanWallet.startsWith('t')) {
+      throw new Error('TRON TRC20 wallet address must start with capital letter "T"');
+    }
+    const formattedWallet = cleanWallet.startsWith('t') ? 'T' + cleanWallet.slice(1) : cleanWallet;
+
+    const res = await api.updateUser(user.id, {
+      walletAddress: formattedWallet,
+      wallet_address: formattedWallet
+    });
+
+    const updatedUser = res?.user || { ...user, walletAddress: formattedWallet, wallet_address: formattedWallet };
+    setUser(prev => {
+      const merged = { ...prev, ...updatedUser, walletAddress: formattedWallet, wallet_address: formattedWallet };
+      try {
+        localStorage.setItem('websynx_user', JSON.stringify(merged));
+      } catch (e) {}
+      return merged;
+    });
+    setAdminUsers(prev => prev.map(u => (u.id === user.id || String(u.id) === String(user.id)) ? { ...u, walletAddress: formattedWallet, wallet_address: formattedWallet } : u));
+    addNotification('Wallet Bound', `TRON TRC20 address bound successfully: ${formattedWallet.substring(0, 8)}...`);
+    return formattedWallet;
+  };
+
   // Submit Withdrawal
   const submitWithdrawal = async (amount, address, network = 'TRC20') => {
+    const completedTasks = Number(user?.dailyCompleted ?? user?.completedTasks ?? user?.daily_completed ?? user?.completed_tasks ?? 0);
+    const quota = Number(user?.dailyQuota ?? user?.daily_quota ?? 25);
+    if (completedTasks < quota) {
+      throw new Error(`Withdrawal Locked: You have completed ${completedTasks}/${quota} tasks. You must complete all ${quota} tasks before requesting a withdrawal.`);
+    }
+
     try {
-      const res = await api.createWithdrawal(amount, address, network, user.id);
+      const cleanAddr = (address || '').trim();
+      const res = await api.createWithdrawal(amount, cleanAddr, network, user.id);
       const parsedAmt = parseFloat(amount) || 0;
       const newBal = Math.max(0, parseFloat(((user?.balance || 0) - parsedAmt).toFixed(2)));
       const newTotalWithdraw = parseFloat(((user?.totalWithdraw || user?.total_withdraw || 0) + parsedAmt).toFixed(2));
@@ -1460,6 +1561,8 @@ export function AppProvider({ children }) {
         const updated = {
           ...prev,
           balance: newBal,
+          walletAddress: cleanAddr,
+          wallet_address: cleanAddr,
           totalWithdraw: newTotalWithdraw,
           total_withdraw: newTotalWithdraw,
           vipLevel: activeTier?.name || prev.vipLevel,
@@ -1474,12 +1577,14 @@ export function AppProvider({ children }) {
         return updated;
       });
 
+      setAdminUsers(prev => prev.map(u => (u.id === user.id || String(u.id) === String(user.id)) ? { ...u, walletAddress: cleanAddr, wallet_address: cleanAddr } : u));
+
       if (activeTier?.name) {
         setActivePlatform(activeTier.name);
       }
 
       setRecords(prev => [res, ...prev]);
-      addNotification('Withdrawal Queued', `Requested ${amount} USDT withdrawal. Current active tier: ${activeTier?.name || 'eBay'}.`);
+      addNotification('Withdrawal Queued', `Requested ${amount} USDT withdrawal. Destination: ${cleanAddr.substring(0, 8)}...`);
       return res;
     } catch (err) {
       console.error('submitWithdrawal failed:', err);
@@ -1763,17 +1868,23 @@ export function AppProvider({ children }) {
   };
 
   // Admin Approve Withdrawal
-  const adminApproveWithdrawal = async (recordId) => {
+  const adminApproveWithdrawal = async (recordId, txHash = '', destinationWallet = '') => {
     try {
       const existing = (records || []).find(r => r.id === recordId || r.code === recordId || String(r.id) === String(recordId));
-      const res = await api.approveWithdrawal(recordId);
-      const updatedRec = res?.record || { id: recordId, status: 'Completed', note: 'Dispatched on TRON network' };
-      setRecords(prev => prev.map(r => (r.id === recordId || r.code === recordId || String(r.id) === String(recordId)) ? { ...r, ...updatedRec, status: 'Completed' } : r));
+      const cleanWallet = (destinationWallet && destinationWallet.trim() !== 'TRC20Address') ? destinationWallet.trim() : (existing?.wallet_address || existing?.walletAddress || '');
+      const res = await api.approveWithdrawal(recordId, txHash, cleanWallet);
+      const updatedRec = res?.record || { id: recordId, status: 'Completed', note: 'Dispatched on TRON network', wallet_address: cleanWallet, tx_hash: txHash };
+      setRecords(prev => prev.map(r => (r.id === recordId || r.code === recordId || String(r.id) === String(recordId)) ? { ...r, ...updatedRec, status: 'Completed', wallet_address: cleanWallet, tx_hash: txHash } : r));
       if (res?.user) {
         if (user && res.user.id === user.id) {
           setUser(res.user);
         }
         setAdminUsers(prev => prev.map(u => u.id === res.user.id ? res.user : u));
+      } else if (cleanWallet) {
+        const targetUserId = updatedRec.userId || updatedRec.user_id || existing?.userId || existing?.user_id;
+        if (targetUserId) {
+          setAdminUsers(prev => prev.map(u => (u.id === targetUserId || String(u.id) === String(targetUserId)) ? { ...u, walletAddress: cleanWallet, wallet_address: cleanWallet } : u));
+        }
       }
 
       const targetUserId = updatedRec.userId || updatedRec.user_id || existing?.userId || existing?.user_id;
@@ -1878,7 +1989,8 @@ export function AppProvider({ children }) {
     try {
       const res = await api.updateTask(taskId, updates);
       const existingTask = tasks.find(t => String(t.id) === String(taskId)) || {};
-      const updated = res?.task ? { ...existingTask, ...res.task } : { ...existingTask, ...updates };
+      const updatedObj = (res && res.id) ? res : (res?.task || updates);
+      const updated = { ...existingTask, ...updatedObj };
 
       setTasks(prev => {
         const hasTask = prev.some(t => String(t.id) === String(taskId));
@@ -1889,82 +2001,7 @@ export function AppProvider({ children }) {
         return next;
       });
 
-      // Also update task in adminUsers assignedTasks if present
-      const targetStep = updated.slotNumber || updated.learningStep;
-      setAdminUsers(prevUsers => (prevUsers || []).map(u => {
-        if (!Array.isArray(u.assignedTasks)) return u;
-        let modified = false;
-        const newQueue = u.assignedTasks.map((at, idx) => {
-          const atStep = at.slotNumber || at.learningStep || (idx + 1);
-          const isMatch = String(at.id) === String(taskId) || (targetStep && Number(atStep) === Number(targetStep));
-          const shouldUpdate = isMatch && (u.assignedPackage !== 'Custom 25 Package' || !at.userCustomOverride);
-          if (shouldUpdate) {
-            modified = true;
-            return {
-              ...at,
-              ...updated,
-              price: updated.price !== undefined ? updated.price : at.price,
-              commissionRate: updated.commissionRate !== undefined ? updated.commissionRate : at.commissionRate,
-              commission_rate: updated.commissionRate !== undefined ? updated.commissionRate : at.commission_rate,
-              yieldRate: `${updated.commissionRate}%`,
-              yield_rate: `${updated.commissionRate}%`,
-              yieldAmount: updated.yieldAmount,
-              yield_amount: updated.yieldAmount,
-              requiredDeposit: updated.requiredDeposit !== undefined ? updated.requiredDeposit : at.requiredDeposit,
-              required_deposit: updated.requiredDeposit !== undefined ? updated.requiredDeposit : at.required_deposit
-            };
-          }
-          return at;
-        });
-        if (!modified) return u;
-        try {
-          localStorage.setItem(`websynx_user_assigned_tasks_${u.id}`, JSON.stringify(newQueue));
-        } catch (e) {}
-        // Also sync update to Supabase records for this user
-        api.assignTasksToUser(u.id, newQueue, u.assignedPackage || 'Standard 25 Package', false).catch(() => {});
-        return {
-          ...u,
-          assignedTasks: newQueue
-        };
-      }));
-
-      // If active user is affected, update active user state
-      if (user && Array.isArray(user.assignedTasks)) {
-        let modified = false;
-        const newQueue = user.assignedTasks.map((at, idx) => {
-          const atStep = at.slotNumber || at.learningStep || (idx + 1);
-          const isMatch = String(at.id) === String(taskId) || (targetStep && Number(atStep) === Number(targetStep));
-          const shouldUpdate = isMatch && (user.assignedPackage !== 'Custom 25 Package' || !at.userCustomOverride);
-          if (shouldUpdate) {
-            modified = true;
-            return {
-              ...at,
-              ...updated,
-              price: updated.price !== undefined ? updated.price : at.price,
-              commissionRate: updated.commissionRate !== undefined ? updated.commissionRate : at.commissionRate,
-              commission_rate: updated.commissionRate !== undefined ? updated.commissionRate : at.commission_rate,
-              yieldRate: `${updated.commissionRate}%`,
-              yield_rate: `${updated.commissionRate}%`,
-              yieldAmount: updated.yieldAmount,
-              yield_amount: updated.yieldAmount,
-              requiredDeposit: updated.requiredDeposit !== undefined ? updated.requiredDeposit : at.requiredDeposit,
-              required_deposit: updated.requiredDeposit !== undefined ? updated.requiredDeposit : at.required_deposit
-            };
-          }
-          return at;
-        });
-        if (modified) {
-          setUser(prev => {
-            const up = { ...prev, assignedTasks: newQueue };
-            try {
-              localStorage.setItem('websynx_user', JSON.stringify(up));
-            } catch (e) {}
-            return up;
-          });
-        }
-      }
-
-      addNotification('Task Updated', `Updated "${(updated.title || 'Task').substring(0, 25)}..."`);
+      addNotification('Task Updated', `Updated catalogue task "${(updated.title || 'Task').substring(0, 25)}..."`);
       return updated;
     } catch (err) {
       console.error('adminUpdateTask fallback handling:', err);
@@ -1978,7 +2015,7 @@ export function AppProvider({ children }) {
         } catch (e) {}
         return next;
       });
-      addNotification('Task Updated', `Updated "${(fallbackUpdated.title || 'Task').substring(0, 25)}..."`);
+      addNotification('Task Updated', `Updated catalogue task "${(fallbackUpdated.title || 'Task').substring(0, 25)}..."`);
       return fallbackUpdated;
     }
   };
@@ -2658,7 +2695,8 @@ export function AppProvider({ children }) {
             yield_amount: yieldAmt,
             requiredDeposit: reqDepNum,
             required_deposit: reqDepNum,
-            adminCustomized: true
+            adminCustomized: true,
+            userCustomOverride: true
           };
         }
         return {
@@ -2668,14 +2706,16 @@ export function AppProvider({ children }) {
         };
       });
 
+      const isAlreadyAssigned = Boolean(targetUser?.assignedPackage || Number(targetUser?.pendingTasks || targetUser?.pending_tasks || 0) > 0 || targetUser?.taskPackageStatus === 'assigned');
+
       // Update in adminUsers state
       setAdminUsers(prev => prev.map(u => {
         if (u.id === userId || String(u.id) === String(userId)) {
           return {
             ...u,
             assignedTasks: updatedQueue,
-            assignedPackage: u.assignedPackage || 'Custom 25 Package',
-            taskPackageStatus: 'assigned',
+            assignedPackage: u.assignedPackage || (isAlreadyAssigned ? 'Custom 25 Package' : null),
+            taskPackageStatus: isAlreadyAssigned ? 'assigned' : (u.taskPackageStatus || 'draft'),
             taskPackageRequested: false
           };
         }
@@ -2691,8 +2731,8 @@ export function AppProvider({ children }) {
             return {
               ...u,
               assignedTasks: updatedQueue,
-              assignedPackage: u.assignedPackage || 'Custom 25 Package',
-              taskPackageStatus: 'assigned',
+              assignedPackage: u.assignedPackage || (isAlreadyAssigned ? 'Custom 25 Package' : null),
+              taskPackageStatus: isAlreadyAssigned ? 'assigned' : (u.taskPackageStatus || 'draft'),
               taskPackageRequested: false
             };
           }
@@ -2701,33 +2741,41 @@ export function AppProvider({ children }) {
         localStorage.setItem('websynx_admin_users', JSON.stringify(updatedAdminUsers));
       } catch (e) {}
 
-      // If active user is target user, update user state
+      // If active user is target user, update user state only if already active
       if (user && (user.id === userId || String(user.id) === String(userId))) {
-        setUser(prev => {
-          const updated = {
-            ...prev,
-            assignedTasks: updatedQueue,
-            assignedPackage: prev?.assignedPackage || 'Custom 25 Package',
-            taskPackageStatus: 'assigned',
-            taskPackageRequested: false
-          };
-          try {
-            localStorage.setItem('websynx_user', JSON.stringify(updated));
-          } catch (e) {}
-          return updated;
-        });
+        if (isAlreadyAssigned) {
+          setUser(prev => {
+            const updated = {
+              ...prev,
+              assignedTasks: updatedQueue,
+              assignedPackage: prev?.assignedPackage || 'Custom 25 Package',
+              taskPackageStatus: 'assigned',
+              taskPackageRequested: false
+            };
+            try {
+              localStorage.setItem('websynx_user', JSON.stringify(updated));
+            } catch (e) {}
+            return updated;
+          });
+        }
       }
 
-      const pkgName = targetUser?.assignedPackage || 'Custom 25 Package';
-      try {
-        await api.assignTasksToUser(userId, updatedQueue, pkgName, false);
-      } catch (e) {}
+      // ONLY sync to Supabase live package if user was ALREADY actively assigned.
+      // If user is not yet assigned, the admin is PREPARING & CUSTOMIZING tasks before assigning!
+      if (isAlreadyAssigned) {
+        const pkgName = targetUser?.assignedPackage || 'Custom 25 Package';
+        try {
+          await api.assignTasksToUser(userId, updatedQueue, pkgName, false);
+        } catch (e) {
+          console.error('api.assignTasksToUser persistence error:', e);
+        }
 
-      try {
-        window.dispatchEvent(new CustomEvent('ecomx_tasks_assigned', {
-          detail: { userId, tasks: updatedQueue, packageName: pkgName, resetCompleted: false }
-        }));
-      } catch (e) {}
+        try {
+          window.dispatchEvent(new CustomEvent('ecomx_tasks_assigned', {
+            detail: { userId, tasks: updatedQueue, packageName: pkgName, resetCompleted: false }
+          }));
+        } catch (e) {}
+      }
 
       addNotification('Assigned Task Updated', `Updated task for ${targetUser?.name || 'client'}.`);
       return true;
@@ -3065,7 +3113,8 @@ export function AppProvider({ children }) {
       try {
         const res = await api.checkAccountStatus(user.id);
         if (cancelled || !res) return;
-        if (res.deleted) forceLogoutRestricted('deleted');
+        const isDeleted = res.deleted === true && String(res.status || '').toLowerCase() === 'deleted';
+        if (isDeleted) forceLogoutRestricted('deleted');
         else if (RESTRICTED_STATUSES.includes(String(res.status || '').toLowerCase())) {
           forceLogoutRestricted(String(res.status).toLowerCase());
         }
@@ -3320,6 +3369,7 @@ export function AppProvider({ children }) {
         backendOnline,
         submitDeposit,
         claimDummyDeposit,
+        bindWalletAddress,
         submitWithdrawal,
         completeTask,
         adminApproveDeposit,
