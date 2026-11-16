@@ -535,7 +535,7 @@ export default function PlatformTasksView({ platform = 'eBay', onBack }) {
                         </p>
                       </div>
                       <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300">
-                        Step {completedCount + 1} / {totalQuota}
+                        Task {completedCount + 1} / {totalQuota}
                       </span>
                     </div>
 

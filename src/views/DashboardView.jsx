@@ -41,7 +41,7 @@ import {
 } from 'lucide-react';
 import { openProductUrl, getProductUrl, getProductImage } from '../utils/productUrl';
 import { sanitizeReferralCode } from '../services/supabaseService';
-import { get25CampaignSlots } from '../utils/campaignSlots';
+import { get25CampaignSlots, stripStepPrefix } from '../utils/campaignSlots';
 import {
   EbayLogo,
   WalmartLogo,
@@ -924,9 +924,6 @@ function TabHome() {
                   >
                     <ExternalLink size={12} />
                   </button>
-                  {task.isLearning && (
-                    <span className="card-learning-badge">🎓 Step #{task.learningStep || 1}</span>
-                  )}
                   {isRestricted && (
                     <div className="card-lock-overlay">
                       <Lock size={14} />
@@ -946,7 +943,7 @@ function TabHome() {
                     <ExternalLink size={10} />
                   </button>
                 </div>
-                <h5 className="dash-task-title cursor-pointer" onClick={(e) => openProductUrl(task, e)} title={`Open on ${task.platform}`}>{task.title}</h5>
+                <h5 className="dash-task-title cursor-pointer" onClick={(e) => openProductUrl(task, e)} title={`Open on ${task.platform}`}>{stripStepPrefix(task.title)}</h5>
                 <div className="dash-task-footer-row">
                   <div className="dash-task-price">${(Number(task.price) || 0).toFixed(2)}</div>
                   <span className="dash-task-profit">+${(((Number(task.price) || 0) * 4.0) / 100).toFixed(2)}</span>
@@ -999,9 +996,6 @@ function TabHome() {
                   >
                     <ExternalLink size={12} />
                   </button>
-                  {task.isLearning && (
-                    <span className="card-learning-badge">🎓 Step #{task.learningStep || 1}</span>
-                  )}
                   {isRestricted && (
                     <div className="card-lock-overlay">
                       <Lock size={14} />
@@ -1021,7 +1015,7 @@ function TabHome() {
                     <ExternalLink size={10} />
                   </button>
                 </div>
-                <h5 className="dash-task-title cursor-pointer" onClick={(e) => openProductUrl(task, e)} title={`Open on ${task.platform}`}>{task.title}</h5>
+                <h5 className="dash-task-title cursor-pointer" onClick={(e) => openProductUrl(task, e)} title={`Open on ${task.platform}`}>{stripStepPrefix(task.title)}</h5>
                 <div className="dash-task-footer-row">
                   <div className="dash-task-price">${(Number(task.price) || 0).toFixed(2)}</div>
                   <span className="dash-task-profit">+${(((Number(task.price) || 0) * 8.0) / 100).toFixed(2)}</span>
@@ -1074,9 +1068,6 @@ function TabHome() {
                   >
                     <ExternalLink size={12} />
                   </button>
-                  {task.isLearning && (
-                    <span className="card-learning-badge">🎓 Step #{task.learningStep || 1}</span>
-                  )}
                   {isRestricted && (
                     <div className="card-lock-overlay">
                       <Lock size={14} />
@@ -1096,7 +1087,7 @@ function TabHome() {
                     <ExternalLink size={10} />
                   </button>
                 </div>
-                <h5 className="dash-task-title cursor-pointer" onClick={(e) => openProductUrl(task, e)} title={`Open on ${task.platform}`}>{task.title}</h5>
+                <h5 className="dash-task-title cursor-pointer" onClick={(e) => openProductUrl(task, e)} title={`Open on ${task.platform}`}>{stripStepPrefix(task.title)}</h5>
                 <div className="dash-task-footer-row">
                   <div className="dash-task-price">${(Number(task.price) || 0).toFixed(2)}</div>
                   <span className="dash-task-profit">+${(((Number(task.price) || 0) * 12.0) / 100).toFixed(2)}</span>

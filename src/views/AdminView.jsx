@@ -75,8 +75,8 @@ import {
   ShopifyLogo,
   ShopeeLogo
 } from '../components/PlatformIcons';
-import { get25CampaignSlots } from '../utils/campaignSlots';
-export { get25CampaignSlots };
+import { get25CampaignSlots, stripStepPrefix } from '../utils/campaignSlots';
+export { get25CampaignSlots, stripStepPrefix };
 
 export default function AdminView() {
   const {
@@ -4693,8 +4693,8 @@ export default function AdminView() {
                                                 }}
                                               />
                                               <div className="max-w-[200px]">
-                                                <div className="font-medium text-slate-800 truncate" title={at.title}>
-                                                  {at.title}
+                                                <div className="font-medium text-slate-800 truncate" title={stripStepPrefix(at.title)}>
+                                                  {stripStepPrefix(at.title)}
                                                 </div>
                                                 {at.isLearning && (
                                                   <span className="text-[10px] text-amber-600 font-semibold">
@@ -5156,8 +5156,8 @@ export default function AdminView() {
                                           />
                                         </div>
                                         <div style={{ minWidth: 0, flex: 1 }}>
-                                          <div className="admin-task-meta-title" title={at.title}>
-                                            {at.title}
+                                          <div className="admin-task-meta-title" title={stripStepPrefix(at.title)}>
+                                            {stripStepPrefix(at.title)}
                                           </div>
                                           <div className="text-[11px] text-slate-400">
                                             ID: {at.id}
@@ -5429,8 +5429,8 @@ export default function AdminView() {
                                           <span className="task-thumb-step-badge">#{slot.slotNumber}</span>
                                         </div>
                                         <div style={{ minWidth: 0, flex: 1 }}>
-                                          <div className="admin-task-meta-title" title={slot.title}>
-                                            {slot.title}
+                                          <div className="admin-task-meta-title" title={stripStepPrefix(slot.title)}>
+                                            {stripStepPrefix(slot.title)}
                                           </div>
                                           <div className="admin-task-meta-sub flex items-center gap-2 flex-wrap">
                                             <span className="admin-task-meta-category">{slot.category || 'Campaign'}</span>
@@ -6329,8 +6329,8 @@ export default function AdminView() {
                                           e.currentTarget.src = 'https://images.unsplash.com/photo-1546868871-7041f2a55e12?w=600&auto=format&fit=crop&q=80';
                                         }}
                                       />
-                                      <span className="font-semibold text-slate-800 line-clamp-1 max-w-[240px]" title={slot.title}>
-                                        {slot.title}
+                                      <span className="font-semibold text-slate-800 line-clamp-1 max-w-[240px]" title={stripStepPrefix(slot.title)}>
+                                        {stripStepPrefix(slot.title)}
                                       </span>
                                     </div>
                                   </td>

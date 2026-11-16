@@ -86,7 +86,7 @@ export const INITIAL_TASKS = [
   // 25 LEARNING TASKS WITH PROGRESSIVE TESTING DEPOSIT RESTRICTIONS (Up to $300 deposit milestone)
   {
     id: 'task-101',
-    title: 'Step 1: Mini Desktop Air Purifier with HEPA Filter',
+    title: 'Mini Desktop Air Purifier with HEPA Filter',
     platform: 'eBay',
     category: 'Flash Deals',
     price: 49.99,
@@ -103,7 +103,7 @@ export const INITIAL_TASKS = [
   },
   {
     id: 'task-102',
-    title: 'Step 2: Magnetic Wireless Fast Charging Power Bank 10000mAh',
+    title: 'Magnetic Wireless Fast Charging Power Bank 10000mAh',
     platform: 'eBay',
     category: 'Flash Deals',
     price: 39.99,
@@ -120,7 +120,7 @@ export const INITIAL_TASKS = [
   },
   {
     id: 'task-103',
-    title: 'Step 3: Smart LED Desk Lamp with USB Charging Port',
+    title: 'Smart LED Desk Lamp with USB Charging Port',
     platform: 'eBay',
     category: 'Flash Deals',
     price: 29.99,
@@ -137,7 +137,7 @@ export const INITIAL_TASKS = [
   },
   {
     id: 'task-104',
-    title: 'Step 4: DIY Travel Cable Organizer Pouch Electronic Accessories Case',
+    title: 'DIY Travel Cable Organizer Pouch Electronic Accessories Case',
     platform: 'eBay',
     category: 'Flash Deals',
     price: 19.95,
@@ -154,7 +154,7 @@ export const INITIAL_TASKS = [
   },
   {
     id: 'task-105',
-    title: 'Step 5: Beats USB-C to USB-C Woven Fast Charging Cable 60W',
+    title: 'Beats USB-C to USB-C Woven Fast Charging Cable 60W',
     platform: 'eBay',
     category: 'Flash Deals',
     price: 15.99,
@@ -171,7 +171,7 @@ export const INITIAL_TASKS = [
   },
   {
     id: 'task-106',
-    title: 'Step 6: Anker Soundcore Portable Mini Bluetooth Speaker',
+    title: 'Anker Soundcore Portable Mini Bluetooth Speaker',
     platform: 'eBay',
     category: 'Flash Deals',
     price: 39.99,
@@ -188,7 +188,7 @@ export const INITIAL_TASKS = [
   },
   {
     id: 'task-107',
-    title: 'Step 7: Stainless Steel Thermal Insulated Travel Coffee Mug 500ml',
+    title: 'Stainless Steel Thermal Insulated Travel Coffee Mug 500ml',
     platform: 'eBay',
     category: 'Flash Deals',
     price: 24.50,
@@ -205,7 +205,7 @@ export const INITIAL_TASKS = [
   },
   {
     id: 'task-108',
-    title: 'Step 8: Ergonomic Memory Foam Lumbar Support Cushion',
+    title: 'Ergonomic Memory Foam Lumbar Support Cushion',
     platform: 'eBay',
     category: 'Flash Deals',
     price: 34.00,
@@ -222,7 +222,7 @@ export const INITIAL_TASKS = [
   },
   {
     id: 'task-109',
-    title: 'Step 9: HD 1080P Wide Angle Webcam with Noise Reduction Mic',
+    title: 'HD 1080P Wide Angle Webcam with Noise Reduction Mic',
     platform: 'eBay',
     category: 'Flash Deals',
     price: 45.00,
@@ -239,7 +239,7 @@ export const INITIAL_TASKS = [
   },
   {
     id: 'task-110',
-    title: 'Step 10: Automatic Induction Foam Soap Dispenser IPX5',
+    title: 'Automatic Induction Foam Soap Dispenser IPX5',
     platform: 'eBay',
     category: 'Flash Deals',
     price: 22.00,
@@ -256,7 +256,7 @@ export const INITIAL_TASKS = [
   },
   {
     id: 'task-111',
-    title: 'Step 11: Electric Ultrasonic Tartar Dental Scaler Oral Cleaner',
+    title: 'Electric Ultrasonic Tartar Dental Scaler Oral Cleaner',
     platform: 'eBay',
     category: 'Flash Deals',
     price: 38.00,
@@ -273,7 +273,7 @@ export const INITIAL_TASKS = [
   },
   {
     id: 'task-112',
-    title: 'Step 12: Dual Mode Wireless Silent Rechargeable Ergonomic Mouse',
+    title: 'Dual Mode Wireless Silent Rechargeable Ergonomic Mouse',
     platform: 'eBay',
     category: 'Flash Deals',
     price: 28.50,
@@ -290,7 +290,7 @@ export const INITIAL_TASKS = [
   },
   {
     id: 'task-113',
-    title: 'Step 13: 4K Ultra HD Action Sports Camera Waterproof 30M',
+    title: '4K Ultra HD Action Sports Camera Waterproof 30M',
     platform: 'eBay',
     category: 'Flash Deals',
     price: 68.00,
@@ -307,7 +307,7 @@ export const INITIAL_TASKS = [
   },
   {
     id: 'task-114',
-    title: 'Step 14: Portable Handheld Clothes Steamer Garment Iron',
+    title: 'Portable Handheld Clothes Steamer Garment Iron',
     platform: 'eBay',
     category: 'Flash Deals',
     price: 36.99,
@@ -324,7 +324,7 @@ export const INITIAL_TASKS = [
   },
   {
     id: 'task-115',
-    title: 'Step 15: Bluetooth Anti-Loss GPS Smart Key & Wallet Finder',
+    title: 'Bluetooth Anti-Loss GPS Smart Key & Wallet Finder',
     platform: 'eBay',
     category: 'Flash Deals',
     price: 18.00,
@@ -341,7 +341,7 @@ export const INITIAL_TASKS = [
   },
   {
     id: 'task-116',
-    title: 'Step 16: Multi-Function Vegetable Slicer & Mandoline Cutter',
+    title: 'Multi-Function Vegetable Slicer & Mandoline Cutter',
     platform: 'eBay',
     category: 'Flash Deals',
     price: 26.50,
@@ -358,7 +358,7 @@ export const INITIAL_TASKS = [
   },
   {
     id: 'task-117',
-    title: 'Step 17: Smart Body Fat Weight Scale with Bluetooth Sync App',
+    title: 'Smart Body Fat Weight Scale with Bluetooth Sync App',
     platform: 'eBay',
     category: 'Flash Deals',
     price: 32.00,
@@ -375,7 +375,7 @@ export const INITIAL_TASKS = [
   },
   {
     id: 'task-118',
-    title: 'Step 18: Foldable Aluminum Laptop Riser Stand for Desk',
+    title: 'Foldable Aluminum Laptop Riser Stand for Desk',
     platform: 'eBay',
     category: 'Flash Deals',
     price: 29.00,
@@ -392,7 +392,7 @@ export const INITIAL_TASKS = [
   },
   {
     id: 'task-119',
-    title: 'Step 19: Deep Tissue Massage Gun with 6 Interchangeable Heads',
+    title: 'Deep Tissue Massage Gun with 6 Interchangeable Heads',
     platform: 'eBay',
     category: 'Flash Deals',
     price: 75.00,
@@ -409,7 +409,7 @@ export const INITIAL_TASKS = [
   },
   {
     id: 'task-120',
-    title: 'Step 20: 3-in-1 Fast Wireless Charging Station for Phone & Watch',
+    title: '3-in-1 Fast Wireless Charging Station for Phone & Watch',
     platform: 'eBay',
     category: 'Flash Deals',
     price: 42.00,
@@ -426,7 +426,7 @@ export const INITIAL_TASKS = [
   },
   {
     id: 'task-121',
-    title: 'Step 21: Active Noise Cancelling Over-Ear Wireless Headphones',
+    title: 'Active Noise Cancelling Over-Ear Wireless Headphones',
     platform: 'eBay',
     category: 'Flash Deals',
     price: 89.00,
@@ -443,7 +443,7 @@ export const INITIAL_TASKS = [
   },
   {
     id: 'task-122',
-    title: 'Step 22: Smart Home WiFi Indoor Security Camera 2K 360°',
+    title: 'Smart Home WiFi Indoor Security Camera 2K 360°',
     platform: 'eBay',
     category: 'Flash Deals',
     price: 49.00,
@@ -460,7 +460,7 @@ export const INITIAL_TASKS = [
   },
   {
     id: 'task-123',
-    title: 'Step 23: Digital Air Fryer 5.5L Non-Stick Touch Screen',
+    title: 'Digital Air Fryer 5.5L Non-Stick Touch Screen',
     platform: 'eBay',
     category: 'Flash Deals',
     price: 95.00,
@@ -477,7 +477,7 @@ export const INITIAL_TASKS = [
   },
   {
     id: 'task-124',
-    title: 'Step 24: Cordless High Power Handheld Car & Home Vacuum Cleaner',
+    title: 'Cordless High Power Handheld Car & Home Vacuum Cleaner',
     platform: 'eBay',
     category: 'Flash Deals',
     price: 54.00,
@@ -494,7 +494,7 @@ export const INITIAL_TASKS = [
   },
   {
     id: 'task-125',
-    title: 'Step 25: 4K Smart Cinema Home Theater Mini Projector 5G WiFi',
+    title: '4K Smart Cinema Home Theater Mini Projector 5G WiFi',
     platform: 'eBay',
     category: 'Flash Deals',
     price: 180.00,

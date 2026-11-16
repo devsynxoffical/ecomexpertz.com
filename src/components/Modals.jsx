@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useApp } from '../context/AppContext';
-import { get25CampaignSlots } from '../utils/campaignSlots.js';
+import { get25CampaignSlots, stripStepPrefix } from '../utils/campaignSlots.js';
 import confetti from 'canvas-confetti';
 import {
   X,
@@ -937,8 +937,8 @@ function TaskExecutionModal({ task, onClose }) {
                   <div className="mallstocks-task-step-tag">
                     Task #{currentTaskNumber} of {queue.length || 25}
                   </div>
-                  <h4 className="mallstocks-product-title" title={effectiveTask.title}>
-                    {effectiveTask.title}
+                  <h4 className="mallstocks-product-title" title={stripStepPrefix(effectiveTask.title)}>
+                    {stripStepPrefix(effectiveTask.title)}
                   </h4>
                   <div className="mallstocks-pricing-chips">
                     <span className="price-chip">Order: ${(Number(effectiveTask.price) || 0).toFixed(2)} USDT</span>

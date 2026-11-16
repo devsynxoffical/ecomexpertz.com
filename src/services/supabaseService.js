@@ -141,6 +141,7 @@ export function applyTaskRecordsToUser(norm, taskRecords = []) {
             return {
               ...(normT || {}),
               ...t,
+              title: stripStepPrefix(t.title || normT?.title) || t.title || 'Product Campaign Task',
               slotNumber: slotNum,
               slot_number: slotNum,
               learningStep: slotNum,
@@ -225,6 +226,11 @@ export function applyTaskRecordsToUser(norm, taskRecords = []) {
   return norm;
 }
 
+export function stripStepPrefix(title) {
+  if (!title || typeof title !== 'string') return '';
+  return title.replace(/^Step\s*#?\d+\s*[:\-–—.]?\s*/i, '').trim();
+}
+
 export function normalizeTask(t) {
   if (!t) return null;
   const image = getProductImage(t);
@@ -261,13 +267,14 @@ export function normalizeTask(t) {
   }
 
   const slotNum = t.slotNumber || t.slot_number || learningStep || (isLearning ? (learningStep || 1) : null);
+  const cleanTitle = stripStepPrefix(t.title) || t.title;
 
   return {
     ...t,
     id: t.id,
     slotNumber: slotNum,
     slot_number: slotNum,
-    title: t.title,
+    title: cleanTitle,
     platform: t.platform || 'eBay',
     category: t.category || 'General',
     price: priceNum,

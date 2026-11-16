@@ -1,6 +1,14 @@
 import { INITIAL_TASKS } from '../data/mockData.js';
 
 /**
+ * Strips "Step 1:", "Step 2: ", "Step #3 - ", etc. from product titles.
+ */
+export function stripStepPrefix(title) {
+  if (!title || typeof title !== 'string') return '';
+  return title.replace(/^Step\s*#?\d+\s*[:\-–—.]?\s*/i, '').trim();
+}
+
+/**
  * Ensures exactly 25 sequential campaign slots (Slot #1 to Slot #25)
  * Aligns custom assigned user tasks or global catalogue tasks strictly by slot number.
  */
@@ -57,7 +65,7 @@ export const get25CampaignSlots = (tasksPool) => {
     if (!match) {
       match = {
         id: `task-${100 + i}`,
-        title: `Step ${i}: Campaign Promotion Task #${i}`,
+        title: `Campaign Promotion Task #${i}`,
         platform: i <= 10 ? 'eBay' : (i <= 20 ? 'Walmart' : 'Temu'),
         category: 'Flash Deals',
         price: 15 + i * 5,
@@ -76,9 +84,11 @@ export const get25CampaignSlots = (tasksPool) => {
     const commNum = parseFloat(match.commissionRate ?? match.commission_rate ?? 4) || 4;
     const reqDepNum = match.requiredDeposit !== undefined ? parseFloat(match.requiredDeposit) : (parseFloat(match.required_deposit) || 0);
     const yieldAmt = parseFloat(((priceNum * commNum) / 100).toFixed(2));
+    const cleanTitle = stripStepPrefix(match.title) || `Campaign Promotion Task #${i}`;
 
     slots.push({
       ...match,
+      title: cleanTitle,
       slotNumber: i,
       slot_number: i,
       learningStep: i,
