@@ -1971,6 +1971,56 @@ export function AppProvider({ children }) {
     }
   };
 
+  // Change User Password (verifies previous password)
+  const changePassword = async (oldPassword, newPassword, targetUserId = null) => {
+    const targetId = targetUserId || user?.id;
+    if (!targetId) throw new Error('No user is currently authenticated.');
+    const res = await api.changeUserPassword(targetId, oldPassword, newPassword);
+    if (res?.user) {
+      if (user && (user.id === targetId || String(user.id) === String(targetId))) {
+        setUser(res.user);
+        try { localStorage.setItem('websynx_user', JSON.stringify(res.user)); } catch (e) {}
+      }
+      setAdminUsers(prev => prev.map(u => (u.id === targetId || String(u.id) === String(targetId)) ? res.user : u));
+    }
+    addNotification('Password Changed', 'Your account password has been updated successfully.');
+    return res;
+  };
+
+  // Reset / Change Password from login screen (with previous password)
+  const resetPasswordWithPreviousPassword = async (identifier, oldPassword, newPassword) => {
+    const res = await api.changeUserPassword(identifier, oldPassword, newPassword);
+    if (res?.user) {
+      setAdminUsers(prev => prev.map(u => (u.id === res.user.id || String(u.id) === String(res.user.id)) ? res.user : u));
+    }
+    addNotification('Password Updated', 'Your password has been changed. Please sign in with your new password.');
+    return res;
+  };
+
+  // Reset Password from login screen via Security Code / Invite Code
+  const resetPasswordWithSecurityCode = async (identifier, inviteOrRefCode, newPassword) => {
+    const res = await api.resetUserPasswordByCode(identifier, inviteOrRefCode, newPassword);
+    if (res?.user) {
+      setAdminUsers(prev => prev.map(u => (u.id === res.user.id || String(u.id) === String(res.user.id)) ? res.user : u));
+    }
+    addNotification('Password Reset', 'Password reset successfully. Please sign in with your new password.');
+    return res;
+  };
+
+  // Admin Reset User Password
+  const adminResetUserPassword = async (userId, newPassword) => {
+    const res = await api.adminResetPassword(userId, newPassword);
+    if (res?.user) {
+      setAdminUsers(prev => prev.map(u => (u.id === userId || String(u.id) === String(userId)) ? res.user : u));
+      if (user && (user.id === userId || String(user.id) === String(userId))) {
+        setUser(res.user);
+        try { localStorage.setItem('websynx_user', JSON.stringify(res.user)); } catch (e) {}
+      }
+    }
+    addNotification('Password Reset', `Password for ${res?.user?.name || 'User'} has been reset successfully.`);
+    return res;
+  };
+
   // Admin Add Task
   const adminAddTask = async (taskData) => {
     try {
@@ -3395,6 +3445,10 @@ export function AppProvider({ children }) {
         registerAccount,
         loginAccount,
         logoutAccount,
+        changePassword,
+        resetPasswordWithPreviousPassword,
+        resetPasswordWithSecurityCode,
+        adminResetUserPassword,
         userTeam,
         setUserTeam,
         fetchUserTeam,

@@ -1897,7 +1897,8 @@ function TabMine() {
     addNotification,
     refreshUserBalance,
     isRefreshingBalance,
-    bindWalletAddress
+    bindWalletAddress,
+    changePassword
   } = useApp();
   const [copiedCode, setCopiedCode] = useState(false);
   const [activeSubMenu, setActiveSubMenu] = useState(null); // 'profile' | 'team' | 'wallet' | 'settings' | null
@@ -1905,6 +1906,15 @@ function TabMine() {
   const [walletInput, setWalletInput] = useState('');
   const [walletMsg, setWalletMsg] = useState({ text: '', type: '' });
   const [isSavingWallet, setIsSavingWallet] = useState(false);
+
+  // Change Password State
+  const [oldPasswordInput, setOldPasswordInput] = useState('');
+  const [newPasswordInput, setNewPasswordInput] = useState('');
+  const [confirmPasswordInput, setConfirmPasswordInput] = useState('');
+  const [showOldPass, setShowOldPass] = useState(false);
+  const [showNewPass, setShowNewPass] = useState(false);
+  const [isChangingPass, setIsChangingPass] = useState(false);
+  const [passMsg, setPassMsg] = useState({ text: '', type: '' });
 
   const isGuest = !user || !user.id || user.isGuest || user.name === 'Guest User';
   const ownRefCode = isGuest ? '' : sanitizeReferralCode(user?.referralCode || user?.referral_code || user?.code);
@@ -2278,9 +2288,136 @@ function TabMine() {
           <div className="mine-card-panel mt-4 animate-fade-in">
             <div className="panel-header">
               <h4>Security & Preferences</h4>
-              <button className="close-panel-btn" onClick={() => setActiveSubMenu(null)}>✕</button>
+              <button className="close-panel-btn" onClick={() => { setActiveSubMenu(null); setPassMsg({ text: '', type: '' }); }}>✕</button>
             </div>
-            <div className="settings-options mt-3">
+
+            {/* Change Password Section */}
+            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px', marginTop: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                <div style={{ width: '28px', height: '28px', borderRadius: '8px', background: '#e0e7ff', color: '#4338ca', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Lock size={15} />
+                </div>
+                <div>
+                  <strong style={{ fontSize: '13px', color: '#0f172a' }}>Change Account Password</strong>
+                  <p className="text-muted" style={{ fontSize: '11px', margin: 0 }}>Verify your previous password to set a new password</p>
+                </div>
+              </div>
+
+              {passMsg.text && (
+                <div className={`alert-box-${passMsg.type === 'error' ? 'warning' : 'success'} mt-2 mb-2`} style={{ padding: '8px 10px', borderRadius: '6px', fontSize: '11.5px' }}>
+                  <span>{passMsg.text}</span>
+                </div>
+              )}
+
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  setPassMsg({ text: '', type: '' });
+
+                  if (!oldPasswordInput.trim()) {
+                    setPassMsg({ text: 'Please enter your previous (current) password.', type: 'error' });
+                    return;
+                  }
+                  if (newPasswordInput.length < 6) {
+                    setPassMsg({ text: 'New password must be at least 6 characters long.', type: 'error' });
+                    return;
+                  }
+                  if (newPasswordInput !== confirmPasswordInput) {
+                    setPassMsg({ text: 'New passwords do not match. Please verify.', type: 'error' });
+                    return;
+                  }
+
+                  setIsChangingPass(true);
+                  try {
+                    await changePassword(oldPasswordInput.trim(), newPasswordInput.trim());
+                    setPassMsg({ text: 'Password updated successfully!', type: 'success' });
+                    setOldPasswordInput('');
+                    setNewPasswordInput('');
+                    setConfirmPasswordInput('');
+                    setTimeout(() => setPassMsg({ text: '', type: '' }), 4000);
+                  } catch (err) {
+                    setPassMsg({ text: err.message || 'Failed to change password', type: 'error' });
+                  } finally {
+                    setIsChangingPass(false);
+                  }
+                }}
+                className="mt-2"
+              >
+                <div className="input-group">
+                  <label className="input-label" style={{ fontSize: '11px' }}>Previous (Current) Password</label>
+                  <div className="input-icon-field-wrap">
+                    <Lock size={14} className="input-field-left-icon" />
+                    <input
+                      type={showOldPass ? "text" : "password"}
+                      value={oldPasswordInput}
+                      onChange={(e) => setOldPasswordInput(e.target.value)}
+                      placeholder="Enter previous password"
+                      className="text-input-field with-icon with-right-btn"
+                      style={{ fontSize: '12px', padding: '7px 10px 7px 32px' }}
+                      required
+                    />
+                    <button
+                      type="button"
+                      className="password-toggle-eye-btn"
+                      onClick={() => setShowOldPass(!showOldPass)}
+                      title={showOldPass ? 'Hide password' : 'Show password'}
+                    >
+                      {showOldPass ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="input-group mt-2">
+                  <label className="input-label" style={{ fontSize: '11px' }}>New Password (min 6 characters)</label>
+                  <div className="input-icon-field-wrap">
+                    <Key size={14} className="input-field-left-icon" />
+                    <input
+                      type={showNewPass ? "text" : "password"}
+                      value={newPasswordInput}
+                      onChange={(e) => setNewPasswordInput(e.target.value)}
+                      placeholder="Enter new password"
+                      className="text-input-field with-icon with-right-btn"
+                      style={{ fontSize: '12px', padding: '7px 10px 7px 32px' }}
+                      required
+                    />
+                    <button
+                      type="button"
+                      className="password-toggle-eye-btn"
+                      onClick={() => setShowNewPass(!showNewPass)}
+                      title={showNewPass ? 'Hide password' : 'Show password'}
+                    >
+                      {showNewPass ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="input-group mt-2">
+                  <label className="input-label" style={{ fontSize: '11px' }}>Confirm New Password</label>
+                  <div className="input-icon-field-wrap">
+                    <Key size={14} className="input-field-left-icon" />
+                    <input
+                      type="password"
+                      value={confirmPasswordInput}
+                      onChange={(e) => setConfirmPasswordInput(e.target.value)}
+                      placeholder="Re-enter new password"
+                      className="text-input-field with-icon"
+                      style={{ fontSize: '12px', padding: '7px 10px 7px 32px' }}
+                      required
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isChangingPass}
+                  className="btn-primary w-full mt-3 py-2 text-xs font-semibold"
+                >
+                  {isChangingPass ? 'Verifying & Updating...' : 'Update Password'}
+                </button>
+              </form>
+            </div>
+
+            <div className="settings-options mt-4">
               <div className="setting-toggle-row">
                 <div>
                   <strong>Two-Factor Authentication (2FA)</strong>

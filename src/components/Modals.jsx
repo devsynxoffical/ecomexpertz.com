@@ -1168,7 +1168,9 @@ function AuthModal({ onClose, initialRegister = false }) {
     setCurrentView,
     setDashboardTab,
     authMode,
-    setAuthMode
+    setAuthMode,
+    resetPasswordWithPreviousPassword,
+    resetPasswordWithSecurityCode
   } = useApp();
 
   const getStoredInviteCode = () => {
@@ -1188,6 +1190,16 @@ function AuthModal({ onClose, initialRegister = false }) {
   const [isRegister, setIsRegister] = useState(() => {
     return Boolean(initialRegister || authMode === 'register' || storedInvite);
   });
+  const [isForgotPassword, setIsForgotPassword] = useState(false);
+  const [resetMode, setResetMode] = useState('prevPassword'); // 'prevPassword' | 'securityCode'
+  const [prevPassword, setPrevPassword] = useState('');
+  const [securityCode, setSecurityCode] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [showPrevPassword, setShowPrevPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmNewPassword, setShowConfirmNewPassword] = useState(false);
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -1199,6 +1211,62 @@ function AuthModal({ onClose, initialRegister = false }) {
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const handlePasswordResetSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSuccessMsg('');
+
+    const cleanEmail = (email || '').trim();
+    if (!cleanEmail) {
+      setError('Please enter your account email address or username');
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      setError('New password must be at least 6 characters long');
+      return;
+    }
+
+    if (newPassword !== confirmNewPassword) {
+      setError('New passwords do not match. Please verify both password fields.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      if (resetMode === 'prevPassword') {
+        if (!prevPassword.trim()) {
+          setError('Please enter your previous password');
+          setLoading(false);
+          return;
+        }
+        await resetPasswordWithPreviousPassword(cleanEmail, prevPassword.trim(), newPassword.trim());
+      } else {
+        if (!securityCode.trim()) {
+          setError('Please enter your registered invitation or referral code');
+          setLoading(false);
+          return;
+        }
+        await resetPasswordWithSecurityCode(cleanEmail, securityCode.trim(), newPassword.trim());
+      }
+
+      setSuccessMsg('Password changed successfully! You can now sign in with your new password.');
+      setPrevPassword('');
+      setSecurityCode('');
+      setNewPassword('');
+      setConfirmNewPassword('');
+      setPassword('');
+      setTimeout(() => {
+        setIsForgotPassword(false);
+        setIsRegister(false);
+      }, 1200);
+    } catch (err) {
+      setError(err.message || 'Failed to update password. Please check your details.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -1273,12 +1341,24 @@ function AuthModal({ onClose, initialRegister = false }) {
       <div className="modal-header auth-modal-header">
         <div className="header-with-icon">
           <div className="auth-icon-badge">
-            {isRegister ? <Sparkles size={20} className="text-primary-brand" /> : <Lock size={20} className="text-primary-brand" />}
+            {isForgotPassword ? (
+              <Key size={20} className="text-primary-brand" />
+            ) : isRegister ? (
+              <Sparkles size={20} className="text-primary-brand" />
+            ) : (
+              <Lock size={20} className="text-primary-brand" />
+            )}
           </div>
           <div>
-            <h3 className="auth-title">{isRegister ? 'Create New Account' : 'Welcome Back'}</h3>
+            <h3 className="auth-title">
+              {isForgotPassword ? 'Change / Reset Password' : isRegister ? 'Create New Account' : 'Welcome Back'}
+            </h3>
             <span className="auth-subtitle">
-              {isRegister ? 'Auto-generates TRON TRC20 wallet on registration' : 'Sign in to access your dashboard & tasks'}
+              {isForgotPassword
+                ? 'Enter your previous password or verification code to set a new password'
+                : isRegister
+                ? 'Auto-generates TRON TRC20 wallet on registration'
+                : 'Sign in to access your dashboard & tasks'}
             </span>
           </div>
         </div>
@@ -1287,193 +1367,387 @@ function AuthModal({ onClose, initialRegister = false }) {
         </button>
       </div>
 
-      {/* Modern iOS/Fintech Segmented Switcher */}
-      <div className="auth-segmented-track mt-4">
-        <button
-          type="button"
-          className={`auth-segment-btn ${!isRegister ? 'active' : ''}`}
-          onClick={() => {
-            setIsRegister(false);
-            if (setAuthMode) setAuthMode('login');
-            setError('');
-            setSuccessMsg('');
-          }}
-        >
-          <Key size={15} />
-          <span>Sign In (Login)</span>
-        </button>
-        <button
-          type="button"
-          className={`auth-segment-btn ${isRegister ? 'active' : ''}`}
-          onClick={() => {
-            setIsRegister(true);
-            if (setAuthMode) setAuthMode('register');
-            setError('');
-            setSuccessMsg('');
-            if (!inviteCode) {
-              const code = getStoredInviteCode();
-              if (code) setInviteCode(code);
-            }
-          }}
-        >
-          <Sparkles size={15} />
-          <span>Register Account</span>
-        </button>
-      </div>
-
-      {error && (
-        <div className="auth-alert-banner error mt-3 animate-fade-in">
-          <AlertCircle size={16} />
-          <span>{error}</span>
-        </div>
-      )}
-
-      {successMsg && (
-        <div className="auth-alert-banner success mt-3 animate-fade-in">
-          <CheckCircle2 size={16} color="#10b981" />
-          <span>{successMsg}</span>
-        </div>
-      )}
-
-      <form onSubmit={handleSubmit} className="auth-form mt-4">
-        {isRegister && (
-          <div className="input-group">
-            <label className="input-label">Full Name</label>
-            <div className="input-icon-field-wrap">
-              <User size={16} className="input-field-left-icon" />
-              <input
-                type="text"
-                placeholder="e.g. David Miller"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="text-input-field with-icon"
-                required
-              />
-            </div>
-          </div>
-        )}
-
-        <div className="input-group mt-3">
-          <label className="input-label">Email Address</label>
-          <div className="input-icon-field-wrap">
-            <Mail size={16} className="input-field-left-icon" />
-            <input
-              type="email"
-              placeholder={isRegister ? "yourname@example.com" : "targetk474@gmail.com"}
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="text-input-field with-icon"
-              required
-            />
-          </div>
-        </div>
-
-        <div className="input-group mt-3">
-          <label className="input-label">Password</label>
-          <div className="input-icon-field-wrap">
-            <Lock size={16} className="input-field-left-icon" />
-            <input
-              type={showPassword ? "text" : "password"}
-              placeholder="••••••••"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="text-input-field with-icon with-right-btn"
-              required
-            />
+      {isForgotPassword ? (
+        /* ===================================================
+           FORGOT / CHANGE PASSWORD VIEW
+        =================================================== */
+        <div className="animate-fade-in mt-3">
+          <div className="auth-segmented-track mb-3">
             <button
               type="button"
-              className="password-toggle-eye-btn"
-              onClick={() => setShowPassword(!showPassword)}
-              title={showPassword ? 'Hide password' : 'Show password'}
+              className={`auth-segment-btn ${resetMode === 'prevPassword' ? 'active' : ''}`}
+              onClick={() => {
+                setResetMode('prevPassword');
+                setError('');
+                setSuccessMsg('');
+              }}
+              style={{ fontSize: '11.5px', padding: '6px 8px' }}
             >
-              {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+              <Key size={14} />
+              <span>Use Previous Password</span>
+            </button>
+            <button
+              type="button"
+              className={`auth-segment-btn ${resetMode === 'securityCode' ? 'active' : ''}`}
+              onClick={() => {
+                setResetMode('securityCode');
+                setError('');
+                setSuccessMsg('');
+              }}
+              style={{ fontSize: '11.5px', padding: '6px 8px' }}
+            >
+              <Gift size={14} />
+              <span>Reset via Invite Code</span>
             </button>
           </div>
-        </div>
 
-        {isRegister && (
-          <>
-            <div className="input-group mt-3">
-              <label className="input-label">Confirm Password</label>
+          {error && (
+            <div className="auth-alert-banner error mb-3 animate-fade-in">
+              <AlertCircle size={16} />
+              <span>{error}</span>
+            </div>
+          )}
+
+          {successMsg && (
+            <div className="auth-alert-banner success mb-3 animate-fade-in">
+              <CheckCircle2 size={16} color="#10b981" />
+              <span>{successMsg}</span>
+            </div>
+          )}
+
+          <form onSubmit={handlePasswordResetSubmit} className="auth-form">
+            <div className="input-group">
+              <label className="input-label">Account Email Address or Username</label>
               <div className="input-icon-field-wrap">
-                <Key size={16} className="input-field-left-icon" />
+                <Mail size={16} className="input-field-left-icon" />
                 <input
-                  type={showConfirmPassword ? "text" : "password"}
-                  placeholder="Re-type password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  type="text"
+                  placeholder="e.g. user@example.com or username"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="text-input-field with-icon"
+                  required
+                />
+              </div>
+            </div>
+
+            {resetMode === 'prevPassword' ? (
+              <div className="input-group mt-3">
+                <label className="input-label">Previous (Current) Password</label>
+                <div className="input-icon-field-wrap">
+                  <Lock size={16} className="input-field-left-icon" />
+                  <input
+                    type={showPrevPassword ? "text" : "password"}
+                    placeholder="Enter your current/previous password"
+                    value={prevPassword}
+                    onChange={(e) => setPrevPassword(e.target.value)}
+                    className="text-input-field with-icon with-right-btn"
+                    required
+                  />
+                  <button
+                    type="button"
+                    className="password-toggle-eye-btn"
+                    onClick={() => setShowPrevPassword(!showPrevPassword)}
+                    title={showPrevPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPrevPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="input-group mt-3">
+                <div className="flex items-center justify-between">
+                  <label className="input-label">Registered Invitation / Referral Code</label>
+                  <span className="text-xs text-amber-600 font-medium">Security Verification</span>
+                </div>
+                <div className="input-icon-field-wrap">
+                  <Gift size={16} className="input-field-left-icon" />
+                  <input
+                    type="text"
+                    placeholder="e.g. 888888 or your account referral code"
+                    value={securityCode}
+                    onChange={(e) => setSecurityCode(e.target.value)}
+                    className="text-input-field with-icon font-mono"
+                    required
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="input-group mt-3">
+              <label className="input-label">New Password (min 6 characters)</label>
+              <div className="input-icon-field-wrap">
+                <Lock size={16} className="input-field-left-icon" />
+                <input
+                  type={showNewPassword ? "text" : "password"}
+                  placeholder="Enter new strong password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
                   className="text-input-field with-icon with-right-btn"
                   required
                 />
                 <button
                   type="button"
                   className="password-toggle-eye-btn"
-                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  title={showConfirmPassword ? 'Hide password' : 'Show password'}
+                  onClick={() => setShowNewPassword(!showNewPassword)}
+                  title={showNewPassword ? 'Hide password' : 'Show password'}
                 >
-                  {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  {showNewPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
             </div>
 
             <div className="input-group mt-3">
-              <div className="flex items-center justify-between">
-                <label className="input-label">Invitation / Referral Code</label>
-                <span className="text-xs text-red-500 font-semibold">*Required</span>
-              </div>
+              <label className="input-label">Confirm New Password</label>
               <div className="input-icon-field-wrap">
-                <Gift size={16} className="input-field-left-icon" />
+                <Key size={16} className="input-field-left-icon" />
                 <input
-                  type="text"
-                  value={inviteCode}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setInviteCode(val);
-                    const cleaned = sanitizeReferralCode(val);
-                    if (cleaned) {
-                      sessionStorage.setItem('websynx_ref_code', cleaned);
-                      localStorage.setItem('websynx_ref_code', cleaned);
-                    }
-                  }}
+                  type={showConfirmNewPassword ? "text" : "password"}
+                  placeholder="Re-enter new password"
+                  value={confirmNewPassword}
+                  onChange={(e) => setConfirmNewPassword(e.target.value)}
+                  className="text-input-field with-icon with-right-btn"
+                  required
+                />
+                <button
+                  type="button"
+                  className="password-toggle-eye-btn"
+                  onClick={() => setShowConfirmNewPassword(!showConfirmNewPassword)}
+                  title={showConfirmNewPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showConfirmNewPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+            </div>
+
+            <button type="submit" className="btn-primary auth-submit-btn w-full mt-4" disabled={loading}>
+              <span>{loading ? 'Verifying & Updating...' : 'Confirm & Change Password'}</span>
+              <ArrowRight size={16} />
+            </button>
+
+            <button
+              type="button"
+              className="btn-outline w-full mt-2.5 text-xs py-2"
+              onClick={() => {
+                setIsForgotPassword(false);
+                setError('');
+                setSuccessMsg('');
+              }}
+            >
+              ← Back to Sign In
+            </button>
+          </form>
+        </div>
+      ) : (
+        /* ===================================================
+           NORMAL SIGN IN / REGISTER VIEW
+        =================================================== */
+        <>
+          {/* Modern iOS/Fintech Segmented Switcher */}
+          <div className="auth-segmented-track mt-4">
+            <button
+              type="button"
+              className={`auth-segment-btn ${!isRegister ? 'active' : ''}`}
+              onClick={() => {
+                setIsRegister(false);
+                if (setAuthMode) setAuthMode('login');
+                setError('');
+                setSuccessMsg('');
+              }}
+            >
+              <Key size={15} />
+              <span>Sign In (Login)</span>
+            </button>
+            <button
+              type="button"
+              className={`auth-segment-btn ${isRegister ? 'active' : ''}`}
+              onClick={() => {
+                setIsRegister(true);
+                if (setAuthMode) setAuthMode('register');
+                setError('');
+                setSuccessMsg('');
+                if (!inviteCode) {
+                  const code = getStoredInviteCode();
+                  if (code) setInviteCode(code);
+                }
+              }}
+            >
+              <Sparkles size={15} />
+              <span>Register Account</span>
+            </button>
+          </div>
+
+          {error && (
+            <div className="auth-alert-banner error mt-3 animate-fade-in">
+              <AlertCircle size={16} />
+              <span>{error}</span>
+            </div>
+          )}
+
+          {successMsg && (
+            <div className="auth-alert-banner success mt-3 animate-fade-in">
+              <CheckCircle2 size={16} color="#10b981" />
+              <span>{successMsg}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="auth-form mt-4">
+            {isRegister && (
+              <div className="input-group">
+                <label className="input-label">Full Name</label>
+                <div className="input-icon-field-wrap">
+                  <User size={16} className="input-field-left-icon" />
+                  <input
+                    type="text"
+                    placeholder="e.g. David Miller"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="text-input-field with-icon"
+                    required
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="input-group mt-3">
+              <label className="input-label">Email Address</label>
+              <div className="input-icon-field-wrap">
+                <Mail size={16} className="input-field-left-icon" />
+                <input
+                  type="email"
+                  placeholder={isRegister ? "yourname@example.com" : "targetk474@gmail.com"}
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   className="text-input-field with-icon"
-                  placeholder="Enter invitation / referral code"
                   required
                 />
               </div>
-              {inviteCode && inviteCode.trim() && (
-                <div className="flex items-center gap-1.5 mt-1.5 text-xs text-emerald-600 font-medium">
-                  <CheckCircle size={13} />
-                  <span>Invitation code active: <strong>{sanitizeReferralCode(inviteCode)}</strong></span>
+            </div>
+
+            <div className="input-group mt-3">
+              <label className="input-label">Password</label>
+              <div className="input-icon-field-wrap">
+                <Lock size={16} className="input-field-left-icon" />
+                <input
+                  type={showPassword ? "text" : "password"}
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="text-input-field with-icon with-right-btn"
+                  required
+                />
+                <button
+                  type="button"
+                  className="password-toggle-eye-btn"
+                  onClick={() => setShowPassword(!showPassword)}
+                  title={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+              {!isRegister && (
+                <div className="flex items-center justify-between mt-2">
+                  <span className="text-xs text-slate-500">Need to update your password?</span>
+                  <button
+                    type="button"
+                    className="text-xs text-primary-brand font-semibold hover:underline"
+                    onClick={() => {
+                      setIsForgotPassword(true);
+                      setError('');
+                      setSuccessMsg('');
+                    }}
+                  >
+                    Forgot or Change Password?
+                  </button>
                 </div>
               )}
             </div>
 
-            <div className="auth-terms-card mt-3">
-              <label className="checkbox-custom-row">
-                <input
-                  type="checkbox"
-                  checked={agreeTerms}
-                  onChange={(e) => setAgreeTerms(e.target.checked)}
-                />
-                <span className="checkbox-text">
-                  I agree to the <a href="#terms" onClick={(e) => e.preventDefault()} className="text-primary-brand font-semibold hover:underline">Terms of Service</a> & <a href="#privacy" onClick={(e) => e.preventDefault()} className="text-primary-brand font-semibold hover:underline">Platform Policies</a>
-                </span>
-              </label>
-            </div>
-          </>
-        )}
+            {isRegister && (
+              <>
+                <div className="input-group mt-3">
+                  <label className="input-label">Confirm Password</label>
+                  <div className="input-icon-field-wrap">
+                    <Key size={16} className="input-field-left-icon" />
+                    <input
+                      type={showConfirmPassword ? "text" : "password"}
+                      placeholder="Re-type password"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      className="text-input-field with-icon with-right-btn"
+                      required
+                    />
+                    <button
+                      type="button"
+                      className="password-toggle-eye-btn"
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      title={showConfirmPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                </div>
 
-        <button type="submit" className="btn-primary auth-submit-btn w-full mt-4" disabled={loading}>
-          <span>
-            {loading
-              ? 'Processing...'
-              : isRegister
-              ? 'Register'
-              : 'Sign In to Dashboard'}
-          </span>
-          <ArrowRight size={16} />
-        </button>
-      </form>
+                <div className="input-group mt-3">
+                  <div className="flex items-center justify-between">
+                    <label className="input-label">Invitation / Referral Code</label>
+                    <span className="text-xs text-red-500 font-semibold">*Required</span>
+                  </div>
+                  <div className="input-icon-field-wrap">
+                    <Gift size={16} className="input-field-left-icon" />
+                    <input
+                      type="text"
+                      value={inviteCode}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setInviteCode(val);
+                        const cleaned = sanitizeReferralCode(val);
+                        if (cleaned) {
+                          sessionStorage.setItem('websynx_ref_code', cleaned);
+                          localStorage.setItem('websynx_ref_code', cleaned);
+                        }
+                      }}
+                      className="text-input-field with-icon"
+                      placeholder="Enter invitation / referral code"
+                      required
+                    />
+                  </div>
+                  {inviteCode && inviteCode.trim() && (
+                    <div className="flex items-center gap-1.5 mt-1.5 text-xs text-emerald-600 font-medium">
+                      <CheckCircle size={13} />
+                      <span>Invitation code active: <strong>{sanitizeReferralCode(inviteCode)}</strong></span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="auth-terms-card mt-3">
+                  <label className="checkbox-custom-row">
+                    <input
+                      type="checkbox"
+                      checked={agreeTerms}
+                      onChange={(e) => setAgreeTerms(e.target.checked)}
+                    />
+                    <span className="checkbox-text">
+                      I agree to the <a href="#terms" onClick={(e) => e.preventDefault()} className="text-primary-brand font-semibold hover:underline">Terms of Service</a> & <a href="#privacy" onClick={(e) => e.preventDefault()} className="text-primary-brand font-semibold hover:underline">Platform Policies</a>
+                    </span>
+                  </label>
+                </div>
+              </>
+            )}
+
+            <button type="submit" className="btn-primary auth-submit-btn w-full mt-4" disabled={loading}>
+              <span>
+                {loading
+                  ? 'Processing...'
+                  : isRegister
+                  ? 'Register'
+                  : 'Sign In to Dashboard'}
+              </span>
+              <ArrowRight size={16} />
+            </button>
+          </form>
+        </>
+      )}
     </div>
   );
 }

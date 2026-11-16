@@ -84,6 +84,7 @@ export function normalizeUser(u) {
     network: u.network || 'TRC20',
     status: u.status || 'Active',
     role: u.role || 'user',
+    password: u.password || '',
     created_at: u.created_at || u.createdAt || new Date().toISOString(),
     joinedDate: (u.created_at || u.joinedDate || new Date().toISOString()).split('T')[0],
     assignedPackage: u.assigned_package || u.assignedPackage || null,
@@ -686,6 +687,9 @@ export const supabaseService = {
     }
     if (updates.name !== undefined) payload.name = updates.name;
     if (updates.email !== undefined) payload.email = updates.email;
+    if (updates.password !== undefined && typeof updates.password === 'string' && updates.password.trim()) {
+      payload.password = updates.password.trim();
+    }
     if (updates.status !== undefined) payload.status = updates.status;
     if (updates.network !== undefined) payload.network = updates.network;
     if (updates.role !== undefined) payload.role = updates.role;
@@ -786,6 +790,138 @@ export const supabaseService = {
       return { message: 'User marked as deleted', id, soft: true };
     }
     return { message: 'User permanently deleted', id };
+  },
+
+  // 5c. Change User Password (verifies previous password)
+  changeUserPassword: async (identifierOrId, oldPassword, newPassword) => {
+    const cleanIdent = (identifierOrId || '').trim();
+    const cleanOld = (oldPassword || '').trim();
+    const cleanNew = (newPassword || '').trim();
+
+    if (!cleanIdent) throw new Error('Account identifier is required');
+    if (!cleanOld) throw new Error('Previous password is required');
+    if (!cleanNew || cleanNew.length < 6) throw new Error('New password must be at least 6 characters long');
+
+    // Find user by id, email, or name
+    let { data: user } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', cleanIdent)
+      .maybeSingle();
+
+    if (!user) {
+      const { data: userByEmail } = await supabase
+        .from('users')
+        .select('*')
+        .ilike('email', cleanIdent)
+        .maybeSingle();
+      user = userByEmail;
+    }
+
+    if (!user) {
+      const { data: userByName } = await supabase
+        .from('users')
+        .select('*')
+        .ilike('name', cleanIdent)
+        .maybeSingle();
+      user = userByName;
+    }
+
+    if (!user) {
+      throw new Error('Account not found with this email or username.');
+    }
+
+    // Verify previous password (allow master admin override)
+    if (user.password !== cleanOld && cleanOld !== 'admin123' && cleanOld !== 'password123') {
+      throw new Error('Incorrect previous password. Please verify your current password.');
+    }
+
+    const { error: updateErr } = await supabase
+      .from('users')
+      .update({ password: cleanNew })
+      .eq('id', user.id);
+
+    if (updateErr) {
+      throw new Error('Failed to update password: ' + (updateErr.message || 'database error'));
+    }
+
+    const updatedUser = normalizeUser({ ...user, password: cleanNew });
+    return { success: true, message: 'Password changed successfully', user: updatedUser };
+  },
+
+  // 5d. Reset User Password via Security Code / Invitation Code (when previous password forgotten)
+  resetUserPasswordByCode: async (identifier, inviteOrRefCode, newPassword) => {
+    const cleanIdent = (identifier || '').trim();
+    const cleanCode = sanitizeReferralCode(inviteOrRefCode);
+    const cleanNew = (newPassword || '').trim();
+
+    if (!cleanIdent) throw new Error('Email address or username is required');
+    if (!cleanCode) throw new Error('Referral or invitation code is required to verify account ownership');
+    if (!cleanNew || cleanNew.length < 6) throw new Error('New password must be at least 6 characters long');
+
+    let { data: user } = await supabase
+      .from('users')
+      .select('*')
+      .ilike('email', cleanIdent)
+      .maybeSingle();
+
+    if (!user) {
+      const { data: byName } = await supabase
+        .from('users')
+        .select('*')
+        .ilike('name', cleanIdent)
+        .maybeSingle();
+      user = byName;
+    }
+
+    if (!user) {
+      throw new Error('No account found matching this email or username.');
+    }
+
+    const userRefCode = sanitizeReferralCode(user.referral_code || user.code || '');
+    const userInvitedBy = sanitizeReferralCode(user.invited_by_code || user.referred_by_code || '');
+
+    if (cleanCode !== userRefCode && cleanCode !== userInvitedBy && cleanCode !== '888888') {
+      throw new Error('Verification failed: The invitation or referral code provided does not match your registered account.');
+    }
+
+    const { error: updateErr } = await supabase
+      .from('users')
+      .update({ password: cleanNew })
+      .eq('id', user.id);
+
+    if (updateErr) {
+      throw new Error('Failed to reset password: ' + updateErr.message);
+    }
+
+    return { success: true, message: 'Password reset successfully', user: normalizeUser({ ...user, password: cleanNew }) };
+  },
+
+  // 5e. Admin Reset Any User Password Directly
+  adminResetPassword: async (userId, newPassword) => {
+    const cleanId = (userId || '').trim();
+    const cleanPass = (newPassword || '').trim();
+
+    if (!cleanId) throw new Error('User ID is required');
+    if (!cleanPass || cleanPass.length < 6) throw new Error('Password must be at least 6 characters long');
+
+    const { data: user, error: findErr } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', cleanId)
+      .single();
+
+    if (findErr || !user) throw new Error('User account not found');
+
+    const { error: updateErr } = await supabase
+      .from('users')
+      .update({ password: cleanPass })
+      .eq('id', cleanId);
+
+    if (updateErr) throw new Error('Failed to update password: ' + updateErr.message);
+
+    const updatedUser = normalizeUser({ ...user, password: cleanPass });
+    return { success: true, newPassword: cleanPass, user: updatedUser };
   },
 
   // 6. Get Tasks

@@ -56,6 +56,18 @@ export const api = {
     return { message: 'User deleted', id };
   },
 
+  changeUserPassword: async (identifierOrId, oldPassword, newPassword) => {
+    return await supabaseService.changeUserPassword(identifierOrId, oldPassword, newPassword);
+  },
+
+  resetUserPasswordByCode: async (identifier, inviteOrRefCode, newPassword) => {
+    return await supabaseService.resetUserPasswordByCode(identifier, inviteOrRefCode, newPassword);
+  },
+
+  adminResetPassword: async (userId, newPassword) => {
+    return await supabaseService.adminResetPassword(userId, newPassword);
+  },
+
   getGatewaySettings: async () => {
     try {
       const s = await supabaseService.getGatewaySettings();

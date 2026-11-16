@@ -118,6 +118,7 @@ export default function AdminView() {
     adminAssignSpecificTask,
     adminAssignTasksToUser,
     adminRestoreDefaultTasks,
+    adminResetUserPassword,
     sendPaymentRequestToUser,
     isAdminAuthenticated,
     adminLogin,
@@ -457,6 +458,14 @@ export default function AdminView() {
   const [editCompletedTasks, setEditCompletedTasks] = useState('0');
   const [editDailyQuota, setEditDailyQuota] = useState('25');
   const [editAssignedPackage, setEditAssignedPackage] = useState('none');
+  const [editPassword, setEditPassword] = useState('');
+  const [showEditPassword, setShowEditPassword] = useState(false);
+
+  // Quick Password Reset Modal
+  const [resetPasswordModalUser, setResetPasswordModalUser] = useState(null);
+  const [resetModalNewPass, setResetModalNewPass] = useState('');
+  const [resetModalLoading, setResetModalLoading] = useState(false);
+  const [showResetModalPass, setShowResetModalPass] = useState(false);
 
   // VIP Tiers Management
   const [editingTier, setEditingTier] = useState(null);
@@ -695,12 +704,6 @@ export default function AdminView() {
     }
   };
 
-  const handleFillMasterAdmin = () => {
-    setAdminEmail('admin@devsynx.com');
-    setAdminPassword('admin123');
-    setAdminAuthError('');
-  };
-
   const handleAdminCreateUser = async (e) => {
     e.preventDefault();
     const cleanName = (newUserData.name || '').trim();
@@ -786,8 +789,17 @@ export default function AdminView() {
       taskPackageRequested: false,
       task_package_requested: false
     };
+    if (editPassword && editPassword.trim()) {
+      if (editPassword.trim().length < 6) {
+        alert('Password must be at least 6 characters long.');
+        return;
+      }
+      updates.password = editPassword.trim();
+    }
     await adminUpdateUser(editingUser.id, updates);
     setEditingUser(null);
+    setEditPassword('');
+    setShowEditPassword(false);
   };
 
   const handleDeleteUserClick = async (userId, userName) => {
@@ -1219,7 +1231,7 @@ export default function AdminView() {
               <label className="input-label">Admin Email Address</label>
               <input
                 type="email"
-                placeholder="admin@devsynx.com"
+                placeholder="Enter administrator email"
                 value={adminEmail}
                 onChange={(e) => setAdminEmail(e.target.value)}
                 className="text-input-field"
@@ -1260,15 +1272,7 @@ export default function AdminView() {
           <div className="admin-login-quick-actions mt-4 pt-3 border-t">
             <button
               type="button"
-              className="preset-btn w-full text-xs font-bold py-2"
-              onClick={handleFillMasterAdmin}
-            >
-              👑 1-Click Fill Master Admin Credentials (admin@devsynx.com / admin123)
-            </button>
-
-            <button
-              type="button"
-              className="btn-outline w-full mt-2 text-xs py-2"
+              className="btn-outline w-full text-xs py-2.5 font-medium"
               onClick={() => {
                 setCurrentView('dashboard');
                 setDashboardTab('home');
@@ -3744,6 +3748,8 @@ export default function AdminView() {
                                     setEditingUser(u);
                                     setEditName(u.name || '');
                                     setEditEmail(u.email || '');
+                                    setEditPassword('');
+                                    setShowEditPassword(false);
                                     setEditBalance(currentUBal.toString());
                                     setEditTier(currentUTier);
                                     setEditStatus(currentUStatus);
@@ -3759,6 +3765,22 @@ export default function AdminView() {
                                 >
                                   <Edit2 size={12} />
                                   <span>Edit</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  className="btn-table-action-secondary"
+                                  title="Reset User Password"
+                                  style={{ color: '#4338ca', borderColor: '#c7d2fe' }}
+                                  onClick={() => {
+                                    setResetPasswordModalUser(u);
+                                    const rand = 'Pass' + Math.floor(100000 + Math.random() * 900000);
+                                    setResetModalNewPass(rand);
+                                    setShowResetModalPass(true);
+                                  }}
+                                >
+                                  <Key size={12} />
+                                  <span>Password</span>
                                 </button>
 
                                 {/* Quick Status Action Buttons */}
@@ -4175,9 +4197,153 @@ export default function AdminView() {
                         />
                       </div>
 
+                      <div className="input-group mt-3" style={{ background: '#f8fafc', padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                        <div className="flex items-center justify-between">
+                          <label className="input-label" style={{ color: '#4338ca', fontWeight: 600, margin: 0 }}>
+                            <Key size={13} style={{ display: 'inline', marginRight: '5px' }} />
+                            Reset / Change User Password
+                          </label>
+                          <button
+                            type="button"
+                            className="text-xs text-primary-brand font-bold"
+                            onClick={() => setShowEditPassword(!showEditPassword)}
+                          >
+                            {showEditPassword ? 'Hide' : 'Show'}
+                          </button>
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
+                          <input
+                            type={showEditPassword ? "text" : "password"}
+                            value={editPassword}
+                            onChange={(e) => setEditPassword(e.target.value)}
+                            className="text-input-field font-mono"
+                            style={{ fontSize: '12px' }}
+                            placeholder="Leave blank to keep current password, or enter new password"
+                          />
+                          <button
+                            type="button"
+                            className="btn-outline text-xs px-3"
+                            style={{ whiteSpace: 'nowrap', fontWeight: 600 }}
+                            onClick={() => {
+                              const rand = 'Pass' + Math.floor(100000 + Math.random() * 900000);
+                              setEditPassword(rand);
+                              setShowEditPassword(true);
+                            }}
+                          >
+                            ⚡ Random
+                          </button>
+                        </div>
+                        <span className="text-muted" style={{ fontSize: '11px', display: 'block', marginTop: '4px' }}>
+                          Entering a new password here will immediately update the user's password in the database upon saving.
+                        </span>
+                      </div>
+
                       <button type="submit" className="btn-primary w-full mt-4 py-2.5">
                         Save Changes to User Ledger
                       </button>
+                    </form>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Quick Reset User Password Modal */}
+            {resetPasswordModalUser && (
+              <div className="modal-overlay animate-fade-in" onClick={() => setResetPasswordModalUser(null)}>
+                <div className="modal-container" onClick={(e) => e.stopPropagation()}>
+                  <div className="modal-box max-w-md">
+                    <div className="modal-header">
+                      <div className="header-with-icon">
+                        <div className="icon-pill-blue" style={{ background: '#e0e7ff', color: '#4338ca' }}>
+                          <Key size={18} />
+                        </div>
+                        <div>
+                          <h3 style={{ fontSize: '16px', fontWeight: 600 }}>Reset Password: {resetPasswordModalUser.name}</h3>
+                          <span className="sub-text">{resetPasswordModalUser.email}</span>
+                        </div>
+                      </div>
+                      <button className="close-btn" onClick={() => setResetPasswordModalUser(null)}>✕</button>
+                    </div>
+
+                    <form
+                      onSubmit={async (e) => {
+                        e.preventDefault();
+                        const cleanPass = resetModalNewPass.trim();
+                        if (!cleanPass || cleanPass.length < 6) {
+                          alert('Password must be at least 6 characters long.');
+                          return;
+                        }
+                        setResetModalLoading(true);
+                        try {
+                          await adminResetUserPassword(resetPasswordModalUser.id, cleanPass);
+                          alert(`Password for ${resetPasswordModalUser.name} has been successfully reset to:\n\n${cleanPass}\n\nPlease share this password with the user.`);
+                          setResetPasswordModalUser(null);
+                          setResetModalNewPass('');
+                        } catch (err) {
+                          alert('Failed to reset password: ' + (err.message || 'database error'));
+                        } finally {
+                          setResetModalLoading(false);
+                        }
+                      }}
+                      className="mt-4"
+                    >
+                      <div className="input-group">
+                        <div className="flex items-center justify-between">
+                          <label className="input-label font-semibold">New Password for User</label>
+                          <button
+                            type="button"
+                            className="text-xs text-primary-brand font-bold"
+                            onClick={() => setShowResetModalPass(!showResetModalPass)}
+                          >
+                            {showResetModalPass ? 'Hide' : 'Show'}
+                          </button>
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                          <input
+                            type={showResetModalPass ? "text" : "password"}
+                            value={resetModalNewPass}
+                            onChange={(e) => setResetModalNewPass(e.target.value)}
+                            className="text-input-field font-mono font-bold"
+                            placeholder="Enter new password (min 6 characters)"
+                            required
+                          />
+                          <button
+                            type="button"
+                            className="btn-outline text-xs px-3 font-semibold"
+                            style={{ whiteSpace: 'nowrap' }}
+                            onClick={() => {
+                              const rand = 'Pass' + Math.floor(100000 + Math.random() * 900000);
+                              setResetModalNewPass(rand);
+                              setShowResetModalPass(true);
+                            }}
+                          >
+                            ⚡ Random
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="alert-box-info mt-3" style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '10px 12px', fontSize: '12px', color: '#1e40af' }}>
+                        <span>This will immediately overwrite the password in the database. Provide this new password to the user so they can log in.</span>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
+                        <button
+                          type="button"
+                          className="btn-outline"
+                          style={{ flex: 1, padding: '9px 12px' }}
+                          onClick={() => setResetPasswordModalUser(null)}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={resetModalLoading}
+                          className="btn-primary"
+                          style={{ flex: 2, padding: '9px 12px', fontWeight: 600 }}
+                        >
+                          {resetModalLoading ? 'Saving...' : 'Confirm & Reset Password'}
+                        </button>
+                      </div>
                     </form>
                   </div>
                 </div>
@@ -4620,6 +4786,8 @@ export default function AdminView() {
                           setEditingUser(u);
                           setEditName(u.name || '');
                           setEditEmail(u.email || '');
+                          setEditPassword('');
+                          setShowEditPassword(false);
                           setEditBalance((u.balance || 0).toString());
                           setEditTier(u.vipLevel || u.vipTier || 'eBay');
                           setEditStatus(u.status || 'Active');
