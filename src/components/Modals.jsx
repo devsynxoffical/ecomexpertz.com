@@ -1611,7 +1611,7 @@ function AuthModal({ onClose, initialRegister = false }) {
                 <Mail size={16} className="input-field-left-icon" />
                 <input
                   type="email"
-                  placeholder={isRegister ? "yourname@example.com" : "targetk474@gmail.com"}
+                  placeholder="Enter your email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="text-input-field with-icon"
@@ -1626,7 +1626,7 @@ function AuthModal({ onClose, initialRegister = false }) {
                 <Lock size={16} className="input-field-left-icon" />
                 <input
                   type={showPassword ? "text" : "password"}
-                  placeholder="••••••••"
+                  placeholder="Enter your password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="text-input-field with-icon with-right-btn"
