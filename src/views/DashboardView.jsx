@@ -2222,11 +2222,7 @@ function TabMine() {
                         return;
                       }
                       if (clean.startsWith('t')) clean = 'T' + clean.slice(1);
-                      if (!clean.startsWith('T')) {
-                        setWalletMsg({ text: 'TRON TRC20 addresses must start with capital "T" (e.g. TWiD4iHAcgaqf2WSsbUSSCMrBMUAiiVhDj)', type: 'error' });
-                        return;
-                      }
-                      if (clean.length < 15) {
+                      if (clean.length < 6) {
                         setWalletMsg({ text: 'Wallet address is too short. Please provide a valid address.', type: 'error' });
                         return;
                       }

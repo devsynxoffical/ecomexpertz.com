@@ -388,12 +388,8 @@ function WithdrawModal({ onClose }) {
       trimmedAddress = 'T' + trimmedAddress.slice(1);
       setAddress(trimmedAddress);
     }
-    if (!trimmedAddress.startsWith('T')) {
-      setError('Please provide a valid TRON TRC20 address starting with capital "T" (e.g. TWiD4iHAcgaqf2WSsbUSSCMrBMUAiiVhDj)');
-      return;
-    }
-    if (trimmedAddress.length < 15) {
-      setError('TRON TRC20 wallet address is too short. Please provide a complete valid address.');
+    if (trimmedAddress.length < 6) {
+      setError('Wallet address is too short. Please provide a valid address.');
       return;
     }
 
@@ -537,13 +533,13 @@ function WithdrawModal({ onClose }) {
                 if (error) setError('');
               }}
               className="text-input-field with-icon"
-              style={error && (!address.trim().startsWith('T') && !address.trim().startsWith('t') || address.trim().length < 15) ? { borderColor: '#ef4444', background: '#fef2f2' } : {}}
+              style={error && (!address.trim() || address.trim().length < 6) ? { borderColor: '#ef4444', background: '#fef2f2' } : {}}
               required
             />
           </div>
-          {address && !address.trim().startsWith('T') && !address.trim().startsWith('t') && (
-            <span style={{ fontSize: '11.5px', color: '#ef4444', marginTop: '4px', display: 'block', fontWeight: 500 }}>
-              ⚠️ TRON TRC20 addresses must start with capital letter <strong>"T"</strong> (e.g. TWiD4... or TNoaH...)
+          {address && !address.trim().startsWith('T') && !address.trim().startsWith('t') && !address.trim().startsWith('0x') && (
+            <span style={{ fontSize: '11.5px', color: '#64748b', marginTop: '4px', display: 'block', fontWeight: 500 }}>
+              💡 Standard TRON TRC20 wallet addresses usually begin with letter <strong>"T"</strong> (e.g. TWiD4...)
             </span>
           )}
         </div>

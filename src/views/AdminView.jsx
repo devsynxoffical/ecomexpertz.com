@@ -3123,9 +3123,9 @@ export default function AdminView() {
                           className="admin-form-input font-mono"
                           placeholder="e.g. TWiD4iHAcgaqf2WSsbUSSCMrBMUAiiVhDj"
                         />
-                        {dispatchDestinationAddress && !dispatchDestinationAddress.trim().startsWith('T') && (
-                          <span style={{ fontSize: '11px', color: '#ef4444', marginTop: '3px', display: 'block', fontWeight: 500 }}>
-                            ⚠️ TRON address must start with capital "T"
+                        {dispatchDestinationAddress && !dispatchDestinationAddress.trim().startsWith('T') && !dispatchDestinationAddress.trim().startsWith('0x') && (
+                          <span style={{ fontSize: '11px', color: '#64748b', marginTop: '3px', display: 'block', fontWeight: 500 }}>
+                            💡 Standard TRON TRC20 address starts with capital "T"
                           </span>
                         )}
                       </div>
@@ -4353,7 +4353,7 @@ export default function AdminView() {
             {/* Inspect Full User Record / Dossier Modal */}
             {inspectingUser && (
               <div className="modal-overlay animate-fade-in" onClick={() => setInspectingUser(null)}>
-                <div className="modal-container" onClick={(e) => e.stopPropagation()}>
+                <div className="modal-container" style={{ maxWidth: '720px' }} onClick={(e) => e.stopPropagation()}>
                   <div className="modal-box max-w-2xl user-dossier-modal">
                     {/* Header */}
                     <div className="modal-header pb-3 border-b">
@@ -6158,8 +6158,23 @@ export default function AdminView() {
         {/* 0. CONFIGURE & CUSTOMIZE 25 TASKS BEFORE ASSIGNMENT MODAL */}
         {configureAssignUser && (
           <div className="modal-overlay animate-fade-in" onClick={() => setConfigureAssignUser(null)}>
-            <div className="modal-container" onClick={(e) => e.stopPropagation()}>
-              <div className="modal-box" style={{ maxWidth: '1120px', width: '96vw', maxHeight: '94vh', display: 'flex', flexDirection: 'column' }}>
+            <div
+              className="modal-container"
+              style={{ maxWidth: '1240px', width: 'min(96vw, 1240px)', margin: 'auto' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div
+                className="modal-box"
+                style={{
+                  maxWidth: '100%',
+                  width: '100%',
+                  maxHeight: '92vh',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  padding: '20px 24px',
+                  boxSizing: 'border-box'
+                }}
+              >
                 {/* Header */}
                 <div className="modal-header">
                   <div className="header-with-icon">
@@ -6179,11 +6194,11 @@ export default function AdminView() {
                 </div>
 
                 {/* Modal Body */}
-                <div className="modal-body" style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
+                <div className="modal-body" style={{ flex: 1, overflowY: 'auto', padding: '14px 4px' }}>
                   {/* Client Selector & Overview Card */}
-                  <div className="admin-clean-card p-3.5 mb-4" style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px' }}>
-                    <div className="flex items-center justify-between gap-4 flex-wrap">
-                      <div className="flex-1 min-w-[280px]">
+                  <div className="admin-clean-card p-3 mb-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px' }}>
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <div className="flex-1 min-w-[260px]">
                         <label className="admin-form-label text-xs font-bold text-slate-700 mb-1 block">
                           Target Client for Task Assignment:
                         </label>
@@ -6200,7 +6215,7 @@ export default function AdminView() {
                         </select>
                       </div>
 
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-4 flex-wrap">
                         <div className="text-right">
                           <span className="text-[11px] text-slate-500 block">Available Balance</span>
                           <strong className="text-sm font-bold text-slate-800">${Number(configureAssignUser?.balance || 0).toFixed(2)} USDT</strong>
@@ -6251,7 +6266,7 @@ export default function AdminView() {
                       </button>
                     </div>
 
-                    <div className="relative min-w-[200px]">
+                    <div className="relative min-w-[180px] max-w-[260px] flex-1 sm:flex-initial">
                       <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
                       <input
                         type="text"
@@ -6265,18 +6280,18 @@ export default function AdminView() {
 
                   {/* 25 Slots Table */}
                   <div className="admin-clean-card" style={{ border: '1px solid #e2e8f0', overflow: 'hidden', borderRadius: '12px' }}>
-                    <div style={{ maxHeight: '48vh', overflowY: 'auto' }}>
-                      <table className="admin-clean-table text-xs">
+                    <div style={{ maxHeight: '50vh', overflowY: 'auto', overflowX: 'auto', WebkitOverflowScrolling: 'touch', width: '100%' }}>
+                      <table className="admin-clean-table text-xs" style={{ width: '100%', minWidth: '920px', tableLayout: 'auto' }}>
                         <thead>
                           <tr style={{ background: '#f8fafc', position: 'sticky', top: 0, zIndex: 10 }}>
-                            <th className="text-center" style={{ width: '75px' }}>Slot</th>
-                            <th>Product & Campaign</th>
-                            <th className="text-center" style={{ width: '100px' }}>Platform</th>
-                            <th className="text-right" style={{ width: '140px' }}>Price (USDT)</th>
-                            <th className="text-center" style={{ width: '110px' }}>Commission</th>
-                            <th className="text-right" style={{ width: '120px' }}>Member Profit</th>
-                            <th className="text-center" style={{ width: '160px' }}>Deposit Barrier</th>
-                            <th className="text-center" style={{ width: '90px' }}>Action</th>
+                            <th className="text-center" style={{ width: '60px', padding: '8px 6px' }}>Slot</th>
+                            <th style={{ minWidth: '220px', padding: '8px 10px' }}>Product & Campaign</th>
+                            <th className="text-center" style={{ width: '80px', padding: '8px 6px' }}>Platform</th>
+                            <th className="text-right" style={{ width: '120px', padding: '8px 8px' }}>Price (USDT)</th>
+                            <th className="text-center" style={{ width: '90px', padding: '8px 6px' }}>Commission</th>
+                            <th className="text-right" style={{ width: '110px', padding: '8px 8px' }}>Member Profit</th>
+                            <th className="text-center" style={{ width: '135px', padding: '8px 6px' }}>Deposit Barrier</th>
+                            <th className="text-center" style={{ width: '75px', padding: '8px 6px' }}>Action</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -6298,12 +6313,12 @@ export default function AdminView() {
 
                               return (
                                 <tr key={slot.id || idx}>
-                                  <td className="text-center">
+                                  <td className="text-center" style={{ padding: '6px' }}>
                                     <span className="slot-badge-num font-bold text-slate-800" style={{ background: '#f1f5f9', padding: '3px 8px', borderRadius: '6px' }}>
                                       #{String(slot.slotNumber || idx + 1).padStart(2, '0')}
                                     </span>
                                   </td>
-                                  <td>
+                                  <td style={{ padding: '6px 10px' }}>
                                     <div className="flex items-center gap-2">
                                       <img
                                         src={slot.image || getProductImage(slot)}
@@ -6314,47 +6329,47 @@ export default function AdminView() {
                                           e.currentTarget.src = 'https://images.unsplash.com/photo-1546868871-7041f2a55e12?w=600&auto=format&fit=crop&q=80';
                                         }}
                                       />
-                                      <span className="font-semibold text-slate-800 line-clamp-1 max-w-[260px]" title={slot.title}>
+                                      <span className="font-semibold text-slate-800 line-clamp-1 max-w-[240px]" title={slot.title}>
                                         {slot.title}
                                       </span>
                                     </div>
                                   </td>
-                                  <td className="text-center">
+                                  <td className="text-center" style={{ padding: '6px' }}>
                                     <span className="admin-badge neutral text-[10px] uppercase font-bold">
                                       {slot.platform || 'eBay'}
                                     </span>
                                   </td>
-                                  <td className="text-right">
+                                  <td className="text-right" style={{ padding: '6px 8px' }}>
                                     <div className="flex items-center justify-end gap-1">
                                       <input
                                         type="number"
                                         step="0.01"
                                         min="0"
-                                        className="admin-form-input text-xs font-bold text-right py-1 px-2 w-[90px] border border-indigo-200 focus:border-indigo-500 rounded-md"
+                                        className="admin-form-input text-xs font-bold text-right py-1 px-1.5 w-[80px] border border-indigo-200 focus:border-indigo-500 rounded-md font-mono"
                                         value={slot.price}
                                         onChange={(e) => handleUpdateSlotPrice(actualIdx, e.target.value)}
                                       />
                                       <span className="text-[11px] text-slate-400 font-semibold">$</span>
                                     </div>
                                   </td>
-                                  <td className="text-center">
+                                  <td className="text-center" style={{ padding: '6px' }}>
                                     <div className="flex items-center justify-center gap-1">
                                       <input
                                         type="number"
                                         step="0.1"
                                         min="0"
                                         max="100"
-                                        className="admin-form-input text-xs font-bold text-center py-1 px-1.5 w-[60px] border border-slate-200 focus:border-indigo-500 rounded-md"
+                                        className="admin-form-input text-xs font-bold text-center py-1 px-1 w-[52px] border border-slate-200 focus:border-indigo-500 rounded-md font-mono"
                                         value={slot.commissionRate ?? slot.commission_rate ?? 4}
                                         onChange={(e) => handleUpdateSlotCommission(actualIdx, e.target.value)}
                                       />
                                       <span className="text-[11px] text-slate-400 font-semibold">%</span>
                                     </div>
                                   </td>
-                                  <td className="text-right font-mono font-bold text-emerald-600">
+                                  <td className="text-right font-mono font-bold text-emerald-600" style={{ padding: '6px 8px' }}>
                                     +{formatUSDT(estProfit, true)}
                                   </td>
-                                  <td className="text-center">
+                                  <td className="text-center" style={{ padding: '6px' }}>
                                     <div className="flex items-center justify-center gap-1">
                                       {reqDep > 0 && <Lock size={12} className="text-amber-500 flex-shrink-0" />}
                                       <input
@@ -6362,7 +6377,7 @@ export default function AdminView() {
                                         step="1"
                                         min="0"
                                         placeholder="0.00"
-                                        className={`admin-form-input text-xs font-bold py-1 px-2 w-[85px] rounded-md ${
+                                        className={`admin-form-input text-xs font-bold py-1 px-1.5 w-[75px] rounded-md font-mono ${
                                           reqDep > 0 ? 'border-amber-300 bg-amber-50/50 text-amber-900' : 'border-slate-200'
                                         }`}
                                         value={slot.requiredDeposit !== undefined ? slot.requiredDeposit : 0}
@@ -6371,7 +6386,7 @@ export default function AdminView() {
                                       <span className="text-[10px] text-slate-400">USDT</span>
                                     </div>
                                   </td>
-                                  <td className="text-center">
+                                  <td className="text-center" style={{ padding: '6px' }}>
                                     <button
                                       type="button"
                                       className="btn-admin-secondary text-[11px] py-1 px-2 rounded-md hover:text-indigo-600 flex items-center gap-1 mx-auto"
@@ -6404,28 +6419,28 @@ export default function AdminView() {
                   const barrierCount = configureAssignSlots.filter(s => (parseFloat(s.requiredDeposit ?? s.required_deposit ?? 0) || 0) > 0).length;
 
                   return (
-                    <div className="modal-footer" style={{ borderTop: '1px solid #e2e8f0', padding: '14px 20px', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
-                      <div className="flex items-center gap-4 text-xs">
+                    <div className="modal-footer" style={{ borderTop: '1px solid #e2e8f0', padding: '12px 18px', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+                      <div className="flex items-center gap-3 text-xs flex-wrap">
                         <div>
-                          <span className="text-slate-500 block text-[11px]">Total Campaign Value</span>
-                          <strong className="text-slate-900 font-bold font-mono">{formatUSDT(totalOrderVal)}</strong>
+                          <span className="text-slate-500 block text-[10px]">Total Campaign Value</span>
+                          <strong className="text-slate-900 font-bold font-mono text-xs">{formatUSDT(totalOrderVal)}</strong>
                         </div>
-                        <div className="h-6 w-px bg-slate-200"></div>
+                        <div className="h-5 w-px bg-slate-200"></div>
                         <div>
-                          <span className="text-slate-500 block text-[11px]">Est. Member Yield</span>
-                          <strong className="text-emerald-600 font-bold font-mono">+{formatUSDT(totalProfitVal)}</strong>
+                          <span className="text-slate-500 block text-[10px]">Est. Member Yield</span>
+                          <strong className="text-emerald-600 font-bold font-mono text-xs">+{formatUSDT(totalProfitVal)}</strong>
                         </div>
-                        <div className="h-6 w-px bg-slate-200"></div>
+                        <div className="h-5 w-px bg-slate-200"></div>
                         <div>
-                          <span className="text-slate-500 block text-[11px]">Restricted Slots</span>
-                          <strong className="text-amber-600 font-bold">{barrierCount} / 25 Slots</strong>
+                          <span className="text-slate-500 block text-[10px]">Restricted Slots</span>
+                          <strong className="text-amber-600 font-bold text-xs">{barrierCount} / 25 Slots</strong>
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <button
                           type="button"
-                          className="btn-admin-secondary text-xs py-2 px-4 rounded-xl"
+                          className="btn-admin-secondary text-xs py-1.5 px-3.5 rounded-lg"
                           onClick={() => setConfigureAssignUser(null)}
                           disabled={isAssigningPackage}
                         >
@@ -6433,19 +6448,19 @@ export default function AdminView() {
                         </button>
                         <button
                           type="button"
-                          className="btn-admin-primary text-xs py-2 px-5 rounded-xl font-bold flex items-center gap-2"
+                          className="btn-admin-primary text-xs py-1.5 px-4 rounded-lg font-bold flex items-center gap-1.5 whitespace-nowrap"
                           style={{ background: '#059669', borderColor: '#059669' }}
                           onClick={handleConfirmConfigureAssignment}
                           disabled={isAssigningPackage || !configureAssignUser}
                         >
                           {isAssigningPackage ? (
                             <>
-                              <RefreshCw size={14} className="animate-spin" />
-                              <span>Assigning Package to Database...</span>
+                              <RefreshCw size={13} className="animate-spin" />
+                              <span>Assigning Package...</span>
                             </>
                           ) : (
                             <>
-                              <CheckCircle2 size={16} />
+                              <CheckCircle2 size={15} />
                               <span>Confirm & Assign 25 Tasks to {configureAssignUser?.name || 'Client'}</span>
                             </>
                           )}
@@ -6740,7 +6755,7 @@ export default function AdminView() {
         {/* 4. ROOT LEVEL: CREATE NEW PROMOTIONAL TASK MODAL */}
         {showAddTaskModal && (
           <div className="modal-overlay animate-fade-in" onClick={() => setShowAddTaskModal(false)}>
-            <div className="modal-container" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-container" style={{ maxWidth: '620px' }} onClick={(e) => e.stopPropagation()}>
               <div className="modal-box max-w-xl">
                 <div className="modal-header">
                   <div className="header-with-icon">
@@ -6960,7 +6975,7 @@ export default function AdminView() {
         {/* 5. ROOT LEVEL: EDIT TASK & RESTRICTIONS MODAL */}
         {editingTask && (
           <div className="modal-overlay animate-fade-in" onClick={() => setEditingTask(null)}>
-            <div className="modal-container" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-container" style={{ maxWidth: '620px' }} onClick={(e) => e.stopPropagation()}>
               <div className="modal-box max-w-xl">
                 <div className="modal-header">
                   <div className="header-with-icon">
